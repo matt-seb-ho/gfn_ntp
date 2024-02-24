@@ -109,9 +109,7 @@ python prover/evaluate.py --data-path data/leandojo_benchmark_4/random/  --ckpt_
 Status: IN PROGRESS
 #### Other papers to look into
 I asked one of the authors of LeanDojo for the outputs to their experiments. They told me to contact another author but they also gave a recommendation: 
-```
-Oh also, just a side note, despite LeanDojo being pretty recent, I do recall seeing even newer published / unpublished works that claim to beat LeanDojo on accuracy numbers (not to a great deal though). So if you later conduct experiments for your project maybe remember to compare to newer SoTAs.
-```
+> Oh also, just a side note, despite LeanDojo being pretty recent, I do recall seeing even newer published / unpublished works that claim to beat LeanDojo on accuracy numbers (not to a great deal though). So if you later conduct experiments for your project maybe remember to compare to newer SoTAs.
 
 Per their recommendation, I checked Semantic Scholar to find papers that have cited LeanDojo.
 Next is to check if there is a 
