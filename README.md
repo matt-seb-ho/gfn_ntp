@@ -1,15 +1,33 @@
 # NTP Project
 
 ## Overview
-**Broad Idea.** GFN objective provides a new way to sample compositional objects (e.g. LLM rationale/theorem proof) with key benefits of (1) better diversity (2) better generalizability. In the ICLR paper, the authors demonstrate that a simple reasoning (1 sentence for a binary classification) can be implemented with this objective. *We would like to extend this idea to more complex problems/inference techniques.*
+**Broad Idea.** 
+GFN objective provides a new way to sample compositional objects (e.g. LLM rationale/theorem proof) with key benefits of (1) better diversity (2) better generalizability. 
+In the ICLR paper, the authors demonstrate that a simple reasoning (1 sentence for a binary classification) can be implemented with this objective. 
+*We would like to extend this idea to more complex problems/inference techniques.*
 
-**Implementation Challenge.** CoT reasoning results in a large number of tokens (long trajectory). Together with high inference cost of LLM, and the inherent difficulty of stabilizing RL training, this makes the training difficult.
+**Implementation Challenges.** 
+1. CoT reasoning results in a large number of tokens (long trajectory). 
+Together with high inference cost of LLM, and the inherent difficulty of stabilizing RL training, this makes the training difficult.
 
 We turn our attention to NTP where the LLM only needs to generate tactics (costing fewer tokens) and then the deterministic Lean kernel (or an arbitrary proof assistant) unfold the tactic.
 
-The Lean kernel acts as a rigid reward function. It gives a binary signal if a completed proof is correct or not. However for GFN tuning, we would like to be able to evaluate partial sequences. One way is to train a verifier model.
+2. The Lean kernel is useful for evaluating proofs but has some major limitations as a reward function.
+For partial trajectories it can provide feedback about the syntactical correctness of a step, but says nothing about whether the step is useful towards completing the proof.
+For completed proofs, we get binary reward on the proof's correctness.
+However for GFN tuning, we would like
+(1) non-sparse reward (to enable exploration)
+(2) feedback on partial sequences. 
+
+One solution is to train a verifier model that scores a proof (or partial proof).
+
+**How should we train the verifier?**
+[Cobbe et al. 2021](https://arxiv.org/abs/2110.14168) trained verifiers as LMs with a small scalar head `nn.Linear(1, 1, bias=True)` outputting predictions on a per-token basis using both positive and negative examples.
 
 Through the V-STaR project experiments, it was found that DPO produces a stronger verifier than through standard MLE training, but it also contains spurious modes. Since GFN-tuning is contingent on the reward being robust, we need some way to improve on this reward.
+
+> Both of these strategies require sampling many trajectories to get the +/- examples.
+To save on time, we are considering starting with a SFT model (not actually trained to distinguish good/bad proofs; just trained with MLE on good proofs) as our reward. 
 
 **Let's try making an ensemble of verifiers.** The idea is that multiple verifiers trained in ensemble are less likely to collapse the modes/exploit the same artifacts. Hopefully this produces a reward space rich enough to make the GFN-tuning process effective.
 
