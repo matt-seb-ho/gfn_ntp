@@ -11,3 +11,6 @@ torch
 trl
 transformers
 tqdm
+icecream
+python-dotenv
+tensorboard
