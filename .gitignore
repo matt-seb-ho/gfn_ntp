@@ -162,3 +162,4 @@ cython_debug/
 
 ## msho additions:
 src/.env
+data/sfttif_random_train.json
