@@ -1,7 +1,7 @@
 import json
 from time import perf_counter
 from typing import Optional
-from datasets import Dataset
+from datasets import Dataset, load_dataset
 from tqdm import tqdm
 from loguru import logger
 from icecream import ic
@@ -19,7 +19,7 @@ from lean_dojo_utils import (
 # SFTTrainer instruction format 
 # {"prompt": "<prompt text>", "completion": "<ideal generated text>"}
 
-def load_data(data_path: str, normalize_tactics: bool, keep_marks: bool):
+def preprocess_data(data_path: str, normalize_tactics: bool, keep_marks: bool):
     """
     data_path: str = pointing to json file containing theorems
     normalize_tactics: bool = whether to replace consecutive whitespace chars with single space
@@ -68,12 +68,20 @@ def prep_dataset(initial_ds: list[dict[str, str]], output_filename: Optional[str
     return ds 
 
 
+def load_sft_data(path):
+    dataset = load_dataset("json", data_files=path, split="train")
+    # -- sanity check --
+    # ic(len(dataset))
+    # ic(dataset[0])
+    return dataset
+
+
 def main():
     RANDOM_TRAIN_DATA_PATH = prepend_repo_root("data/leandojo_benchmark_4/random/train.json")
     NOVELP_TRAIN_DATA_PATH = prepend_repo_root("data/leandojo_benchmark_4/novel_premises/train.json")
     # sfttif: SFTTrainer Instruction Format
     OUTPUT_PATH = prepend_repo_root("data/sfttif_random_train.json")
-    thm_data = load_data(RANDOM_TRAIN_DATA_PATH, True, False)
+    thm_data = preprocess_data(RANDOM_TRAIN_DATA_PATH, True, False)
     
     # -- sanity check --
     # ic(len(thm_data))
