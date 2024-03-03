@@ -14,3 +14,6 @@ tqdm
 icecream
 python-dotenv
 tensorboard
+bitsandbytes
+magic-wormhole
+flash-attn
