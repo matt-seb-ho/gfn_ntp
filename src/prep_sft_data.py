@@ -76,6 +76,13 @@ def load_sft_data(path):
     return dataset
 
 
+def sft_subset(dataset, size, seed=42, file=None):
+    subset = dataset.train_test_split(test_size=size, seed=seed)["test"]
+    if file:
+        subset.to_json(file, orient="records")
+    return subset
+
+
 def main():
     RANDOM_TRAIN_DATA_PATH = prepend_repo_root("data/leandojo_benchmark_4/random/train.json")
     NOVELP_TRAIN_DATA_PATH = prepend_repo_root("data/leandojo_benchmark_4/novel_premises/train.json")
