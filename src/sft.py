@@ -58,6 +58,31 @@ def _load_data_wrapper():
         dataset = load_sft_data(SFT_DATA_PATH)
         return dataset
 
+def _add_pad_token(model, tokenizer):
+    # CodeLlama/Llama2 does not have a default mask/pad token
+    # https://github.com/TrelisResearch/llama-2-setup
+    # Check if the pad token is already in the tokenizer vocabulary
+    if '<pad>' not in tokenizer.get_vocab():
+        # Add the pad token
+        tokenizer.add_special_tokens({"pad_token":"<pad>"})
+
+    # resize the embeddings
+    model.resize_token_embeddings(len(tokenizer))
+
+    # configure the pad token in the model
+    model.config.pad_token_id = tokenizer.pad_token_id
+
+    # check if they are equal
+    assert model.config.pad_token_id == tokenizer.pad_token_id, "The model's pad token ID does not match the tokenizer's pad token ID!"
+
+    # print the pad token ids
+    print('Tokenizer pad token ID:', tokenizer.pad_token_id)
+    print('Model pad token ID:', model.config.pad_token_id)
+    print('Model config pad token ID:', model.config.pad_token_id)
+    
+    # to prevent warnings
+    tokenizer.padding_side = 'right' 
+
 
 def main():
     # -- set up configs --
@@ -110,7 +135,7 @@ def main():
         quantization_config=bnb_config
     )
     tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_ID)
-    tokenizer.padding_side = 'right' # to prevent warnings
+    _add_pad_token(model, tokenizer)
 
     # -- initialize trainer --
     trainer = SFTTrainer(
@@ -120,10 +145,10 @@ def main():
         peft_config=peft_config,
         tokenizer=tokenizer,
         # packing=True,
-        dataset_kwargs={
-            "add_special_tokens": False,  # We template with special tokens
-            "append_concat_token": False, # No need to add additional separator token
-        }
+        # dataset_kwargs={
+        #     "add_special_tokens": False,  # We template with special tokens
+        #     "append_concat_token": False, # No need to add additional separator token
+        # }
     )
     
     # -- train, save, and clean up --
