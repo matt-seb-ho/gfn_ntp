@@ -1,0 +1,13 @@
+numpy
+pandas
+accelerate
+evaluate
+datasets
+ipykernel
+ipython
+loguru
+peft
+torch
+trl
+transformers
+tqdm

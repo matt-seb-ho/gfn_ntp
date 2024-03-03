@@ -1,5 +1,5 @@
 import torch
-# from datasets import load_dataset
+from datasets import load_dataset
 from huggingface_hub import login
 from icecream import ic
 from peft import LoraConfig
@@ -10,7 +10,7 @@ from transformers import (
     TrainingArguments
 )
 from trl import DataCollatorForCompletionOnlyLM, SFTTrainer
-from prep_sft_data import load_sft_data, sft_subset
+# from prep_sft_data import load_sft_data, sft_subset
 from utils import get_hf_access_token, prepend_repo_root
 
 # constants
@@ -133,6 +133,23 @@ def main():
     del model
     del trainer
     torch.cuda.empty_cache()
+
+
+# migrated/duplicated from data prep script 
+# so I don't have to install leandojo dependencies when training on cloud
+def load_sft_data(path):
+    dataset = load_dataset("json", data_files=path, split="train")
+    # -- sanity check --
+    # ic(len(dataset))
+    # ic(dataset[0])
+    return dataset
+
+
+def sft_subset(dataset, size, seed=42, file=None):
+    subset = dataset.train_test_split(test_size=size, seed=seed)["test"]
+    if file:
+        subset.to_json(file, orient="records")
+    return subset
 
 
 if __name__ == "__main__":
