@@ -24,12 +24,17 @@ One solution is to train a verifier model that scores a proof (or partial proof)
 **How should we train the verifier?**
 [Cobbe et al. 2021](https://arxiv.org/abs/2110.14168) trained verifiers as LMs with a small scalar head `nn.Linear(1, 1, bias=True)` outputting predictions on a per-token basis using both positive and negative examples.
 
-Through the V-STaR project experiments, it was found that DPO produces a stronger verifier than through standard MLE training, but it also contains spurious modes. Since GFN-tuning is contingent on the reward being robust, we need some way to improve on this reward.
+Through the V-STaR project experiments, it was found that DPO produces a stronger verifier than through standard MLE training. 
 
 > Both of these strategies require sampling many trajectories to get the +/- examples.
 To save on time, we are considering starting with a SFT model (not actually trained to distinguish good/bad proofs; just trained with MLE on good proofs) as our reward. 
 
-**Let's try making an ensemble of verifiers.** The idea is that multiple verifiers trained in ensemble are less likely to collapse the modes/exploit the same artifacts. Hopefully this produces a reward space rich enough to make the GFN-tuning process effective.
+**How can we handle over-aligned verifiers providing a bad reward for tuning?**
+Kolya mentioned finding the verifiers trained with DPO to contain spurious modes. 
+Since GFN-tuning is contingent on the reward being robust, we need some way to improve on this reward.
+One of the ideas we discussed is leveraging an ensemble of verifiers. 
+The idea is that multiple verifiers trained in ensemble are less likely to collapse the modes/exploit the same artifacts. 
+Hopefully this produces a reward space rich enough to make the GFN-tuning process effective.
 
 ## To-do List
 
@@ -124,13 +129,13 @@ python prover/evaluate.py --data-path data/leandojo_benchmark_4/random/  --ckpt_
 # Do it separately two data splits.
 ```
 
-Status: IN PROGRESS
-#### Other papers to look into
-I asked one of the authors of LeanDojo for the outputs to their experiments. They told me to contact another author but they also gave a recommendation: 
+Status: COMPLETE (updated 03.03.2024)
+### Other Baselines for Sampling Negatives
+I contacted one of the authors of LeanDojo for the outputs to their experiments. They told me to contact another author but they also gave a recommendation: 
 > Oh also, just a side note, despite LeanDojo being pretty recent, I do recall seeing even newer published / unpublished works that claim to beat LeanDojo on accuracy numbers (not to a great deal though). So if you later conduct experiments for your project maybe remember to compare to newer SoTAs.
 
 Per their recommendation, I checked Semantic Scholar to find papers that have cited LeanDojo.
-Next is to check if there is a 
+Next is to check if there is a significantly stronger baseline from which we can source our negative training samples.
 - LEGO-Prover: https://arxiv.org/pdf/2310.00656.pdf
 - Enhanced NTP via Data Augmentation and Dynamic Sampling: https://arxiv.org/pdf/2312.14188.pdf
 - ICL Agent for Formal NTP https://arxiv.org/pdf/2310.04353.pdf
