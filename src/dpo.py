@@ -85,7 +85,7 @@ def main():
     login(token=HF_ACCESS_TOKEN)
     args = TrainingArguments(
         output_dir="llemma_dpo_output",         # directory to save and repository id
-        num_train_epochs=3,                     # number of training epochs
+        num_train_epochs=1,                     # number of training epochs
         per_device_train_batch_size=3,          # batch size per device during training
         gradient_accumulation_steps=2,          # number of steps before performing a backward/update pass
         gradient_checkpointing=True,            # use gradient checkpointing to save memory
@@ -109,22 +109,23 @@ def main():
         attn_implementation="flash_attention_2",
         torch_dtype=torch.bfloat16,
         quantization_config=bnb_config,
-        is_trainable=True,
     )
-    model_ref = AutoModelForCausalLM.from_pretrained(
-        BASE_MODEL_ID,
-        device_map="auto",
-        attn_implementation="flash_attention_2",
-        torch_dtype=torch.bfloat16,
-        quantization_config=bnb_config,
-    )
+    # with peft, ref model is optional for dpo
+    # model_ref = AutoModelForCausalLM.from_pretrained(
+    #     BASE_MODEL_ID,
+    #     device_map="auto",
+    #     attn_implementation="flash_attention_2",
+    #     torch_dtype=torch.bfloat16,
+    #     quantization_config=bnb_config,
+    # )
     tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_ID)
     _add_pad_token(model, tokenizer)
 
     # -- initialize trainer --
     dpo_trainer = DPOTrainer(
         model=model,
-        ref_model=model_ref,
+        # ref_model=model_ref,
+        ref_model=None,
         args=args,
         beta=DPO_BETA,
         train_dataset=dataset,
