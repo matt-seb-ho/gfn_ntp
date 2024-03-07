@@ -1,22 +1,29 @@
 import argparse
 import json
+import random
 import torch
 from datasets import Dataset, load_dataset 
+from itertools import islice
 from transformers import (
     AutoTokenizer,
     AutoModelForCausalLM,
 )
 from tqdm import tqdm
-from utils import prepend_repo_root
+from utils import add_pad_token, prepend_repo_root
 
-DPO_DATA_PATH = prepend_repo_root("data/paired_random_train.json")
+DPO_EVAL_DATA_PATH = prepend_repo_root("data/paired_random_val.json")
 # PAIR_DATA_KEYS = ("prompt", "chosen", "rejected")
+RANDOM_SUBSET = True
+RANDOM_SEED = 42
+SUBSET_SIZE = 100
+BATCH_SIZE = 1
 PAIR_DATA_KEYS = ("state", "positive", "negative")
 PROMPT_KEY, CHOSEN_KEY, REJECTED_KEY = PAIR_DATA_KEYS
-OUTPUT_FILE = prepend_repo_root("outputs/verify_eval.json")
+OUTPUT_FILE = prepend_repo_root("outputs/verify_eval_base100.json")
 MODEL_ID = "EleutherAI/llemma_7b"
 
-
+# Sequence probability
+# - https://discuss.huggingface.co/t/announcement-generation-get-probabilities-for-generated-output/30075/17
 def token_probabilities(model, tokenizer, input_texts):
     input_ids = tokenizer(input_texts, padding=True, return_tensors="pt").input_ids
     outputs = model(input_ids)
@@ -40,11 +47,25 @@ def batch_completion_probabilities(
     model,
     tokenizer,
     prompt_completion_pairs,
-    normalize=True
+    sep="",
 ):
-    input_ids = tokenizer(input_texts, padding=True, return_tensors="pt").input_ids
+    input_texts = []
+    # idx of first completion char + last completion char
+    start_char_idxs = []
+    end_char_idxs = []
+    for prompt, completion in prompt_completion_pairs:
+        text = prompt + sep + completion
+        input_texts.append(text)
+        start_char_idxs.append(len(prompt) + len(sep))
+        end_char_idxs.append(len(text) - 1)
+    
+    batch_enc = tokenizer(input_texts, padding=True, return_tensors="pt")
+    input_ids = batch_enc.input_ids
     outputs = model(input_ids)
     probs = torch.log_softmax(outputs.logits, dim=-1).detach()
+
+    start_token_idxs = [batch_enc.char_to_token(i, char_idx) for i, char_idx in enumerate(start_char_idxs)]
+    end_token_idxs = [batch_enc.char_to_token(i, char_idx) for i, char_idx in enumerate(end_char_idxs)]
 
     # collect the probability of the generated token -- probability at index 0 corresponds to the token at index 1
     probs = probs[:, :-1, :]
@@ -52,61 +73,15 @@ def batch_completion_probabilities(
     gen_probs = torch.gather(probs, 2, input_ids[:, :, None]).squeeze(-1)
 
     batch = []
-    for input_sentence, input_probs in zip(input_ids, gen_probs):
-        text_sequence = []
-        for token, p in zip(input_sentence, input_probs):
-            if token not in tokenizer.all_special_ids:
-                text_sequence.append((tokenizer.decode(token), p.item()))
-        batch.append(text_sequence)
-    return batch
-"""
-Sequence probability:
-https://discuss.huggingface.co/t/announcement-generation-get-probabilities-for-generated-output/30075/17
-
-def to_tokens_and_logprobs(model, tokenizer, input_texts):
-    input_ids = tokenizer(input_texts, padding=True, return_tensors="pt").input_ids
-    outputs = model(input_ids)
-    probs = torch.log_softmax(outputs.logits, dim=-1).detach()
-
-    # collect the probability of the generated token -- probability at index 0 corresponds to the token at index 1
-    probs = probs[:, :-1, :]
-    input_ids = input_ids[:, 1:]
-    gen_probs = torch.gather(probs, 2, input_ids[:, :, None]).squeeze(-1)
-
-    batch = []
-    for input_sentence, input_probs in zip(input_ids, gen_probs):
-        text_sequence = []
-        for token, p in zip(input_sentence, input_probs):
-            if token not in tokenizer.all_special_ids:
-                text_sequence.append((tokenizer.decode(token), p.item()))
-        batch.append(text_sequence)
+    for input_probs, start_idx, end_idx in zip(gen_probs, start_token_idxs, end_token_idxs):
+        completion_log_prob = input_probs[start_idx:end_idx+1].sum().item()
+        batch.append({
+            "log_prob_sum": completion_log_prob,
+            "token_count": end_idx - start_idx + 1,
+        })
     return batch
 
-tokenizer = AutoTokenizer.from_pretrained("gpt2", padding_side="left")
-tokenizer.pad_token = tokenizer.eos_token
-
-model = AutoModelForCausalLM.from_pretrained("gpt2")
-model.config.pad_token_id = model.config.eos_token_id
-
-input_texts = ["One plus one is two", "Good morning", "Hello, how are you?"]
-
-batch = to_tokens_and_logprobs(model, tokenizer, input_texts)
-pprint(batch)
-
-# yields
-[[('One', -5.882715702056885),
-  (' plus', -9.785109519958496),
-  (' one', -0.7229145169258118),
-  (' is', -2.494063377380371),
-  (' two', -6.137458324432373)],
- [('Good', -7.5790300369262695), (' morning', -1.826707124710083)],
- [(',', -2.343151807785034),
-  (' how', -4.339702606201172),
-  (' are', -2.6824729442596436),
-  (' you', -0.4109247326850891),
-  ('?', -1.8950778245925903)]]
-"""
-
+# old impl
 def lm_log_prob(
     sequence, 
     model, 
@@ -145,7 +120,6 @@ def lm_log_prob(
         "log_prob": log_prob,
         "token_length": token_length
     }
-
 
 def lm_completion_log_prob(
     context, 
@@ -239,9 +213,88 @@ def lm_completion_log_prob(
 
     return res
 
+def batch_iterator(iterable, batch_size):
+    """
+    Generator that yields fixed-size batches from the input iterable.
+    
+    Parameters:
+    - iterable: An iterable from which to yield batches.
+    - batch_size: The size of each batch as an integer.
+    
+    Yields:
+    - Batches of the input iterable, each batch is of size batch_size.
+    """
+    iterator = iter(iterable)
+    while True:
+        batch = list(islice(iterator, batch_size))
+        if not batch:
+            break
+        yield batch
 
+def evaluate_verifier(
+    model, 
+    tokenizer, 
+    pair_data, 
+    output_file=None, 
+    batch_size=1,
+): 
+    results = []
+    correct = 0
+    correct_norm = 0
+    for batch in tqdm(batch_iterator(pair_data, batch_size), total=(len(pair_data) // batch_size) + 1):
+        chosen_pairs = [(entry[PROMPT_KEY], entry[CHOSEN_KEY]) for entry in batch]
+        rejected_pairs = [(entry[PROMPT_KEY], entry[REJECTED_KEY]) for entry in batch]
+        chosen_scores = batch_completion_probabilities(
+            model, tokenizer, chosen_pairs
+        )
+        reject_scores = batch_completion_probabilities(
+            model, tokenizer, rejected_pairs 
+        )
+        for e, cs, rs in zip(batch, chosen_scores, reject_scores):
+            c_lp_norm = cs["log_prob_sum"] / cs["token_count"]
+            r_lp_norm = rs["log_prob_sum"] / rs["token_count"]
+            result_entry = {
+                "prompt": e[PROMPT_KEY],
+                "chosen": e[CHOSEN_KEY],
+                "reject": e[REJECTED_KEY],
+                "c_log_prob": cs["log_prob_sum"],
+                "c_token_length": cs["token_count"],
+                "c_log_prob_norm": c_lp_norm,
+                "r_log_prob": rs["log_prob_sum"],
+                "r_token_length": rs["token_count"],
+                "r_log_prob_norm": r_lp_norm,
+                "correct": cs["log_prob_sum"] > rs["log_prob_sum"],
+                "correct_norm": c_lp_norm > r_lp_norm,
+            }
+            correct += result_entry["correct"]
+            correct_norm += result_entry["correct_norm"]
+            results.append(result_entry)
+    
+    stats = {
+        "correct": correct,
+        "correct_norm": correct_norm,
+        "total": len(pair_data),
+        "prop_correct": correct / len(pair_data),
+        "prop_correct_norm": correct_norm / len(pair_data),
+    }
+    print(json.dumps(stats, indent=2))
+    
+    if output_file:
+        with open(output_file, 'w') as f:
+            obj_to_save = {"stats": stats, "results": results}
+            json.dump(obj_to_save, f)
 
-def evaluate_verifier(model, tokenizer, pair_data, output_file=None):
+    return stats, results
+        
+
+# old impl
+def _evaluate_verifier(
+    model, 
+    tokenizer, 
+    pair_data, 
+    output_file=None, 
+    # batch_size=1,
+):
     correct = 0
     scores = []
     for i, entry in enumerate(tqdm(pair_data, total=len(pair_data))):
@@ -268,8 +321,13 @@ def evaluate_verifier(model, tokenizer, pair_data, output_file=None):
     
 
 def main():
-    with open(DPO_DATA_PATH) as f:
-        pref_data = json.load(f)
+    random.seed(RANDOM_SEED)
+    with open(DPO_EVAL_DATA_PATH) as f:
+        pref_data = json.load(f)["pairs"]
+    
+    if RANDOM_SUBSET:
+        pref_data = random.choices(pref_data, k=SUBSET_SIZE)
+
     canary = pref_data[0]
     assert set(PAIR_DATA_KEYS) == set(canary.keys()), "bad keys"
 
@@ -279,7 +337,14 @@ def main():
 
     model = AutoModelForCausalLM.from_pretrained(MODEL_ID, device_map="auto")
     tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
-    acc, details = evaluate_verifier(model, tokenizer, pref_data, output_file=OUTPUT_FILE)
+    add_pad_token(model, tokenizer)
+    stats, details = evaluate_verifier(
+        model, 
+        tokenizer, 
+        pref_data, 
+        output_file=OUTPUT_FILE,
+        batch_size=BATCH_SIZE,
+    )
 
 
 if __name__ == "__main__":
