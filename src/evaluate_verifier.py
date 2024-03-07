@@ -7,7 +7,9 @@ from itertools import islice
 from transformers import (
     AutoTokenizer,
     AutoModelForCausalLM,
+    # BitsAndBytesConfig,
 )
+from peft import AutoPeftModelForCausalLM
 from tqdm import tqdm
 from utils import add_pad_token, prepend_repo_root
 
@@ -321,12 +323,25 @@ def _evaluate_verifier(
     
 
 def main():
-    random.seed(RANDOM_SEED)
-    with open(DPO_EVAL_DATA_PATH) as f:
-        pref_data = json.load(f)["pairs"]
+    psr = argparse.ArgumentParser()
+    psr.add_argument("--hf_model_id", type=str, required=True)
+    psr.add_argument("--output_file", type=str, required=True)
+    psr.add_argument("--input_data", type=str, default=DPO_EVAL_DATA_PATH)
+    psr.add_argument("--rng_seed", type=int, default=42)
+    psr.add_argument("--subset_size", type=int, default=100)
+    psr.add_argument("--batch_size", type=int, default=1)
+    psr.add_argument("--peft", action="store_true")
+    psr.add_argument("--quantize", action="store_true")
+    psr.add_argument("--flash_attn", action="store_true")
+    args = psr.parse_args()
     
-    if RANDOM_SUBSET:
-        pref_data = random.choices(pref_data, k=SUBSET_SIZE)
+    # random.seed(RANDOM_SEED)
+    random.seed(args.rng_seed)
+    with open(args.input_data) as f:
+        pref_data = json.load(f)["pairs"]
+    # if RANDOM_SUBSET:
+    if args.subset_size:
+        pref_data = random.choices(pref_data, k=args.subset_size)
 
     canary = pref_data[0]
     assert set(PAIR_DATA_KEYS) == set(canary.keys()), "bad keys"
@@ -335,17 +350,43 @@ def main():
     # psr.add_argument("--out")
     # args = psr.parse_args()
 
-    model = AutoModelForCausalLM.from_pretrained(MODEL_ID, device_map="auto")
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+    model_init_kwargs = {}
+    if args.quantize:
+        from transformers import BitsAndBytesConfig
+        bnb_config = BitsAndBytesConfig(
+            load_in_4bit=True, 
+            bnb_4bit_use_double_quant=True, 
+            bnb_4bit_quant_type="nf4", 
+            bnb_4bit_compute_dtype=torch.bfloat16
+        )
+        # torch_dtype=torch.bfloat16,
+        # quantization_config=bnb_config
+        model_init_kwargs["torch_dtype"] = torch.bfloat16
+        model_init_kwargs["quantization_config"] = bnb_config
+    
+    if args.flash_attn:
+        # attn_implementation="flash_attention_2", # maybe comment this line
+        model_init_kwargs["attn_implementation"] = "flash_attention_2"
+        
+    tokenizer = AutoTokenizer.from_pretrained(args.hf_model_id)
+    model_cls = AutoPeftModelForCausalLM if args.peft else AutoModelForCausalLM
+    model = model_cls.from_pretrained(
+        args.hf_model_id,
+        device_map="auto",
+        # bells and whistles
+        **model_init_kwargs
+        # attn_implementation="flash_attention_2", # maybe comment this line
+        # torch_dtype=torch.bfloat16,
+        # quantization_config=bnb_config
+    )
     add_pad_token(model, tokenizer)
     stats, details = evaluate_verifier(
         model, 
         tokenizer, 
         pref_data, 
-        output_file=OUTPUT_FILE,
-        batch_size=BATCH_SIZE,
+        output_file=args.output_file,
+        batch_size=args.batch_size,
     )
-
 
 if __name__ == "__main__":
     main()
