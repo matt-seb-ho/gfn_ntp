@@ -7,6 +7,7 @@ from itertools import islice
 from transformers import (
     AutoTokenizer,
     AutoModelForCausalLM,
+    # BitsAndBytesConfig,
 )
 from peft import AutoPeftModelForCausalLM
 from tqdm import tqdm
@@ -330,6 +331,8 @@ def main():
     psr.add_argument("--subset_size", type=int, default=100)
     psr.add_argument("--batch_size", type=int, default=1)
     psr.add_argument("--peft", action="store_true")
+    psr.add_argument("--quantize", action="store_true")
+    psr.add_argument("--flash_attn", action="store_true")
     args = psr.parse_args()
     
     # random.seed(RANDOM_SEED)
@@ -347,11 +350,35 @@ def main():
     # psr.add_argument("--out")
     # args = psr.parse_args()
 
+    model_init_kwargs = {}
+    if args.quantize:
+        from transformers import BitsAndBytesConfig
+        bnb_config = BitsAndBytesConfig(
+            load_in_4bit=True, 
+            bnb_4bit_use_double_quant=True, 
+            bnb_4bit_quant_type="nf4", 
+            bnb_4bit_compute_dtype=torch.bfloat16
+        )
+        # torch_dtype=torch.bfloat16,
+        # quantization_config=bnb_config
+        model_init_kwargs["torch_dtype"] = torch.bfloat16
+        model_init_kwargs["quantization_config"] = bnb_config
+    
+    if args.flash_attn:
+        # attn_implementation="flash_attention_2", # maybe comment this line
+        model_init_kwargs["attn_implementation"] = "flash_attention_2"
+        
     tokenizer = AutoTokenizer.from_pretrained(args.hf_model_id)
-    if args.peft:
-        model = AutoPeftModelForCausalLM.from_pretrained(args.hf_model_id, device_map="auto")
-    else:
-        model = AutoModelForCausalLM.from_pretrained(args.hf_model_id, device_map="auto")
+    model_cls = AutoPeftModelForCausalLM if args.peft else AutoModelForCausalLM
+    model = model_cls.from_pretrained(
+        args.hf_model_id,
+        device_map="auto",
+        # bells and whistles
+        **model_init_kwargs
+        # attn_implementation="flash_attention_2", # maybe comment this line
+        # torch_dtype=torch.bfloat16,
+        # quantization_config=bnb_config
+    )
     add_pad_token(model, tokenizer)
     stats, details = evaluate_verifier(
         model, 
