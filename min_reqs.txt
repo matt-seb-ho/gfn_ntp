@@ -16,4 +16,9 @@ python-dotenv
 tensorboard
 bitsandbytes
 magic-wormhole
-flash-attn
+packaging
+# flash-attn instructions: 
+# - apparently you need to install everything and then flash-attn
+# - make sure to have flash-attn commented on the first pass
+# - if in a brand new environment, you may need to install cuda-nvcc to make sure flash-attn installs correctly
+# flash-attn
