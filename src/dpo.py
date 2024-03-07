@@ -25,13 +25,15 @@ DPO_SUBSET_EXISTS = False
 DPO_SUBSET_SIZE = 10000
 BASE_MODEL_ID = "EleutherAI/llemma_7b"
 HF_ACCESS_TOKEN = get_hf_access_token()
+# testing phase
+SANITY_CHECK = False
 
 
 def load_dpo_data():
     # load raw data into arrow format
     with open(DPO_DATA_PATH) as f:
         records = json.load(f)
-    full_dataset = Dataset.from_list(records)
+    full_dataset = Dataset.from_list(records["pairs"])
 
     # prep for DPOTrainer format
     def add_prompt_template(example):
@@ -49,6 +51,17 @@ def load_dpo_data():
 
 
 def main():
+    # test data loading
+    dataset = load_dpo_data()
+    if SANITY_CHECK:
+        ic(dataset.column_names, len(dataset))
+        ex0 = dataset[0]
+        print("Printing example prompt/chosen/rejected:")
+        print(ex0["prompt"])
+        print(ex0["chosen"])
+        print(ex0["rejected"])
+        return
+
     # -- set up configs --
     # int-4 config
     bnb_config = BitsAndBytesConfig(
@@ -71,7 +84,7 @@ def main():
     # need to log in to hf acct to push checkpoints to hub
     login(token=HF_ACCESS_TOKEN)
     args = TrainingArguments(
-        output_dir="llemma_sft_output",         # directory to save and repository id
+        output_dir="llemma_dpo_output",         # directory to save and repository id
         num_train_epochs=3,                     # number of training epochs
         per_device_train_batch_size=3,          # batch size per device during training
         gradient_accumulation_steps=2,          # number of steps before performing a backward/update pass
@@ -89,8 +102,7 @@ def main():
         report_to="tensorboard",                # report metrics to tensorboard
     )
 
-    # -- load model, tokenizer, and data --
-    dataset = load_dpo_data()
+    # -- load model and tokenizer --
     model = AutoModelForCausalLM.from_pretrained(
         BASE_MODEL_ID,
         device_map="auto",
