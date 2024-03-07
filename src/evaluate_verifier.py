@@ -8,6 +8,7 @@ from transformers import (
     AutoTokenizer,
     AutoModelForCausalLM,
 )
+from peft import AutoPeftModelForCausalLM
 from tqdm import tqdm
 from utils import add_pad_token, prepend_repo_root
 
@@ -321,12 +322,23 @@ def _evaluate_verifier(
     
 
 def main():
-    random.seed(RANDOM_SEED)
-    with open(DPO_EVAL_DATA_PATH) as f:
-        pref_data = json.load(f)["pairs"]
+    psr = argparse.ArgumentParser()
+    psr.add_argument("--hf_model_id", type=str, required=True)
+    psr.add_argument("--output_file", type=str, required=True)
+    psr.add_argument("--input_data", type=str, default=DPO_EVAL_DATA_PATH)
+    psr.add_argument("--rng_seed", type=int, default=42)
+    psr.add_argument("--subset_size", type=int, default=100)
+    psr.add_argument("--batch_size", type=int, default=1)
+    psr.add_argument("--peft", action="store_true")
+    args = psr.parse_args()
     
-    if RANDOM_SUBSET:
-        pref_data = random.choices(pref_data, k=SUBSET_SIZE)
+    # random.seed(RANDOM_SEED)
+    random.seed(args.rng_seed)
+    with open(args.input_data) as f:
+        pref_data = json.load(f)["pairs"]
+    # if RANDOM_SUBSET:
+    if args.subset_size:
+        pref_data = random.choices(pref_data, k=args.subset_size)
 
     canary = pref_data[0]
     assert set(PAIR_DATA_KEYS) == set(canary.keys()), "bad keys"
@@ -335,17 +347,19 @@ def main():
     # psr.add_argument("--out")
     # args = psr.parse_args()
 
-    model = AutoModelForCausalLM.from_pretrained(MODEL_ID, device_map="auto")
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+    tokenizer = AutoTokenizer.from_pretrained(args.hf_model_id)
+    if args.peft:
+        model = AutoPeftModelForCausalLM.from_pretrained(args.hf_model_id, device_map="auto")
+    else:
+        model = AutoModelForCausalLM.from_pretrained(args.hf_model_id, device_map="auto")
     add_pad_token(model, tokenizer)
     stats, details = evaluate_verifier(
         model, 
         tokenizer, 
         pref_data, 
-        output_file=OUTPUT_FILE,
-        batch_size=BATCH_SIZE,
+        output_file=args.output_file,
+        batch_size=args.batch_size,
     )
-
 
 if __name__ == "__main__":
     main()
