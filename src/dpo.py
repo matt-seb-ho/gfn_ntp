@@ -143,7 +143,7 @@ def main():
     dpo_trainer.push_to_hub()
     
     del model
-    del trainer
+    del dpo_trainer
     torch.cuda.empty_cache()
 
 

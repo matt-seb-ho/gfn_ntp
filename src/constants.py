@@ -5,3 +5,6 @@ REPO_ROOT = "/mnt/hdd/msho/gfn_ntp/"
 # l4 server
 # DOTENV_PATH = "/home/matthewho/.env"
 # REPO_ROOT = "/home/matthewho/gfn_ntp"
+# vast.ai server
+# DOTENV_PATH = "/root/.env"
+# REPO_ROOT = "/root/gfn_ntp"
