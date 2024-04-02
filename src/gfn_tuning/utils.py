@@ -216,7 +216,7 @@ class ModelSentenceValidator(SentenceValidator):
         return invalid
 
 
-def generate_step(
+def generate_and_return_termination_logprob(
     model,
     encoded_prompt,
     termination_token_id,
@@ -236,11 +236,7 @@ def generate_step(
     active_seqs = torch.ones(encoded_prompt.size(0)).bool().to(encoded_prompt.device)
     state = encoded_prompt.clone()
     log_pf = []
-    # NOTE:
-    # - original next sentence log_pterm code is commented out
-    # - currently stubbing it with a tensor of zeros (e.g. p(term) = 1)
-    # - this is to marginally improve efficiency without changing return signature
-    # log_pterm = []
+    log_pterm = []
     token_ids = state  # For caching hidden states during generation
     past_key_values = None  # For caching hidden states during generation
     for i in range(max_len + 1):
@@ -275,16 +271,16 @@ def generate_step(
                     mask = [True] * modified_logits.shape[1]
                     mask[termination_token_id] = False
                     modified_logits[:, mask] = -torch.inf
-                # penalize non-'nice' and 'naughty' tokens with vocab_alpha
                 if vocab_nice_mask is not None:
+                    # add vocab_alpha to the logits of the unmasked vocab items
                     modified_logits[:, ~vocab_nice_mask] += vocab_alpha
                 if vocab_naughty_mask is not None:
+                    # add vocab_alpha to the logits of the masked vocab items
                     modified_logits[:, vocab_naughty_mask] += vocab_alpha
                 prob = (modified_logits / temperature).softmax(dim=-1)
                 token_ids = torch.multinomial(prob, num_samples=1)
         else:
             if i >= action_seq.size(-1):
-                # end with termination token
                 token_ids = (
                     torch.ones_like(action_seq[:, 0]) * termination_token_id
                 ).unsqueeze(-1)
@@ -300,13 +296,13 @@ def generate_step(
         if vocab_naughty_mask is not None:
             logits[:, vocab_naughty_mask] += vocab_alpha
         logprob = logits.log_softmax(dim=-1)
-        # log_pterm.append(
-        #     torch.where(
-        #         active_seqs,
-        #         logprob[:, termination_token_id],
-        #         0,
-        #     )
-        # )
+        log_pterm.append(
+            torch.where(
+                active_seqs,
+                logprob[:, termination_token_id],
+                0,
+            )
+        )
         active_seqs = active_seqs * (token_ids != termination_token_id).squeeze(-1)
         log_pf.append(
             torch.where(
@@ -320,13 +316,12 @@ def generate_step(
         if torch.all(~active_seqs):
             break
     log_pf = torch.stack(log_pf, dim=1)
-    # log_pterm = torch.stack(log_pterm, dim=1)
-    log_pterm = torch.zeros_like(log_pf)
+    log_pterm = torch.stack(log_pterm, dim=1)
     if skip_rewards:
         log_r, log_r_unpenalized = None, None
     else:
-        # Reward for all intermediate states
-        # - except the last one (guaranteed to be the termination token)
+        # Reward for all intermediate states (except the last one,
+        # which is guaranteed to be the termination token)
         log_r, log_r_unpenalized = reward_fn(state[:, :-1])
     # add a termination token to the end of the sequence
     return state, log_pf, log_pterm, log_r, log_r_unpenalized

@@ -1,5 +1,6 @@
 import random
 from functools import partial
+from typing import Optional
 import pandas as pd
 import numpy as np
 import torch
@@ -16,6 +17,9 @@ from lean_dojo import (
     TacticState, 
     ProofFinished,
 )
+from proof_tree import ProofTreeNode
+from reward import generate_step
+from collections import deque
 
 
 class NeuralTheoremProvingTask(LightningModule):
@@ -62,26 +66,33 @@ class NeuralTheoremProvingTask(LightningModule):
         # TODO: add a method to format the prompt into the format seen in PT/FT
         self.format_prompt = lambda goal_str: goal_str
     
-    def forward_step(
-        self, 
-        prompt, 
-        state,
-        lean_env,
-        n_samples=None, 
-        pf_temperature=1.0, 
-        action_seq=None,
-    ):
+    def expand_node(
+        self,
+        lean_env: Dojo,
+        node: ProofTreeNode,
+        n_samples: Optional[int] = None,
+        pf_temperature: float = 1.0,
+        action_seq: Optional[torch.Tensor] = None,
+    ) -> None:
+        # generates children for proof tree node
+        if not isinstance(node.state, TacticState):
+            return
         assert prompt.ndim == 1
         n_samples = self.hparams.n_samples if n_samples is None else n_samples
-        prompt = prompt.unsqueeze(0).expand(n_samples, -1)
+        prompt_text = self.format_prompt(node.state.pp)
+        prompt = self.tokenizer(prompt_text, return_tensors="pt")["input_ids"]
+        if prompt.ndim == 1:
+            prompt = prompt.unsqueeze(0)
+        prompt = prompt.expand(n_samples, -1)
         reward_fn = partial(
             self.reward.score,
             prompt_length=prompt.shape[1],
             model=self.model,
             tokenizer=self.tokenizer,
         )
+        # sample tactics (if not provided by action_seq) and compute terms needed for loss
         (
-            generated_text,
+            completion_tokens, # these include the prompt tokens
             log_pf,
             log_pterm,
             log_r,
@@ -99,71 +110,56 @@ class NeuralTheoremProvingTask(LightningModule):
             action_seq=action_seq,
         )
 
-        # pass the generated tactic through the lean environment
+        # pass the generated tactics through the lean environment
         # - generated text is a tensor of shape (n_samples, seq_len)
         #   wherer seq_len = prompt_len + generated_tactic_len
         # - we need to decode it to a list of strings 
         #   - removing the prompt
         #   - ignoring the right padding (termination token/newlines)
         generated_tactics = self.tokenizer.batch_decode(
-            generated_text[:, prompt.shape[1]:],
+            completion_tokens[:, prompt.shape[1]:],
             skip_special_tokens=True,
             clean_up_tokenization_spaces=True,
         )
-        generated_tactics = [tactic.rstrip() for tactic in generated_tactics]
-        next_states = [lean_env.run_tac(state, generated_text)]
-        return generated_text, generated_tactics, next_states, log_pf, log_pterm, log_r, log_r_unpenalized
-    
+        for tactic in generated_tactics:
+            tactic = tactic.rstrip()
+            next_state = lean_env.run_tac(node.state, tactic)
+            # create child nodes
+            child_node = ProofTreeNode(
+                state=next_state,
+                tactic=tactic,
+                depth=node.depth + 1,
+                prompt_length=prompt.shape[1],
+                log_pf=log_pf,
+                log_pterm=log_pterm,
+                log_r=log_r,
+                log_r_unpenalized=log_r_unpenalized,
+            )
+            node.children.append(child_node)
+
+
     def forward(
         self, 
         thm, 
         n_samples=None, 
         pf_temperature=1.0, 
-        action_seq=None,
-        max_steps=3,
+        max_depth=3, # depth starts at 0
     ):
-        trajectory = []
-        with Dojo(thm) as (dojo, state):
-            for step_idx in range(max_steps):
-                # determine the branching factor
-                branching_factor = n_samples
-                if n_samples is None:
-                    branching_factor = self.hparams.n_samples
-                elif isinstance(n_samples, list):
-                    branching_factor = n_samples[step_idx]
-                # convert the current state to a tensor prompt 
-                prompt_text = self.format_prompt(state.pp)
-                prompt = self.tokenizer(prompt_text, return_tensors="pt")["input_ids"].expand(branching_factor, -1)
-                # generate the next tactic candidates
-                (
-                    output_tokens, 
-                    tactics,
-                    next_states,
-                    log_pf, 
-                    log_pterm, 
-                    log_r, 
-                    log_r_unpenalized 
-                ) = self.forward_step(prompt, state, dojo, branching_factor, pf_temperature, action_seq)
-                # save results
-                trajectory.append({
-                    "tokens": output_tokens,
-                    "prompt_length": prompt.shape[1],
-                    "tactics": tactics,
-                    "result": state,
-                    "log_pf": log_pf,
-                    "log_pterm": log_pterm,
-                    "log_r": log_r,
-                    "log_r_unpenalized": log_r_unpenalized,
-                })
-                state = next_state
-                # state is an instance of TacticResult, which has type:
-                # Union[TacticState, all kinds of errors/terminal states]
-                if not isinstance(state, TacticState):
-                    break
-        final_state = state
-        
-        
-        
+        with Dojo(thm) as (dojo, initial_state):
+            root = ProofTreeNode(state=initial_state)
+            queue = deque([root])
+            while queue:
+                node = queue.popleft()
+                branching_factor = self.determine_branching_factor(n_samples, node.depth)
+                self.expand_node(dojo, node, branching_factor, pf_temperature, action_seq=None)
+                # only expand children if (1) above max depth (2) child is non-terminal node
+                if node.depth + 1 < max_depth:
+                    queue.extend([c for c in node.children if isinstance(c.state, TacticState)])
+
+        # TODO: expand tree out to "rectangular shape" - a la tensors from original code
+        # - tactics: [[t1, t2, t3], [t1, t2, t3], ...
+        # - log_pf: [[pf1, pf2, pf3], [pf1, pf2, pf3], ...
+        # etc.
         
 
     def training_step(self, prompt, batch_idx):
@@ -688,3 +684,128 @@ class NeuralTheoremProvingTask(LightningModule):
             return bnb.optim.PagedAdamW8bit(self.model.parameters(), lr=self.hparams.lr)
         else:
             return torch.optim.AdamW(self.model.parameters(), lr=self.hparams.lr)
+    
+    def determine_branching_factor(self, n_samples, depth):
+        if isinstance(n_samples, int):
+            return n_samples
+        elif isinstance(n_samples, list):
+            return n_samples[depth]
+        else:
+            return self.hparams.n_samples
+
+
+# helper routine
+def generate_step(
+    model,
+    encoded_prompt,
+    termination_token_id,
+    reward_fn,
+    vocab_nice_mask=None,
+    vocab_naughty_mask=None,
+    vocab_alpha=-99,
+    max_len=10,
+    min_len=0,
+    temperature=1.0,
+    top_k=999999,
+    top_p=1.0,
+    action_seq=None,
+    skip_rewards=False,
+):
+    # generate and return the probability of terminating at every step
+    active_seqs = torch.ones(encoded_prompt.size(0)).bool().to(encoded_prompt.device)
+    state = encoded_prompt.clone()
+    log_pf = []
+    # NOTE:
+    # - original next sentence log_pterm code is commented out
+    # - currently stubbing it with a tensor of zeros (e.g. p(term) = 1)
+    # - this is to marginally improve efficiency without changing return signature
+    # log_pterm = []
+    token_ids = state  # For caching hidden states during generation
+    past_key_values = None  # For caching hidden states during generation
+    for i in range(max_len + 1):
+        output = model(input_ids=token_ids, past_key_values=past_key_values)
+        past_key_values = output.past_key_values
+        logits = output.logits[:, -1, :]
+        if action_seq is None:
+            with torch.no_grad():
+                prob = logits.softmax(dim=-1)
+                modified_logits = logits.clone().detach()
+                # implement top-k by getting the top-k largest values and setting the rest to 0
+                if top_k < 999999:
+                    modified_logits[prob >= prob.topk(top_k)] = -torch.inf
+                # implement top-p by getting indices in the top-p prob mass and setting the rest to 0
+                if top_p < 1.0:
+                    sorted_probs, _ = torch.sort(prob, dim=-1, descending=True)
+                    cumsum_prob = torch.cumsum(sorted_probs, dim=-1)
+                    nucleus = cumsum_prob < top_p
+                    nucleus = torch.cat(
+                        [
+                            nucleus.new_ones(nucleus.shape[:-1] + (1,)),
+                            nucleus[..., :-1],
+                        ],
+                        dim=-1,
+                    )
+                    modified_logits[~nucleus] = -torch.inf
+                if i < min_len:
+                    # if we haven't reach the minimum length, set the probability of terminating to 0
+                    modified_logits[:, termination_token_id] = -torch.inf
+                elif i >= max_len:
+                    # if we've reached the maximum length, set the probability of terminating to 1
+                    mask = [True] * modified_logits.shape[1]
+                    mask[termination_token_id] = False
+                    modified_logits[:, mask] = -torch.inf
+                # penalize non-'nice' and 'naughty' tokens with vocab_alpha
+                if vocab_nice_mask is not None:
+                    modified_logits[:, ~vocab_nice_mask] += vocab_alpha
+                if vocab_naughty_mask is not None:
+                    modified_logits[:, vocab_naughty_mask] += vocab_alpha
+                prob = (modified_logits / temperature).softmax(dim=-1)
+                token_ids = torch.multinomial(prob, num_samples=1)
+        else:
+            if i >= action_seq.size(-1):
+                # end with termination token
+                token_ids = (
+                    torch.ones_like(action_seq[:, 0]) * termination_token_id
+                ).unsqueeze(-1)
+            else:
+                token_ids = action_seq[:, i].unsqueeze(-1)
+        token_ids = torch.where(
+            active_seqs.unsqueeze(-1),
+            token_ids,
+            termination_token_id,
+        )
+        if vocab_nice_mask is not None:
+            logits[:, ~vocab_nice_mask] += vocab_alpha
+        if vocab_naughty_mask is not None:
+            logits[:, vocab_naughty_mask] += vocab_alpha
+        logprob = logits.log_softmax(dim=-1)
+        # log_pterm.append(
+        #     torch.where(
+        #         active_seqs,
+        #         logprob[:, termination_token_id],
+        #         0,
+        #     )
+        # )
+        active_seqs = active_seqs * (token_ids != termination_token_id).squeeze(-1)
+        log_pf.append(
+            torch.where(
+                active_seqs,
+                logprob.gather(-1, token_ids).squeeze(-1),
+                0,
+            )
+        )
+        state = torch.cat([state, token_ids], dim=-1)
+        # check if all sequences have terminated
+        if torch.all(~active_seqs):
+            break
+    log_pf = torch.stack(log_pf, dim=1)
+    # log_pterm = torch.stack(log_pterm, dim=1)
+    log_pterm = torch.zeros_like(log_pf)
+    if skip_rewards:
+        log_r, log_r_unpenalized = None, None
+    else:
+        # Reward for all intermediate states
+        # - except the last one (guaranteed to be the termination token)
+        log_r, log_r_unpenalized = reward_fn(state[:, :-1])
+    # add a termination token to the end of the sequence
+    return state, log_pf, log_pterm, log_r, log_r_unpenalized
