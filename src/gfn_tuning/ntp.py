@@ -6,7 +6,6 @@ import numpy as np
 import torch
 from pytorch_lightning import LightningModule
 from utils import (
-    generate_step,
     modified_subtb_loss,
     get_termination_vals,
 )
@@ -18,7 +17,6 @@ from lean_dojo import (
     ProofFinished,
 )
 from proof_tree import ProofTreeNode
-from reward import generate_step
 from collections import deque
 
 
@@ -70,11 +68,14 @@ class NeuralTheoremProvingTask(LightningModule):
         self,
         lean_env: Dojo,
         node: ProofTreeNode,
+        root: ProofTreeNode,
         n_samples: Optional[int] = None,
         pf_temperature: float = 1.0,
         action_seq: Optional[torch.Tensor] = None,
+        max_depth: int = 3,
     ) -> None:
         # generates children for proof tree node
+        # - returns number of leaves generated
         if not isinstance(node.state, TacticState):
             return
         assert prompt.ndim == 1
@@ -91,13 +92,14 @@ class NeuralTheoremProvingTask(LightningModule):
             tokenizer=self.tokenizer,
         )
         # sample tactics (if not provided by action_seq) and compute terms needed for loss
-        (
-            completion_tokens, # these include the prompt tokens
-            log_pf,
-            log_pterm,
-            log_r,
-            log_r_unpenalized,
-        ) = generate_step(
+        # (
+        #     completion_tokens, # these include the prompt tokens
+        #     log_pf,
+        #     log_pterm,
+        #     log_r,
+        #     log_r_unpenalized,
+        # ) = generate_step(
+        tokens, log_pf = generate_step(
             self.model,
             prompt,
             reward_fn=reward_fn,
@@ -109,6 +111,7 @@ class NeuralTheoremProvingTask(LightningModule):
             skip_rewards=False,
             action_seq=action_seq,
         )
+        log_p_step = log_pf.sum(dim=1)
 
         # pass the generated tactics through the lean environment
         # - generated text is a tensor of shape (n_samples, seq_len)
@@ -117,11 +120,11 @@ class NeuralTheoremProvingTask(LightningModule):
         #   - removing the prompt
         #   - ignoring the right padding (termination token/newlines)
         generated_tactics = self.tokenizer.batch_decode(
-            completion_tokens[:, prompt.shape[1]:],
+            tokens[:, prompt.shape[1]:],
             skip_special_tokens=True,
             clean_up_tokenization_spaces=True,
         )
-        for tactic in generated_tactics:
+        for i, tactic in enumerate(generated_tactics):
             tactic = tactic.rstrip()
             next_state = lean_env.run_tac(node.state, tactic)
             # create child nodes
@@ -130,13 +133,15 @@ class NeuralTheoremProvingTask(LightningModule):
                 tactic=tactic,
                 depth=node.depth + 1,
                 prompt_length=prompt.shape[1],
-                log_pf=log_pf,
-                log_pterm=log_pterm,
-                log_r=log_r,
-                log_r_unpenalized=log_r_unpenalized,
+                step_log_pf=log_p_step[i],
+                trajectory_log_pf=node.trajectory_log_pf + [log_p_step[i]],
+                # old version
+                # log_pf=log_pf,
+                # log_pterm=log_pterm,
+                # log_r=log_r,
+                # log_r_unpenalized=log_r_unpenalized,
             )
             node.children.append(child_node)
-
 
     def forward(
         self, 
@@ -145,13 +150,21 @@ class NeuralTheoremProvingTask(LightningModule):
         pf_temperature=1.0, 
         max_depth=3, # depth starts at 0
     ):
+        if n_samples is None:
+            n_samples = [self.hparams.n_samples] * max_depth
+        elif isinstance(n_samples, int):
+            n_samples = [n_samples] * max_depth
+
         with Dojo(thm) as (dojo, initial_state):
-            root = ProofTreeNode(state=initial_state)
+            root = ProofTreeNode(state=initial_state, leaf_count=0, trajectory_log_pf=[])
             queue = deque([root])
             while queue:
                 node = queue.popleft()
-                branching_factor = self.determine_branching_factor(n_samples, node.depth)
-                self.expand_node(dojo, node, branching_factor, pf_temperature, action_seq=None)
+                if not isinstance(node.state, TacticState):
+                    continue
+                # branching_factor = self.determine_branching_factor(n_samples, node.depth)
+                branching_factor = n_samples[node.depth]
+                self.expand_node(dojo, node, root, branching_factor, pf_temperature, action_seq=None)
                 # only expand children if (1) above max depth (2) child is non-terminal node
                 if node.depth + 1 < max_depth:
                     queue.extend([c for c in node.children if isinstance(c.state, TacticState)])
@@ -160,6 +173,11 @@ class NeuralTheoremProvingTask(LightningModule):
         # - tactics: [[t1, t2, t3], [t1, t2, t3], ...
         # - log_pf: [[pf1, pf2, pf3], [pf1, pf2, pf3], ...
         # etc.
+        # - this will require a traversal of the tree to get the tactics in the right order
+        
+
+        
+        
         
 
     def training_step(self, prompt, batch_idx):
@@ -778,6 +796,7 @@ def generate_step(
             logits[:, ~vocab_nice_mask] += vocab_alpha
         if vocab_naughty_mask is not None:
             logits[:, vocab_naughty_mask] += vocab_alpha
+        # logprob has ndim=2 and shape (batch_size, vocab_size)
         logprob = logits.log_softmax(dim=-1)
         # log_pterm.append(
         #     torch.where(
@@ -798,6 +817,9 @@ def generate_step(
         # check if all sequences have terminated
         if torch.all(~active_seqs):
             break
+    # log_pf does not include the initial prompt
+    # before this stack operation, it is a list of tensors of shape (batch_size,)
+    # after this stack operation, it is a tensor of shape (batch_size, max_completion_len)
     log_pf = torch.stack(log_pf, dim=1)
     # log_pterm = torch.stack(log_pterm, dim=1)
     log_pterm = torch.zeros_like(log_pf)
@@ -808,4 +830,5 @@ def generate_step(
         # - except the last one (guaranteed to be the termination token)
         log_r, log_r_unpenalized = reward_fn(state[:, :-1])
     # add a termination token to the end of the sequence
-    return state, log_pf, log_pterm, log_r, log_r_unpenalized
+    # return state, log_pf, log_pterm, log_r, log_r_unpenalized
+    return state, log_pf
