@@ -10,7 +10,7 @@ class ProofTreeNode:
     state: TacticResult
 
     # tactic applied to get to this node
-    # - None for root node
+    # - "" for root node
     tactic: str = ""
     
     # depth of this node
@@ -22,7 +22,10 @@ class ProofTreeNode:
     
     # terms for computing loss
     prompt_length: int = -1
-    log_pf: Optional[Tensor] = None
-    log_pterm: Optional[Tensor] = None
-    log_r: Optional[Tensor] = None
-    log_r_unpenalized: Optional[Tensor] = None
+    step_log_pf: Optional[Tensor] = None
+    trajectory_log_pf: Optional[list[Tensor]] = None
+
+    # log_pf: Optional[Tensor] = None
+    # log_pterm: Optional[Tensor] = None
+    # log_r: Optional[Tensor] = None
+    # log_r_unpenalized: Optional[Tensor] = None
