@@ -147,7 +147,7 @@ class NeuralTheoremProvingTask(LightningModule):
         max_depth: int = 3, # depth starts at 0
         replay_tactics: Optional[ProofTreeNode] = None,
     ):
-        log_pf = []
+        trajectories_logpf = []
         n_samples = [n_samples or self.hparams.n_samples] * max_depth
         with lean_context(theorem, replay_tactics) as (dojo, root):
             queue = deque([root])
@@ -164,16 +164,19 @@ class NeuralTheoremProvingTask(LightningModule):
                     lean_env=dojo,
                     replay=(replay_tactics is not None),
                 )
-                # TODO: add logic to update log_pf as needed here
-                # only expand children if (1) above max depth (2) child is non-terminal node
-                if node.depth + 1 < max_depth:
-                    queue.extend([c for c in node.children if isinstance(c.state, TacticState)])
+                for child in node.children:
+                    if node.depth + 1 < max_depth and isinstance(child.state, TacticState):
+                        queue.append(child)
+                    else:
+                        # terminal
+                        trajectories_logpf.append(child.get_trajectory_logpf())
         
         # log_pf is potentially jagged; may need padding
         # log_pf = torch.stack(log_pf, dim=0)
-        log_pf = torch.nn.utils.rnn.pad_sequence(log_pf, batch_first=True, padding_value=0.0)
-        return log_pf, root
-        
+        trajectories_logpf = torch.nn.utils.rnn.pad_sequence(
+            trajectories_logpf, batch_first=True, padding_value=0.0
+        )
+        return trajectories_logpf, root
 
     def training_step(self, prompt, batch_idx):
         # Should always be (1, prompt_len)
