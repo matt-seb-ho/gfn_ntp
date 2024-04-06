@@ -4,6 +4,7 @@ from typing import Optional
 import pandas as pd
 import numpy as np
 import torch
+from contextlib import contextmanager
 from pytorch_lightning import LightningModule
 from utils import (
     modified_subtb_loss,
@@ -14,6 +15,7 @@ from lean_dojo import (
     Dojo,
     TacticResult,
     TacticState, 
+    Theorem,
     ProofFinished,
 )
 from proof_tree import ProofTreeNode
@@ -66,20 +68,19 @@ class NeuralTheoremProvingTask(LightningModule):
     
     def expand_node(
         self,
-        lean_env: Dojo,
         node: ProofTreeNode,
-        root: ProofTreeNode,
         n_samples: Optional[int] = None,
         pf_temperature: float = 1.0,
-        action_seq: Optional[torch.Tensor] = None,
         max_depth: int = 3,
+        lean_env: Optional[Dojo] = None,
+        replay: bool = False,
     ) -> None:
         # generates children for proof tree node
         # - returns number of leaves generated
+        assert (lean_env is not None) or replay, "lean_env must be provided if not replaying tactics"
         if not isinstance(node.state, TacticState):
             return
-        assert prompt.ndim == 1
-        n_samples = self.hparams.n_samples if n_samples is None else n_samples
+        n_samples = n_samples or self.hparams.n_samples
         prompt_text = self.format_prompt(node.state.pp)
         prompt = self.tokenizer(prompt_text, return_tensors="pt")["input_ids"]
         if prompt.ndim == 1:
@@ -92,13 +93,6 @@ class NeuralTheoremProvingTask(LightningModule):
             tokenizer=self.tokenizer,
         )
         # sample tactics (if not provided by action_seq) and compute terms needed for loss
-        # (
-        #     completion_tokens, # these include the prompt tokens
-        #     log_pf,
-        #     log_pterm,
-        #     log_r,
-        #     log_r_unpenalized,
-        # ) = generate_step(
         tokens, log_pf = generate_step(
             self.model,
             prompt,
@@ -109,75 +103,76 @@ class NeuralTheoremProvingTask(LightningModule):
             max_len=self.hparams.max_sentence_len,
             temperature=pf_temperature,
             skip_rewards=False,
-            action_seq=action_seq,
+            action_seq=node.next_tactic_token_ids if replay else None,
         )
-        log_p_step = log_pf.sum(dim=1)
-
-        # pass the generated tactics through the lean environment
-        # - generated text is a tensor of shape (n_samples, seq_len)
-        #   wherer seq_len = prompt_len + generated_tactic_len
-        # - we need to decode it to a list of strings 
-        #   - removing the prompt
-        #   - ignoring the right padding (termination token/newlines)
-        generated_tactics = self.tokenizer.batch_decode(
-            tokens[:, prompt.shape[1]:],
-            skip_special_tokens=True,
-            clean_up_tokenization_spaces=True,
-        )
-        for i, tactic in enumerate(generated_tactics):
-            tactic = tactic.rstrip()
-            next_state = lean_env.run_tac(node.state, tactic)
-            # create child nodes
-            child_node = ProofTreeNode(
-                state=next_state,
-                tactic=tactic,
-                depth=node.depth + 1,
-                prompt_length=prompt.shape[1],
-                step_log_pf=log_p_step[i],
-                trajectory_log_pf=node.trajectory_log_pf + [log_p_step[i]],
-                # old version
-                # log_pf=log_pf,
-                # log_pterm=log_pterm,
-                # log_r=log_r,
-                # log_r_unpenalized=log_r_unpenalized,
+        # log_pf outputted by generate_step is at token-level granularity
+        log_pf_tactic = log_pf.sum(dim=1)
+        
+        if replay:
+            for i, child in enumerate(node.children):
+                child.step_log_pf = log_pf_tactic[i].item()
+                child.trajectory_logpf = torch.cat(node.trajectory_logpf + [log_pf_tactic[i].item()])
+        else:
+            # save the generated tactics for replay
+            node.next_tactic_token_ids = tokens[:, prompt.shape[1]:]
+            # pass the generated tactics through the lean environment
+            generated_tactics = self.tokenizer.batch_decode(
+                tokens[:, prompt.shape[1]:],
+                skip_special_tokens=True,
+                clean_up_tokenization_spaces=True,
             )
-            node.children.append(child_node)
+            # create new child nodes by running the 
+            for i, tactic in enumerate(generated_tactics):
+                next_state = lean_env.run_tac(node.state, tactic.rstrip())
+                child_node = ProofTreeNode(
+                    state=next_state,
+                    tactic=generated_tactics[i],
+                    depth=node.depth + 1,
+                    prompt_length=prompt.shape[1],
+                    step_log_pf=log_pf_tactic[i],
+                    trajectory_logpf=torch.cat(node.trajectory_logpf + [log_pf_tactic[i].item()]),
+                    # - from template:
+                    # log_pf=log_pf,
+                    # log_pterm=log_pterm,
+                    # log_r=log_r,
+                    # log_r_unpenalized=log_r_unpenalized,
+                )
+                node.children.append(child_node)
 
     def forward(
         self, 
-        thm, 
-        n_samples=None, 
-        pf_temperature=1.0, 
-        max_depth=3, # depth starts at 0
+        theorem: Theorem, 
+        n_samples: Optional[int | list[int]] = None, 
+        pf_temperature: float =  1.0, 
+        max_depth: int = 3, # depth starts at 0
+        replay_tactics: Optional[ProofTreeNode] = None,
     ):
-        if n_samples is None:
-            n_samples = [self.hparams.n_samples] * max_depth
-        elif isinstance(n_samples, int):
-            n_samples = [n_samples] * max_depth
-
-        with Dojo(thm) as (dojo, initial_state):
-            root = ProofTreeNode(state=initial_state, leaf_count=0, trajectory_log_pf=[])
+        log_pf = []
+        n_samples = [n_samples or self.hparams.n_samples] * max_depth
+        with lean_context(theorem, replay_tactics) as (dojo, root):
             queue = deque([root])
             while queue:
                 node = queue.popleft()
+                # terminal nodes require no further action
                 if not isinstance(node.state, TacticState):
                     continue
-                # branching_factor = self.determine_branching_factor(n_samples, node.depth)
-                branching_factor = n_samples[node.depth]
-                self.expand_node(dojo, node, root, branching_factor, pf_temperature, action_seq=None)
+                self.expand_node(
+                    node, 
+                    n_samples = n_samples[node.depth], 
+                    pf_temperature=pf_temperature,
+                    max_depth=max_depth,
+                    lean_env=dojo,
+                    replay=(replay_tactics is not None),
+                )
+                # TODO: add logic to update log_pf as needed here
                 # only expand children if (1) above max depth (2) child is non-terminal node
                 if node.depth + 1 < max_depth:
                     queue.extend([c for c in node.children if isinstance(c.state, TacticState)])
-
-        # TODO: expand tree out to "rectangular shape" - a la tensors from original code
-        # - tactics: [[t1, t2, t3], [t1, t2, t3], ...
-        # - log_pf: [[pf1, pf2, pf3], [pf1, pf2, pf3], ...
-        # etc.
-        # - this will require a traversal of the tree to get the tactics in the right order
         
-
-        
-        
+        # log_pf is potentially jagged; may need padding
+        # log_pf = torch.stack(log_pf, dim=0)
+        log_pf = torch.nn.utils.rnn.pad_sequence(log_pf, batch_first=True, padding_value=0.0)
+        return log_pf, root
         
 
     def training_step(self, prompt, batch_idx):
@@ -832,3 +827,12 @@ def generate_step(
     # add a termination token to the end of the sequence
     # return state, log_pf, log_pterm, log_r, log_r_unpenalized
     return state, log_pf
+
+@contextmanager
+def lean_context(theorem: Theorem, replay_tactics: Optional[ProofTreeNode] = None):
+    if replay_tactics:
+        yield None, replay_tactics
+    else:
+        with Dojo(theorem) as (dojo, initial_state):
+            new_root = ProofTreeNode(state=initial_state, children=[], trajectory_logpf=[])
+            yield dojo, new_root
