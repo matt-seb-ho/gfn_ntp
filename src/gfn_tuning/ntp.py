@@ -130,13 +130,16 @@ class NeuralTheoremProvingTask(LightningModule):
                     depth=node.depth + 1,
                     prompt_length=prompt.shape[1],
                     step_log_pf=log_pf_tactic[i],
-                    trajectory_logpf=torch.cat(node.trajectory_logpf + [log_pf_tactic[i].item()]),
+                    parent=node,
+                    # trajectory_logpf=torch.cat(node.trajectory_logpf + [log_pf_tactic[i].item()]),
                     # - from template:
                     # log_pf=log_pf,
                     # log_pterm=log_pterm,
                     # log_r=log_r,
                     # log_r_unpenalized=log_r_unpenalized,
                 )
+                if node.children is None:
+                    node.children = []
                 node.children.append(child_node)
 
     def forward(
@@ -150,12 +153,21 @@ class NeuralTheoremProvingTask(LightningModule):
         trajectories_logpf = []
         n_samples = [n_samples or self.hparams.n_samples] * max_depth
         with lean_context(theorem, replay_tactics) as (dojo, root):
-            queue = deque([root])
-            while queue:
-                node = queue.popleft()
-                # terminal nodes require no further action
-                if not isinstance(node.state, TacticState):
+            trajectory_logpf = []
+            stack = [(root, False)]
+            while stack:
+                node, visited = stack.pop()
+                # node should not be terminal
+                # assert node.depth < max_depth and isinstance(node, TacticState)
+                if visited:
+                    # backing out; clean up this node's element from the trajectory
+                    if node.tactic_pf is not None:
+                        trajectory_logpf.pop()
                     continue
+
+                stack.append((node, True))
+                if node.tactic_logpf is not None:
+                    trajectory_logpf.append(node.tactic_logpf)
                 self.expand_node(
                     node, 
                     n_samples = n_samples[node.depth], 
@@ -164,12 +176,12 @@ class NeuralTheoremProvingTask(LightningModule):
                     lean_env=dojo,
                     replay=(replay_tactics is not None),
                 )
-                for child in node.children:
+                for child in reversed(node.children):
                     if node.depth + 1 < max_depth and isinstance(child.state, TacticState):
-                        queue.append(child)
+                        stack.append(child)
                     else:
                         # terminal
-                        trajectories_logpf.append(child.get_trajectory_logpf())
+                        trajectories_logpf.append(torch.cat(trajectory_logpf + [child.tactic_logpf]))
         
         # log_pf is potentially jagged; may need padding
         # log_pf = torch.stack(log_pf, dim=0)
