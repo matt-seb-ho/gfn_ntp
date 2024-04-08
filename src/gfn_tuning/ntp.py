@@ -78,10 +78,10 @@ class NeuralTheoremProvingTask(LightningModule):
         # generates children for proof tree node
         # - returns number of leaves generated
         assert (lean_env is not None) or replay, "lean_env must be provided if not replaying tactics"
-        if not isinstance(node.state, TacticState):
+        if node.state and not isinstance(node.state, TacticState):
             return
         n_samples = n_samples or self.hparams.n_samples
-        prompt_text = self.format_prompt(node.state.pp)
+        prompt_text = self.format_prompt(node.state.pp if node.state else node.state_str) 
         prompt = self.tokenizer(prompt_text, return_tensors="pt")["input_ids"]
         if prompt.ndim == 1:
             prompt = prompt.unsqueeze(0)
@@ -173,7 +173,7 @@ class NeuralTheoremProvingTask(LightningModule):
                     trajectory_logpf.append(node.tactic_logpf)
                 self.expand_node(
                     node, 
-                    n_samples = n_samples[node.depth], 
+                    n_samples=n_samples[node.depth], 
                     pf_temperature=pf_temperature,
                     max_depth=max_depth,
                     lean_env=dojo,

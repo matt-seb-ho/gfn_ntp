@@ -17,7 +17,8 @@ from constants import TACTIC_DELIMITER
 @dataclass
 class ProofTreeNode:
     # remaining goals
-    state: TacticResult
+    state: Optional[TacticResult] = None
+    state_str: Optional[str] = None
 
     # tactic applied to get to this node
     # - "" for root node
@@ -74,10 +75,10 @@ def separate_trajectories(root: ProofTreeNode, theorem_name: str, theorem_id: st
         node, visited = stack.popleft()
         if visited:
             # backtracking
-            if node.tactic != "":
-                states.pop()
-                tactics.pop()
-                state_tactic_tensors.pop()
+            states.pop()
+            tactics.pop()
+            state_tactic_tensors.pop()
+            state_lengths.pop()
         else:
             stack.append((node, True))
             
@@ -95,7 +96,7 @@ def separate_trajectories(root: ProofTreeNode, theorem_name: str, theorem_id: st
                 "theorem_name": theorem_name,
                 "theorem_id": theorem_id,
                 "states": states.copy(),
-                "tactics": tactics[1:],  # exclude the root node which has no incoming tactic
+                "tactics": tactics.copy(),
                 "proof": TACTIC_DELIMITER.join(tactics[1:]),
                 "state_tactic_tensors": deepcopy(state_tactic_tensors),
                 "state_lengths": state_lengths.copy(),
