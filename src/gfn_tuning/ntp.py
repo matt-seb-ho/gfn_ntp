@@ -121,6 +121,8 @@ class NeuralTheoremProvingTask(LightningModule):
                 skip_special_tokens=True,
                 clean_up_tokenization_spaces=True,
             )
+            tactics_token_length = (tokens[:, prompt.shape[1]:] == self.end_of_sentence_token_id).count_nonzero(dim=-1)
+            state_action_length = prompt.shape[1] + tactics_token_length
             # create new child nodes by running the 
             for i, tactic in enumerate(generated_tactics):
                 next_state = lean_env.run_tac(node.state, tactic.rstrip())
@@ -130,6 +132,7 @@ class NeuralTheoremProvingTask(LightningModule):
                     depth=node.depth + 1,
                     prompt_length=prompt.shape[1],
                     step_log_pf=log_pf_tactic[i],
+                    token_tensor= tokens[i, :state_action_length[i]],
                     parent=node,
                     # trajectory_logpf=torch.cat(node.trajectory_logpf + [log_pf_tactic[i].item()]),
                     # - from template:
