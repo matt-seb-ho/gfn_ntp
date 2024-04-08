@@ -18,8 +18,9 @@ from lean_dojo import (
     Theorem,
     ProofFinished,
 )
-from proof_tree import ProofTreeNode
-from collections import deque
+from proof_tree import ProofTreeNode, separate_trajectories
+from replay_buffer import ReplayBuffer
+from reward import compute_log_reward
 
 
 class NeuralTheoremProvingTask(LightningModule):
@@ -28,7 +29,7 @@ class NeuralTheoremProvingTask(LightningModule):
         model,
         tokenizer,
         reward,
-        reward_buffer,
+        reward_buffer: ReplayBuffer,
         n_samples,
         lr,
         subtb_lambda,
@@ -66,84 +67,6 @@ class NeuralTheoremProvingTask(LightningModule):
         # TODO: add a method to format the prompt into the format seen in PT/FT
         self.format_prompt = lambda goal_str: goal_str
     
-    def expand_node(
-        self,
-        node: ProofTreeNode,
-        n_samples: Optional[int] = None,
-        pf_temperature: float = 1.0,
-        max_depth: int = 3,
-        lean_env: Optional[Dojo] = None,
-        replay: bool = False,
-    ) -> None:
-        # generates children for proof tree node
-        # - returns number of leaves generated
-        assert (lean_env is not None) or replay, "lean_env must be provided if not replaying tactics"
-        if node.state and not isinstance(node.state, TacticState):
-            return
-        n_samples = n_samples or self.hparams.n_samples
-        prompt_text = self.format_prompt(node.state.pp if node.state else node.state_str) 
-        prompt = self.tokenizer(prompt_text, return_tensors="pt")["input_ids"]
-        if prompt.ndim == 1:
-            prompt = prompt.unsqueeze(0)
-        prompt = prompt.expand(n_samples, -1)
-        reward_fn = partial(
-            self.reward.score,
-            prompt_length=prompt.shape[1],
-            model=self.model,
-            tokenizer=self.tokenizer,
-        )
-        # sample tactics (if not provided by action_seq) and compute terms needed for loss
-        tokens, log_pf = generate_step(
-            self.model,
-            prompt,
-            reward_fn=reward_fn,
-            termination_token_id=self.end_of_sentence_token_id,
-            vocab_naughty_mask=self.hparams.illegal_token_mask,
-            min_len=self.hparams.min_sentence_len,
-            max_len=self.hparams.max_sentence_len,
-            temperature=pf_temperature,
-            skip_rewards=False,
-            action_seq=node.next_tactic_token_ids if replay else None,
-        )
-        # log_pf outputted by generate_step is at token-level granularity
-        log_pf_tactic = log_pf.sum(dim=1)
-        
-        if replay:
-            for i, child in enumerate(node.children):
-                child.step_log_pf = log_pf_tactic[i].item()
-                child.trajectory_logpf = torch.cat(node.trajectory_logpf + [log_pf_tactic[i].item()])
-        else:
-            # save the generated tactics for replay
-            node.next_tactic_token_ids = tokens[:, prompt.shape[1]:]
-            # pass the generated tactics through the lean environment
-            generated_tactics = self.tokenizer.batch_decode(
-                tokens[:, prompt.shape[1]:],
-                skip_special_tokens=True,
-                clean_up_tokenization_spaces=True,
-            )
-            tactics_token_length = (tokens[:, prompt.shape[1]:] == self.end_of_sentence_token_id).count_nonzero(dim=-1)
-            state_action_length = prompt.shape[1] + tactics_token_length
-            # create new child nodes by running the 
-            for i, tactic in enumerate(generated_tactics):
-                next_state = lean_env.run_tac(node.state, tactic.rstrip())
-                child_node = ProofTreeNode(
-                    state=next_state,
-                    tactic=generated_tactics[i],
-                    depth=node.depth + 1,
-                    prompt_length=prompt.shape[1],
-                    step_log_pf=log_pf_tactic[i],
-                    token_tensor= tokens[i, :state_action_length[i]],
-                    parent=node,
-                    # trajectory_logpf=torch.cat(node.trajectory_logpf + [log_pf_tactic[i].item()]),
-                    # - from template:
-                    # log_pf=log_pf,
-                    # log_pterm=log_pterm,
-                    # log_r=log_r,
-                    # log_r_unpenalized=log_r_unpenalized,
-                )
-                if node.children is None:
-                    node.children = []
-                node.children.append(child_node)
 
     def forward(
         self, 
@@ -152,8 +75,10 @@ class NeuralTheoremProvingTask(LightningModule):
         pf_temperature: float =  1.0, 
         max_depth: int = 3, # depth starts at 0
         replay_tactics: Optional[ProofTreeNode] = None,
-    ):
+    ) -> tuple[ProofTreeNode, torch.Tensor, torch.Tensor]:
         trajectories_logpf = []
+        leaf_nodes = []
+        log_reward = []
         n_samples = [n_samples or self.hparams.n_samples] * max_depth
         with lean_context(theorem, replay_tactics) as (dojo, root):
             trajectory_logpf = []
@@ -185,34 +110,55 @@ class NeuralTheoremProvingTask(LightningModule):
                     else:
                         # terminal
                         trajectories_logpf.append(torch.cat(trajectory_logpf + [child.tactic_logpf]))
+                        leaf_nodes.append(child)
+                        log_reward.append(child.log_r)
         
         # log_pf is potentially jagged; may need padding
         # log_pf = torch.stack(log_pf, dim=0)
         trajectories_logpf = torch.nn.utils.rnn.pad_sequence(
             trajectories_logpf, batch_first=True, padding_value=0.0
         )
-        return trajectories_logpf, root
+        if replay_tactics:
+            log_reward = torch.tensor(log_reward)
+        else:
+            # compute and assign log_r to leaf nodes
+            trajectories = separate_trajectories(root, theorem.uid)
+            states = [t["states"] for t in trajectories]
+            tactics = [t["tactics"] for t in trajectories]
+            log_reward = self.reward(states, tactics)
+            for leaf_node, log_r in zip(leaf_nodes, log_reward):
+                leaf_node.log_r = log_r.item()
 
-    def training_step(self, prompt, batch_idx):
+        return trajectories_logpf, root, log_reward
+
+    def tb_loss(self, log_pf: torch.Tensor, log_r: torch.Tensor):
+        """
+        Computes the batch loss using the Trajectory Balance objective
+
+        Arguments
+            - log_pf: Tensor of shape (batch_size, max_depth)
+            - log_r: Tensor of shape (batch_size,)
+        """
+        loss = (log_pf.sum(dim=-1) + self.log_z - log_r) ** 2
+        batch_loss = loss.sum()
+        return batch_loss
+
+    def training_step(self, theorem: Theorem, batch_idx):
         # Should always be (1, prompt_len)
-        prompt = prompt[0]
-
-        # Sample a sentence and get the reward
+        theorem_id = theorem.uid
         if (
             random.random() < self.hparams.use_buffer_prob
-            and self.reward_buffer.sample(self.hparams.n_samples, prompt)[0] is not None
+            and (replay_tree := self.reward_buffer.sample(theorem_id, self.hparams.n_samples))
         ):
             # Using a sample from the reward buffer
-            action_seq, log_r = self.reward_buffer.sample(
-                self.hparams.n_samples, prompt
-            )
             generated_text, log_pf, log_pterm, _, log_r_unpenalized = self.forward(
-                prompt, action_seq=action_seq
+                theorem, replay_tactics=replay_tree 
             )
-            log_r = log_r[
-                :, : generated_text.shape[1] - len(prompt)
-            ]  # Undo padding from buffer
-            log_r *= 1 / self.reward.temperature  # redo the effect of reward tempering
+            # TODO: ensure reward tempering is handled elsewhere
+            # log_r = log_r[
+            #     :, : generated_text.shape[1] - len(prompt)
+            # ]  # Undo padding from buffer
+            # log_r *= 1 / self.reward.temperature  # redo the effect of reward tempering
         else:
             # Using the forward policy
             if random.random() < self.hparams.pf_temp_prob:  # With tempering
@@ -221,42 +167,38 @@ class NeuralTheoremProvingTask(LightningModule):
                     * (self.hparams.pf_temp_high - self.hparams.pf_temp_low)
                     + self.hparams.pf_temp_low
                 )
-            else:  # Without tempering
+            else:
+                # Without tempering
                 pf_temp = 1.0
-            generated_text, log_pf, log_pterm, log_r, log_r_unpenalized = self.forward(
-                prompt, pf_temperature=pf_temp
-            )
-            self.reward_buffer.add_batch(
-                prompt=prompt,
-                sentences=generated_text[:, len(prompt) :],
-                logrewards=log_r
-                * self.reward.temperature,  # undo the effect of reward tempering
-                tokenizer=self.tokenizer,
-            )
+            root, trajectories_logpf, log_r = self.forward(theorem, pf_temperature=pf_temp)
+            self.reward_buffer.add_batch(separate_trajectories(root, theorem_id))
 
         # Get the GFN loss
-        loss = modified_subtb_loss(
-            log_pf=log_pf,
-            log_r=log_r,
-            log_pterm=log_pterm,
-            generated_text=generated_text,
-            termination_token_id=self.end_of_sentence_token_id,
-            prompt_len=len(prompt),
-            subtb_lambda=self.hparams.subtb_lambda,
-        )
+        # SubTB requires estimating flow (could be implemented as a scalar head over the verifier)
+        # - for the proof of concept, we'll just use vanilla TB
+        loss = self.tb_loss(log_pf=log_pf, log_r=log_r)
+        # loss = modified_subtb_loss(
+        #     log_pf=log_pf,
+        #     log_r=log_r,
+        #     log_pterm=log_pterm,
+        #     generated_text=generated_text,
+        #     termination_token_id=self.end_of_sentence_token_id,
+        #     prompt_len=len(prompt),
+        #     subtb_lambda=self.hparams.subtb_lambda,
+        # )
 
         # Log metrics
-        _, last_log_r, last_log_r_unpenalized, sentence_len = get_termination_vals(
-            generated_text=generated_text,
-            log_pf=log_pf,
-            log_pterm=log_pterm,
-            log_r=log_r,
-            log_r_unpenalized=log_r_unpenalized,
-            termination_token_id=self.end_of_sentence_token_id,
-            prompt_len=len(prompt),
-        )
-        log_ps = last_log_r * self.reward.temperature
-        log_ps_unpenalized = last_log_r_unpenalized * self.reward.temperature
+        # _, last_log_r, last_log_r_unpenalized, sentence_len = get_termination_vals(
+        #     generated_text=generated_text,
+        #     log_pf=log_pf,
+        #     log_pterm=log_pterm,
+        #     log_r=log_r,
+        #     log_r_unpenalized=log_r_unpenalized,
+        #     termination_token_id=self.end_of_sentence_token_id,
+        #     prompt_len=len(prompt),
+        # )
+        # log_ps = last_log_r * self.reward.temperature
+        # log_ps_unpenalized = last_log_r_unpenalized * self.reward.temperature
         self.log(
             "train/loss",
             loss,
@@ -267,46 +209,47 @@ class NeuralTheoremProvingTask(LightningModule):
         )
         self.log(
             "train/logR",
-            last_log_r.mean(),
+            # last_log_r.mean(),
+            log_r.mean(),
             on_step=False,
             on_epoch=True,
             sync_dist=True,
         )
-        self.log(
-            "train/logP(s) (avg)",
-            log_ps.mean(),
-            on_step=False,
-            on_epoch=True,
-            sync_dist=True,
-        )
-        self.log(
-            "train/logP(s) (max)",
-            log_ps.max(),
-            on_step=False,
-            on_epoch=True,
-            sync_dist=True,
-        )
-        self.log(
-            "train/logP(s) unpenalized (avg)",
-            log_ps_unpenalized.mean(),
-            on_step=False,
-            on_epoch=True,
-            sync_dist=True,
-        )
-        self.log(
-            "train/logP(s) unpenalized (max)",
-            log_ps_unpenalized.max(),
-            on_step=False,
-            on_epoch=True,
-            sync_dist=True,
-        )
-        self.log(
-            "train/sentence_len",
-            sentence_len.float().mean(),
-            on_step=False,
-            on_epoch=True,
-            sync_dist=True,
-        )
+        # self.log(
+        #     "train/logP(s) (avg)",
+        #     log_ps.mean(),
+        #     on_step=False,
+        #     on_epoch=True,
+        #     sync_dist=True,
+        # )
+        # self.log(
+        #     "train/logP(s) (max)",
+        #     log_ps.max(),
+        #     on_step=False,
+        #     on_epoch=True,
+        #     sync_dist=True,
+        # )
+        # self.log(
+        #     "train/logP(s) unpenalized (avg)",
+        #     log_ps_unpenalized.mean(),
+        #     on_step=False,
+        #     on_epoch=True,
+        #     sync_dist=True,
+        # )
+        # self.log(
+        #     "train/logP(s) unpenalized (max)",
+        #     log_ps_unpenalized.max(),
+        #     on_step=False,
+        #     on_epoch=True,
+        #     sync_dist=True,
+        # )
+        # self.log(
+        #     "train/sentence_len",
+        #     sentence_len.float().mean(),
+        #     on_step=False,
+        #     on_epoch=True,
+        #     sync_dist=True,
+        # )
 
         return loss
 
@@ -716,13 +659,84 @@ class NeuralTheoremProvingTask(LightningModule):
         else:
             return torch.optim.AdamW(self.model.parameters(), lr=self.hparams.lr)
     
-    def determine_branching_factor(self, n_samples, depth):
-        if isinstance(n_samples, int):
-            return n_samples
-        elif isinstance(n_samples, list):
-            return n_samples[depth]
+    def expand_node(
+        self,
+        node: ProofTreeNode,
+        n_samples: Optional[int] = None,
+        pf_temperature: float = 1.0,
+        max_depth: int = 3,
+        lean_env: Optional[Dojo] = None,
+        replay: bool = False,
+    ) -> None:
+        # generates children for proof tree node
+        # - returns number of leaves generated
+        assert (lean_env is not None) or replay, "lean_env must be provided if not replaying tactics"
+        if node.state and not isinstance(node.state, TacticState):
+            return
+        n_samples = n_samples or self.hparams.n_samples
+        prompt_text = self.format_prompt(node.state.pp if node.state else node.state_str) 
+        prompt = self.tokenizer(prompt_text, return_tensors="pt")["input_ids"]
+        if prompt.ndim == 1:
+            prompt = prompt.unsqueeze(0)
+        prompt = prompt.expand(n_samples, -1)
+        reward_fn = partial(
+            self.reward.score,
+            prompt_length=prompt.shape[1],
+            model=self.model,
+            tokenizer=self.tokenizer,
+        )
+        # sample tactics (if not provided by action_seq) and compute terms needed for loss
+        tokens, log_pf = generate_step(
+            self.model,
+            prompt,
+            reward_fn=reward_fn,
+            termination_token_id=self.end_of_sentence_token_id,
+            vocab_naughty_mask=self.hparams.illegal_token_mask,
+            min_len=self.hparams.min_sentence_len,
+            max_len=self.hparams.max_sentence_len,
+            temperature=pf_temperature,
+            skip_rewards=False,
+            action_seq=node.next_tactic_token_ids if replay else None,
+        )
+        # log_pf outputted by generate_step is at token-level granularity
+        log_pf_tactic = log_pf.sum(dim=1)
+        
+        if replay:
+            for i, child in enumerate(node.children):
+                child.step_log_pf = log_pf_tactic[i].item()
+                child.trajectory_logpf = torch.cat(node.trajectory_logpf + [log_pf_tactic[i].item()])
         else:
-            return self.hparams.n_samples
+            # save the generated tactics for replay
+            node.next_tactic_token_ids = tokens[:, prompt.shape[1]:]
+            # pass the generated tactics through the lean environment
+            generated_tactics = self.tokenizer.batch_decode(
+                tokens[:, prompt.shape[1]:],
+                skip_special_tokens=True,
+                clean_up_tokenization_spaces=True,
+            )
+            tactics_token_length = (tokens[:, prompt.shape[1]:] == self.end_of_sentence_token_id).count_nonzero(dim=-1)
+            state_action_length = prompt.shape[1] + tactics_token_length
+            # create new child nodes by running the 
+            for i, tactic in enumerate(generated_tactics):
+                next_state = lean_env.run_tac(node.state, tactic.rstrip())
+                child_node = ProofTreeNode(
+                    state=next_state,
+                    tactic=generated_tactics[i],
+                    depth=node.depth + 1,
+                    prompt_length=prompt.shape[1],
+                    step_log_pf=log_pf_tactic[i],
+                    token_tensor= tokens[i, :state_action_length[i]],
+                    parent=node,
+                    # trajectory_logpf=torch.cat(node.trajectory_logpf + [log_pf_tactic[i].item()]),
+                    # - from template:
+                    # log_pf=log_pf,
+                    # log_pterm=log_pterm,
+                    # log_r=log_r,
+                    # log_r_unpenalized=log_r_unpenalized,
+                )
+                if node.children is None:
+                    node.children = []
+                node.children.append(child_node)
 
 
 # helper routine

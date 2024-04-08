@@ -12,7 +12,7 @@ from lean_dojo import (
     TimeoutError,
     ProofGivenUp,
 )
-from constants import TACTIC_DELIMITER
+from constants import PROOF_COMPLETE_MESSAGE, TACTIC_DELIMITER
 
 @dataclass
 class ProofTreeNode:
@@ -60,7 +60,7 @@ class ProofTreeNode:
         return self.trajectory_logpf
 
 
-def separate_trajectories(root: ProofTreeNode, theorem_name: str, theorem_id: str) -> list:
+def separate_trajectories(root: ProofTreeNode, theorem_id: str) -> list:
     """Separate the tree into a list of trajectories for the replay buffer"""
     assert root.tactic == "", "Only the root node can be separated into trajectories"
     trajectories = []
@@ -93,7 +93,6 @@ def separate_trajectories(root: ProofTreeNode, theorem_name: str, theorem_id: st
                 stack.append((child, False))
         else:
             trajectories.append({
-                "theorem_name": theorem_name,
                 "theorem_id": theorem_id,
                 "states": states.copy(),
                 "tactics": tactics.copy(),
@@ -109,7 +108,7 @@ def convert_tactic_result_to_state_string(res: TacticResult) -> str:
     if isinstance(res, TacticState):
         return res.pp
     elif isinstance(res, ProofFinished):
-        return "No goals"
+        return PROOF_COMPLETE_MESSAGE
     else:
         # remaining TacticResult classes: LeanError, TimeoutError, ProofGivenUp
         # LeanError and ProofGivenUp have a `error` attribute

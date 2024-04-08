@@ -88,7 +88,7 @@ class ReplayBuffer:
         for item in items:
             self.add(item)
 
-    def sample(self, batch_size, theorem_id) -> tuple[torch.Tensor, torch.Tensor]:
+    def sample(self, theorem_id: str, batch_size: int) -> tuple[torch.Tensor, torch.Tensor]:
         """
         uniformly sample a batch of items from the buffer,
         and return a stacked tensor
@@ -96,7 +96,7 @@ class ReplayBuffer:
         returns (state_tactic_tensor, state_lengths, log_r)
         """
         if theorem_id not in self._buffer:
-            return None, None, None
+            return None
         theorem_buffer = self._buffer[theorem_id]["proofs"]
         idxs = np.random.choice(
             len(theorem_buffer),

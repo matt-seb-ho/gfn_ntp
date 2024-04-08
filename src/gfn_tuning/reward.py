@@ -1,3 +1,4 @@
+from typing import Optional
 import torch
 import heapq
 import pickle
@@ -5,20 +6,67 @@ import gzip
 import editdistance
 import spacy
 import numpy as np
-from transformers import AutoTokenizer, AutoModelForSequenceClassification
+from transformers import AutoTokenizer, AutoModelForSequenceClassification, AutoModel
 from sentence_transformers import SentenceTransformer
 from sentence_transformers.util import cos_sim
-
+from constants import PROOF_COMPLETE_MESSAGE
+from verifier.verifier import batch_completion_probabilities, batch_iterator
+from collections import defaultdict
 
 def lora_to_base(model):
     model.base_model.disable_adapter_layers()
     model.eval()
 
-
 def base_to_lora(model):
     model.base_model.enable_adapter_layers()
     model.train()
 
+def compute_log_reward(
+    states: list[list[str]],
+    tactics: list[list[str]],
+    model: AutoModel,
+    tokenizer: AutoTokenizer,
+    batch_size: int = 8,
+) -> torch.Tensor:
+    """
+    Computes reward for a batch of trajectores (states, tactics) using heuristics and model.
+    
+    Arguments
+        states: 2D list of shape (batch_size, trajectory_length) containing states
+        tactics: 2D list of shape (batch_size, trajectory_length - 1) containing tactics
+        model: verifier for scoring the generated text
+        tokenizer: AutoTokenizer for encoding the input
+    """
+    assert len(states) == len(tactics)
+    # r = max(is_correct - 1, model_score)
+    # - heuristic score
+    is_correct = torch.tensor([[1 if state[-1] == PROOF_COMPLETE_MESSAGE else 0 for state in states]])
+    
+    # - model based score
+    prompt_completion_pairs = []
+    batch_idx_to_pair_idx = defaultdict(list)
+    for i in len(states):
+        for state, tactic in zip(states[i], tactics[i]):
+            batch_idx_to_pair_idx[i].append(len(prompt_completion_pairs))
+            prompt_completion_pairs.append((state, tactic))
+    results = []
+    for batch in batch_iterator(prompt_completion_pairs, batch_size):
+        results.extend(batch_completion_probabilities(model, tokenizer, batch))
+    model_scores = torch.tensor([
+        sum(results[j]["log_prob_sum"] for j in batch_idx_to_pair_idx[i])
+        for i in range(len(states))
+    ])
+
+    return torch.log(torch.max(torch.stack(is_correct - 1, model_scores, dim=-1), dim=-1))
+        
+        
+def format_prompt(initial_state: str, tactic: Optional[str], resulting_state: Optional[str]) -> str:
+    # TODO: finalize this to match the verifier's training
+    if tactic is not None:
+        if resulting_state is None:
+            return f"{initial_state}\n###\n{tactic}\n###\n{resulting_state}"
+        return f"{initial_state}\n###\n{tactic}"
+    return f"{initial_state}\n###\n"
 
 @torch.no_grad()
 def score_fast(
@@ -225,117 +273,6 @@ class ModelSentenceValidator(SentenceValidator):
         return invalid
 
 
-def generate_and_return_termination_logprob(
-    model,
-    encoded_prompt,
-    termination_token_id,
-    reward_fn,
-    vocab_nice_mask=None,
-    vocab_naughty_mask=None,
-    vocab_alpha=-99,
-    max_len=10,
-    min_len=0,
-    temperature=1.0,
-    top_k=999999,
-    top_p=1.0,
-    action_seq=None,
-    skip_rewards=False,
-):
-    # generate and return the probability of terminating at every step
-    active_seqs = torch.ones(encoded_prompt.size(0)).bool().to(encoded_prompt.device)
-    state = encoded_prompt.clone()
-    log_pf = []
-    log_pterm = []
-    token_ids = state  # For caching hidden states during generation
-    past_key_values = None  # For caching hidden states during generation
-    for i in range(max_len + 1):
-        output = model(input_ids=token_ids, past_key_values=past_key_values)
-        past_key_values = output.past_key_values
-        logits = output.logits[:, -1, :]
-        if action_seq is None:
-            with torch.no_grad():
-                prob = logits.softmax(dim=-1)
-                modified_logits = logits.clone().detach()
-                # implement top-k by getting the top-k largest values and setting the rest to 0
-                if top_k < 999999:
-                    modified_logits[prob >= prob.topk(top_k)] = -torch.inf
-                # implement top-p by getting indices in the top-p prob mass and setting the rest to 0
-                if top_p < 1.0:
-                    sorted_probs, _ = torch.sort(prob, dim=-1, descending=True)
-                    cumsum_prob = torch.cumsum(sorted_probs, dim=-1)
-                    nucleus = cumsum_prob < top_p
-                    nucleus = torch.cat(
-                        [
-                            nucleus.new_ones(nucleus.shape[:-1] + (1,)),
-                            nucleus[..., :-1],
-                        ],
-                        dim=-1,
-                    )
-                    modified_logits[~nucleus] = -torch.inf
-                if i < min_len:
-                    # if we haven't reach the minimum length, set the probability of terminating to 0
-                    modified_logits[:, termination_token_id] = -torch.inf
-                elif i >= max_len:
-                    # if we've reached the maximum length, set the probability of terminating to 1
-                    mask = [True] * modified_logits.shape[1]
-                    mask[termination_token_id] = False
-                    modified_logits[:, mask] = -torch.inf
-                if vocab_nice_mask is not None:
-                    # add vocab_alpha to the logits of the unmasked vocab items
-                    modified_logits[:, ~vocab_nice_mask] += vocab_alpha
-                if vocab_naughty_mask is not None:
-                    # add vocab_alpha to the logits of the masked vocab items
-                    modified_logits[:, vocab_naughty_mask] += vocab_alpha
-                prob = (modified_logits / temperature).softmax(dim=-1)
-                token_ids = torch.multinomial(prob, num_samples=1)
-        else:
-            if i >= action_seq.size(-1):
-                token_ids = (
-                    torch.ones_like(action_seq[:, 0]) * termination_token_id
-                ).unsqueeze(-1)
-            else:
-                token_ids = action_seq[:, i].unsqueeze(-1)
-        token_ids = torch.where(
-            active_seqs.unsqueeze(-1),
-            token_ids,
-            termination_token_id,
-        )
-        if vocab_nice_mask is not None:
-            logits[:, ~vocab_nice_mask] += vocab_alpha
-        if vocab_naughty_mask is not None:
-            logits[:, vocab_naughty_mask] += vocab_alpha
-        logprob = logits.log_softmax(dim=-1)
-        log_pterm.append(
-            torch.where(
-                active_seqs,
-                logprob[:, termination_token_id],
-                0,
-            )
-        )
-        active_seqs = active_seqs * (token_ids != termination_token_id).squeeze(-1)
-        log_pf.append(
-            torch.where(
-                active_seqs,
-                logprob.gather(-1, token_ids).squeeze(-1),
-                0,
-            )
-        )
-        state = torch.cat([state, token_ids], dim=-1)
-        # check if all sequences have terminated
-        if torch.all(~active_seqs):
-            break
-    log_pf = torch.stack(log_pf, dim=1)
-    log_pterm = torch.stack(log_pterm, dim=1)
-    if skip_rewards:
-        log_r, log_r_unpenalized = None, None
-    else:
-        # Reward for all intermediate states (except the last one,
-        # which is guaranteed to be the termination token)
-        log_r, log_r_unpenalized = reward_fn(state[:, :-1])
-    # add a termination token to the end of the sequence
-    return state, log_pf, log_pterm, log_r, log_r_unpenalized
-
-
 def modified_subtb_loss(
     log_pf,
     log_r,
@@ -433,145 +370,3 @@ class SequenceDiversity:
         else:
             raise ValueError(f"Unknown sequence diversity method: {self.method}")
         return diversity
-
-
-class ReplayBuffer:
-    """
-    A relay buffer that uses a heap to keep the max_size items with the highest reward
-    """
-
-    def __init__(self, buffer_size, termination_token_id, sim_tolerance=0.25):
-        self.buffer_size = buffer_size
-        self.termination_token_id = termination_token_id
-        self.sim_tolerance = sim_tolerance
-        self.reset()
-
-    def reset(self):
-        self._buffer = {}
-
-    def add(self, item):
-        """
-        add an item to the buffer, where item = [log reward, tensor of shape (seq_len, )]
-        """
-        # if item is already in the buffer, skip it
-        str_prompt = item["str_prompt"]
-        if item["str_sentence"] in self._buffer[str_prompt]["exists"]:
-            return
-        # if the edit distance between item and any item in the buffer is small, skip it
-        tokenized_sentence = [
-            x
-            for x in item["tensor_sentence"].tolist()
-            if x != self.termination_token_id
-        ]
-        for buffer_item in self._buffer[str_prompt]["sentences"]:
-            tokenized_existing_sentence = [
-                x for x in buffer_item[2].tolist() if x != self.termination_token_id
-            ]
-            if (
-                editdistance.eval(tokenized_sentence, tokenized_existing_sentence)
-                < (len(tokenized_sentence) + len(tokenized_existing_sentence))
-                * self.sim_tolerance
-            ):
-                if buffer_item[0] >= item["logreward"]:
-                    return
-                else:
-                    self._buffer[str_prompt]["exists"].remove(buffer_item[1])
-                    self._buffer[str_prompt]["sentences"].remove(buffer_item)
-                    heapq.heapify(self._buffer[str_prompt]["sentences"])
-                    self._buffer[str_prompt]["exists"].add(item["str_sentence"])
-                    heapq.heappush(
-                        self._buffer[str_prompt]["sentences"],
-                        (
-                            item["logreward"],
-                            item["str_sentence"],
-                            item["tensor_sentence"],
-                            item["full_logrewards"],
-                        ),
-                    )
-                    return
-        self._buffer[str_prompt]["exists"].add(item["str_sentence"])
-        if len(self._buffer[str_prompt]["sentences"]) >= self.buffer_size:
-            popped = heapq.heappushpop(
-                self._buffer[str_prompt]["sentences"],
-                (
-                    item["logreward"],
-                    item["str_sentence"],
-                    item["tensor_sentence"],
-                    item["full_logrewards"],
-                ),
-            )
-            self._buffer[str_prompt]["exists"].remove(popped[1])
-        else:
-            heapq.heappush(
-                self._buffer[str_prompt]["sentences"],
-                (
-                    item["logreward"],
-                    item["str_sentence"],
-                    item["tensor_sentence"],
-                    item["full_logrewards"],
-                ),
-            )
-
-    def add_batch(self, prompt, sentences, logrewards, tokenizer):
-        """
-        add a batch of items to the buffer
-        """
-        str_prompt = " ".join([str(x) for x in prompt.tolist()])
-        if str_prompt not in self._buffer:
-            self._buffer[str_prompt] = {
-                "tensor_prompt": prompt,
-                "sentences": [],
-                "exists": set(),
-            }
-        sentences[
-            (sentences == self.termination_token_id).cumsum(dim=-1) >= 1
-        ] = self.termination_token_id
-        token_sentences = tokenizer.batch_decode(sentences)
-        for i in range(sentences.size(0)):
-            str_sentence = token_sentences[i].replace(".", "").strip()
-            self.add(
-                {
-                    "logreward": logrewards[
-                        i, (sentences[i] != self.termination_token_id).sum()
-                    ].item(),
-                    "str_prompt": str_prompt,
-                    "str_sentence": str_sentence,
-                    "tensor_sentence": sentences[i],
-                    "full_logrewards": logrewards[i, :],
-                }
-            )
-
-    def sample(self, batch_size, prompt):
-        """
-        uniformly sample a batch of items from the buffer,
-        and return a stacked tensor
-        """
-        str_prompt = " ".join([str(x) for x in prompt.tolist()])
-        if str_prompt not in self._buffer:
-            return None, None
-        prompt_buffer = self._buffer[str_prompt]["sentences"]
-        idx = np.random.choice(
-            len(prompt_buffer),
-            batch_size,
-            replace=True,
-        )
-        return torch.nn.utils.rnn.pad_sequence(
-            [prompt_buffer[i][2] for i in idx],
-            batch_first=True,
-            padding_value=self.termination_token_id,
-        ), torch.nn.utils.rnn.pad_sequence(
-            [prompt_buffer[i][3] for i in idx],
-            batch_first=True,
-            padding_value=0,
-        )
-
-    def print(self):
-        for key in self._buffer:
-            print(key)
-            for item in self._buffer[key]["sentences"]:
-                print(item[1])
-            print("")
-
-    def save(self, path):
-        with gzip.open(path, "wb") as f:
-            pickle.dump(self._buffer, f)
