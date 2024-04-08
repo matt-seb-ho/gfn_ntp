@@ -1,9 +1,18 @@
 # proof tree data structures
 import torch
+from copy import deepcopy
 from typing import Optional
 from dataclasses import dataclass
-from lean_dojo import TacticResult
 from collections import deque
+from lean_dojo import (
+    TacticResult,
+    TacticState,
+    ProofFinished,
+    LeanError,
+    TimeoutError,
+    ProofGivenUp,
+)
+from constants import TACTIC_DELIMITER
 
 @dataclass
 class ProofTreeNode:
@@ -21,11 +30,14 @@ class ProofTreeNode:
     # - None for leaf nodes
     parent: Optional["ProofTreeNode"] = None
     children: Optional[list["ProofTreeNode"]] = None
+    
+    # tensor (ndim=1) of previous state and action (for replay buffer)
+    token_tensor: Optional[torch.Tensor] = None
     # tensor (ndim=2) of sampled tactic token ids
-    # - useful for recomputing log_pf on replayed trajectories
     next_tactic_token_ids: Optional[torch.Tensor] = None
     
     # terms for computing loss
+    log_r: Optional[float] = None
     prompt_length: int = -1
     tactic_logpf: Optional[float] = None
     trajectory_logpf: Optional[torch.Tensor] = None
@@ -45,3 +57,59 @@ class ProofTreeNode:
             node = node.parent
         self.trajectory_logpf = torch.cat(q)
         return self.trajectory_logpf
+
+
+def separate_trajectories(root: ProofTreeNode, theorem_name: str, theorem_id: str) -> list:
+    """Separate the tree into a list of trajectories for the replay buffer"""
+    assert root.tactic == "", "Only the root node can be separated into trajectories"
+    trajectories = []
+    stack = [(root, False)]
+    states: list[str] = []
+    tactics: list[str] = []
+    state_tactic_tensors: list[torch.Tensor] = []
+    state_lengths: list[int] = []
+
+    # dfs traversal
+    while stack:
+        node, visited = stack.popleft()
+        if visited:
+            # backtracking
+            if node.tactic != "":
+                states.pop()
+                tactics.pop()
+                state_tactic_tensors.pop()
+        else:
+            stack.append((node, True))
+            
+        # track the current trajectory
+        states.append(convert_tactic_result_to_state_string(node.state))
+        tactics.append(node.tactic.strip())
+        state_tactic_tensors.append(node.token_tensor)
+        state_lengths.append(node.prompt_length)
+
+        if node.children:
+            for child in reversed(node.children):
+                stack.append((child, False))
+        else:
+            trajectories.append({
+                "theorem_name": theorem_name,
+                "theorem_id": theorem_id,
+                "states": states.copy(),
+                "tactics": tactics[1:],  # exclude the root node which has no incoming tactic
+                "proof": TACTIC_DELIMITER.join(tactics[1:]),
+                "state_tactic_tensors": deepcopy(state_tactic_tensors),
+                "state_lengths": state_lengths.copy(),
+                "log_r": node.log_r,
+            })
+    
+    return trajectories
+
+def convert_tactic_result_to_state_string(res: TacticResult) -> str:
+    if isinstance(res, TacticState):
+        return res.pp
+    elif isinstance(res, ProofFinished):
+        return "No goals"
+    else:
+        # remaining TacticResult classes: LeanError, TimeoutError, ProofGivenUp
+        # LeanError and ProofGivenUp have a `error` attribute
+        return getattr(res, "error", "Timeout")
