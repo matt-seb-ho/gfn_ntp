@@ -1,9 +1,14 @@
+from collections import deque
+from typing import Optional
 import editdistance
 import gzip
 import heapq
 import numpy as np
 import pickle
 import torch
+
+from constants import TACTIC_DELIMITER
+from proof_tree import ProofTreeNode
 
 
 class ReplayBuffer:
@@ -93,23 +98,12 @@ class ReplayBuffer:
         if theorem_id not in self._buffer:
             return None, None, None
         theorem_buffer = self._buffer[theorem_id]["proofs"]
-        idx = np.random.choice(
+        idxs = np.random.choice(
             len(theorem_buffer),
             batch_size,
             replace=True,
         )
-        state_tactic_tensor = torch.nn.utils.rnn.pad_sequence(
-            [theorem_buffer[i][2] for i in idx],
-            batch_first=True,
-            padding_value=self.termination_token_id,
-        )
-        state_length_tensor = torch.nn.utils.rnn.pad_sequence(
-            [theorem_buffer[i][3] for i in idx],
-            batch_first=True,
-            padding_value=0
-        )
-        log_r_list = [theorem_buffer[i][0] for i in idx]
-        return state_tactic_tensor, state_length_tensor, log_r_list
+        return self._build_replay_tree([theorem_buffer[idx] for idx in idxs])
 
     def print(self):
         for key in self._buffer:
@@ -135,3 +129,39 @@ class ReplayBuffer:
                 if token_id != self.termination_token_id
             ])
         return token_list
+    
+    def _build_replay_tree(self, buffer_selection: list) -> ProofTreeNode:
+        # build ProofTreeNode from buffer_selection
+        # level order traversal
+        root = ProofTreeNode(state_str=buffer_selection[0][4][0])
+        queue = deque([root, list(range(len(buffer_selection)))])
+        tactics = [buffer_item[1].split(TACTIC_DELIMITER) for buffer_item in buffer_selection]
+        depth = 1
+        while queue:
+            level_size = len(queue)
+            for _ in range(level_size):
+                node, selected_idxs = queue.popleft()
+                seen_tactics = {}
+                for idx in selected_idxs:
+                    (log_r, _, stt, sl, s) = buffer_selection[idx]
+                    tactic = tactics[idx][depth]
+                    if tactic in seen_tactics:
+                        seen_tactics[tactic][1].append(idx)
+                    else:
+                        child = ProofTreeNode(
+                            state_str=s[depth],
+                            tactic=tactic,
+                            depth=depth,
+                            parent=node,
+                            token_tensor=stt[depth],
+                            log_r=log_r,
+                            prompt_length=sl[depth],
+                        )
+                        seen_tactics[tactic] = (child, [idx])
+                for tactic, (child, selected_idxs) in seen_tactics.items():
+                    if node.children is None:
+                        node.children = []
+                    node.children.append(child)
+                    queue.append((child, selected_idxs))
+            depth += 1
+        return root
