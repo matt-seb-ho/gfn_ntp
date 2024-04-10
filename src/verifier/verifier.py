@@ -12,6 +12,7 @@ from transformers import (
 from peft import AutoPeftModelForCausalLM
 from tqdm import tqdm
 from utils import add_pad_token, prepend_repo_root
+from typing import Optional
 
 
 # Sequence probability
@@ -72,6 +73,29 @@ def batch_completion_probabilities(
             "token_count": end_idx - start_idx + 1,
         })
     return batch
+
+def batch_sequence_probabilities(
+    model: AutoModelForCausalLM,
+    tokenizer: AutoTokenizer,
+    sequences: list[str],
+    termination_token_id: Optional[int] = None,
+):
+    batch_enc = tokenizer(sequences, padding=True, return_tensors="pt")
+    input_ids = batch_enc.input_ids
+    outputs = model(input_ids)
+    probs = torch.log_softmax(outputs.logits, dim=-1).detach()
+
+    # collect the probability of the generated token -- probability at index 0 corresponds to the token at index 1
+    probs = probs[:, :-1, :]
+    input_ids = input_ids[:, 1:]
+    gen_probs = torch.gather(probs, 2, input_ids[:, :, None]).squeeze(-1)
+    
+    # need to figure out where to stop summing probabilities
+    # - this happens at the termination token
+    termination_token_id = termination_token_id or tokenizer.eos_token_id
+    gen_lengths = (input_ids == termination_token_id).byte().argmax(dim=-1).unsqueeze(-1)
+    seq_probs = torch.gather(gen_probs.cumsum(dim=-1), -1, gen_lengths).squeeze(-1)
+    return seq_probs
 
 def batch_iterator(iterable, batch_size):
     """

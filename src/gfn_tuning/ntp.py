@@ -18,7 +18,7 @@ from lean_dojo import (
     Theorem,
     ProofFinished,
 )
-from proof_tree import ProofTreeNode, separate_trajectories
+from proof_tree import ProofTreeNode, extract_trajectories
 from replay_buffer import ReplayBuffer
 from reward import compute_log_reward
 
@@ -75,7 +75,16 @@ class NeuralTheoremProvingTask(LightningModule):
         pf_temperature: float =  1.0, 
         max_depth: int = 3, # depth starts at 0
         replay_tactics: Optional[ProofTreeNode] = None,
+        generate_func: Optional[callable] = None,
     ) -> tuple[ProofTreeNode, torch.Tensor, torch.Tensor]:
+        """
+        Samples a proof tree for a given theorem
+        Returns
+            - root: the root of the proof tree (ProofTreeNode)
+            - trajectories_logpf: (n_samples, max_depth) tensor of log probabilities of each tactic
+            - log_r: (n_samples,) tensor of log rewards
+
+        """
         trajectories_logpf = []
         leaf_nodes = []
         log_reward = []
@@ -103,6 +112,7 @@ class NeuralTheoremProvingTask(LightningModule):
                     max_depth=max_depth,
                     lean_env=dojo,
                     replay=(replay_tactics is not None),
+                    generate_func=generate_func,
                 )
                 for child in reversed(node.children):
                     if node.depth + 1 < max_depth and isinstance(child.state, TacticState):
@@ -122,14 +132,14 @@ class NeuralTheoremProvingTask(LightningModule):
             log_reward = torch.tensor(log_reward)
         else:
             # compute and assign log_r to leaf nodes
-            trajectories = separate_trajectories(root, theorem.uid)
+            trajectories = extract_trajectories(root, theorem.uid)
             states = [t["states"] for t in trajectories]
             tactics = [t["tactics"] for t in trajectories]
             log_reward = self.reward(states, tactics)
             for leaf_node, log_r in zip(leaf_nodes, log_reward):
                 leaf_node.log_r = log_r.item()
 
-        return trajectories_logpf, root, log_reward
+        return root, trajectories_logpf, log_reward
 
     def tb_loss(self, log_pf: torch.Tensor, log_r: torch.Tensor):
         """
@@ -151,14 +161,8 @@ class NeuralTheoremProvingTask(LightningModule):
             and (replay_tree := self.reward_buffer.sample(theorem_id, self.hparams.n_samples))
         ):
             # Using a sample from the reward buffer
-            generated_text, log_pf, log_pterm, _, log_r_unpenalized = self.forward(
-                theorem, replay_tactics=replay_tree 
-            )
-            # TODO: ensure reward tempering is handled elsewhere
-            # log_r = log_r[
-            #     :, : generated_text.shape[1] - len(prompt)
-            # ]  # Undo padding from buffer
-            # log_r *= 1 / self.reward.temperature  # redo the effect of reward tempering
+            root, trajectories_logpf, log_r = self.forward(theorem, replay_tactics=replay_tree)
+            log_r *= 1 / self.reward.temperature  # redo the effect of reward tempering
         else:
             # Using the forward policy
             if random.random() < self.hparams.pf_temp_prob:  # With tempering
@@ -171,12 +175,12 @@ class NeuralTheoremProvingTask(LightningModule):
                 # Without tempering
                 pf_temp = 1.0
             root, trajectories_logpf, log_r = self.forward(theorem, pf_temperature=pf_temp)
-            self.reward_buffer.add_batch(separate_trajectories(root, theorem_id))
+            self.reward_buffer.add_batch(extract_trajectories(root, theorem_id))
 
         # Get the GFN loss
         # SubTB requires estimating flow (could be implemented as a scalar head over the verifier)
         # - for the proof of concept, we'll just use vanilla TB
-        loss = self.tb_loss(log_pf=log_pf, log_r=log_r)
+        loss = self.tb_loss(log_pf=trajectories_logpf, log_r=log_r)
         # loss = modified_subtb_loss(
         #     log_pf=log_pf,
         #     log_r=log_r,
@@ -253,38 +257,14 @@ class NeuralTheoremProvingTask(LightningModule):
 
         return loss
 
-    def validation_step(self, prompt, batch_idx):
-        # Should always be (1, prompt_len)
-        prompt = prompt[0]
+    def validation_step(self, theorem: Theorem, batch_idx: int):
+        # sample a proof and get the reward
+        _, log_pf, log_r = self.forward(theorem)
 
-        # Sample a sentence and get the reward
-        generated_text, log_pf, log_pterm, log_r, log_r_unpenalized = self.forward(
-            prompt
-        )
-
-        # Get the GFN loss
-        loss = modified_subtb_loss(
-            log_pf=log_pf,
-            log_r=log_r,
-            log_pterm=log_pterm,
-            generated_text=generated_text,
-            termination_token_id=self.end_of_sentence_token_id,
-            prompt_len=len(prompt),
-            subtb_lambda=self.hparams.subtb_lambda,
-        )
+        # get the GFN loss
+        loss = self.tb_loss(log_pf=log_pf, log_r=log_r)
 
         # Log metrics
-        _, last_log_r, last_log_r_unpenalized, sentence_len = get_termination_vals(
-            generated_text=generated_text,
-            log_pf=log_pf,
-            log_pterm=log_pterm,
-            log_r=log_r,
-            log_r_unpenalized=log_r_unpenalized,
-            termination_token_id=self.end_of_sentence_token_id,
-            prompt_len=len(prompt),
-        )
-        log_ps = last_log_r * self.reward.temperature
-        log_ps_unpenalized = last_log_r_unpenalized * self.reward.temperature
         self.log(
             "val/loss",
             loss,
@@ -293,45 +273,20 @@ class NeuralTheoremProvingTask(LightningModule):
         )
         self.log(
             "val/logR",
-            last_log_r.mean(),
+            log_r.mean(),
             sync_dist=True,
         )
-        self.log(
-            "val/logP(s) (avg)",
-            log_ps.mean(),
-            sync_dist=True,
-        )
-        self.log(
-            "val/logP(s) (max)",
-            log_ps.max(),
-            sync_dist=True,
-        )
-        self.log(
-            "val/logP(s) unpenalized (avg)",
-            log_ps_unpenalized.mean(),
-            sync_dist=True,
-        )
-        self.log(
-            "val/logP(s) unpenalized (max)",
-            log_ps_unpenalized.max(),
-            sync_dist=True,
-        )
-        self.log(
-            "val/sentence_len",
-            sentence_len.float().mean(),
-            sync_dist=True,
-        )
-        if self.diversity_metric.method is not None:
-            generated_sentences = self.tokenizer.batch_decode(
-                generated_text[:, len(prompt) :]
-            )
-            generated_sentences = [
-                text.replace(".", "") for text in generated_sentences
-            ]
-            diversity = self.diversity_metric(generated_sentences)
-            self.log(f"val/{self.diversity_metric_name}", diversity, sync_dist=True)
+        # if self.diversity_metric.method is not None:
+        #     generated_sentences = self.tokenizer.batch_decode(
+        #         generated_text[:, len(prompt) :]
+        #     )
+        #     generated_sentences = [
+        #         text.replace(".", "") for text in generated_sentences
+        
+        #     diversity = self.diversity_metric(generated_sentences)
+        #     self.log(f"val/{self.diversity_metric_name}", diversity, sync_dist=True)
 
-    def on_train_batch_start(self, prompt, batch_idx):
+    def on_train_batch_start(self, theorem, batch_idx):
         # Update scheduled quantities
         reward_temp = self.get_reward_temp_at_step(self.global_step)
         lr = self.get_lr_at_step(self.global_step)
@@ -354,29 +309,37 @@ class NeuralTheoremProvingTask(LightningModule):
             self.logger.log_table("samples/train_probes", dataframe=samples_table)
 
     def on_validation_epoch_start(self):
-        # Log variance of (logR - logP(s)) using exploration, which should be 0.0
-        log_rs, log_pfss = [], []
-        val_data = self.trainer.datamodule.val_dataloader().dataset
-        for prompt in val_data:
-            prompt = prompt[0]
-            generated_text, log_pf, log_pterm, log_r, log_r_unpenalized = self.forward(
-                prompt.to(self.device), pf_temperature=2.0
-            )
-            log_pfs, log_r, _, _ = get_termination_vals(
-                generated_text=generated_text,
-                log_pf=log_pf,
-                log_pterm=log_pterm,
-                log_r=log_r,
-                log_r_unpenalized=log_r_unpenalized,
-                termination_token_id=self.end_of_sentence_token_id,
-                prompt_len=len(prompt),
-            )
-            log_rs.append(log_r)
-            log_pfss.append(log_pfs)
-        log_rs, log_pfss = torch.cat(log_rs), torch.cat(log_pfss)
-        self.log("val/Var(logR - logPf(s))", (log_rs - log_pfss).var(), sync_dist=True)
+        """
+        They perform inference over the validation set (again), albeit with temp=2.0
+        Seems this is done to get variance of (logR - logPf(s))
+        - I am not certain of how important this is to keep for our task
+          I assume since we have a different reward function, this may not be needed.
 
-        # Log probe samples
+        Additionally, every 5 epochs, they log the samples from the validation probes
+        """
+        # Log variance of (logR - logP(s)) using exploration, which should be 0.0
+        # log_rs, log_pfss = [], []
+        # val_data = self.trainer.datamodule.val_dataloader().dataset
+        # for prompt in val_data:
+        #     prompt = prompt[0]
+        #     generated_text, log_pf, log_pterm, log_r, log_r_unpenalized = self.forward(
+        #         prompt.to(self.device), pf_temperature=2.0
+        #     )
+        #     log_pfs, log_r, _, _ = get_termination_vals(
+        #         generated_text=generated_text,
+        #         log_pf=log_pf,
+        #         log_pterm=log_pterm,
+        #         log_r=log_r,
+        #         log_r_unpenalized=log_r_unpenalized,
+        #         termination_token_id=self.end_of_sentence_token_id,
+        #         prompt_len=len(prompt),
+        #     )
+        #     log_rs.append(log_r)
+        #     log_pfss.append(log_pfs)
+        # log_rs, log_pfss = torch.cat(log_rs), torch.cat(log_pfss)
+        # self.log("val/Var(logR - logPf(s))", (log_rs - log_pfss).var(), sync_dist=True)
+
+        # log probe samples
         if (
             self.hparams.val_probes is not None
             and self.logger is not None
@@ -386,63 +349,40 @@ class NeuralTheoremProvingTask(LightningModule):
             self.logger.log_table("samples/val_probes", dataframe=samples_table)
 
     def on_train_start(self):
-        # Log baseline metrics
+        # log baseline metrics
+        if self.logger is None:
+            return
+
         val_data = self.trainer.datamodule.val_dataloader().dataset
         baseline_performance = None
-        for prompt in val_data:
-            prompt = prompt[0]
-            samples = self.sample_baselines(
-                prompt.to(self.device), n_samples=self.hparams.n_samples
-            )
+        for theorem in val_data:
+            samples = self.sample_baselines(theorem, n_samples=self.hparams.n_samples)
             if baseline_performance is None:
+                table_index = [
+                    "logP(s) (avg)",
+                    "logP(s) (max)",
+                    "logR (avg)",
+                ]
                 baseline_performance = pd.DataFrame(
-                    data=np.zeros((6, len(samples))),
+                    data=np.zeros((len(table_index), len(samples))),
                     columns=samples.keys(),
-                    index=[
-                        "logP(s) (avg)",
-                        "logP(s) (max)",
-                        "logP(s) unpenalized (avg)",
-                        "logP(s) unpenalized (max)",
-                        self.diversity_metric_name,
-                        "sentence length",
-                    ],
+                    index=table_index,
                 )
             for baseline in samples:
-                baseline_performance.loc["logP(s) (avg)", baseline] += samples[
-                    baseline
-                ]["logP(s)"].mean().item() / len(val_data)
-                baseline_performance.loc["logP(s) (max)", baseline] += samples[
-                    baseline
-                ]["logP(s)"].max().item() / len(val_data)
-                baseline_performance.loc[
-                    "logP(s) unpenalized (avg)", baseline
-                ] += samples[baseline]["logP(s) unpenalized"].mean().item() / len(
-                    val_data
+                baseline_performance.loc["logP(s) (avg)", baseline] += (
+                    samples[baseline]["logP(s)"].mean().item() / len(val_data)
                 )
-                baseline_performance.loc[
-                    "logP(s) unpenalized (max)", baseline
-                ] += samples[baseline]["logP(s) unpenalized"].max().item() / len(
-                    val_data
+                baseline_performance.loc["logP(s) (max)", baseline] += (
+                    samples[baseline]["logP(s)"].max().item() / len(val_data)
                 )
-                if samples[baseline][self.diversity_metric_name] is None:
-                    baseline_performance.loc[
-                        self.diversity_metric_name, baseline
-                    ] = None
-                else:
-                    baseline_performance.loc[
-                        self.diversity_metric_name, baseline
-                    ] += samples[baseline][self.diversity_metric_name] / len(val_data)
-                baseline_performance.loc["sentence length", baseline] += samples[
-                    baseline
-                ]["sentence length"].float().mean().item() / len(val_data)
+                baseline_performance.loc["logR (avg)", baseline] += (
+                    samples[baseline]["logR"].mean().item() / len(val_data)
+                )
         baseline_performance = baseline_performance.reset_index(names="metric")
-        if self.logger is not None:
-            self.logger.log_table(
-                "val/baseline performance", dataframe=baseline_performance
-            )
+        self.logger.log_table("val/baseline performance", dataframe=baseline_performance)
 
-        # Log baseline probes
-        if self.hparams.val_probes is not None and self.logger is not None:
+        # log baseline probes
+        if self.hparams.val_probes is not None:
             samples_table = self.sample_probes_baselines(self.hparams.val_probes)
             self.logger.log_table(
                 "samples/val_probes (baselines)", dataframe=samples_table
@@ -452,203 +392,131 @@ class NeuralTheoremProvingTask(LightningModule):
         assert isinstance(probes, list) and probes[0].ndim == 1
         samples = []
         for probe in probes:
-            probe_str = self.tokenizer.decode(probe)
             with torch.no_grad():
-                generated_text, _, _, log_r, log_r_unpenalized = self.forward(
-                    probe.to(self.device), n_samples=n_samples
-                )
-            log_ps, log_ps_unpenalized = get_termination_vals(
-                generated_text=generated_text,
-                log_pf=None,
-                log_pterm=None,
-                log_r=log_r,
-                log_r_unpenalized=log_r_unpenalized,
-                termination_token_id=self.end_of_sentence_token_id,
-                prompt_len=len(probe),
-            )[1:3]
-            log_ps *= self.reward.temperature
-            log_ps_unpenalized *= self.reward.temperature
-            generated_text = generated_text[:, len(probe) :]
-            generated_text = self.tokenizer.batch_decode(generated_text)
-            generated_text = [text.replace(".", "") for text in generated_text]
-            for i in range(len(generated_text)):
+                root, log_pf, log_r = self.forward(probe, n_samples=n_samples)
+            trajectories = extract_trajectories(root, probe.uid)
+            log_pfs = log_pf.sum(dim=-1)
+            for i, trajectory in enumerate(trajectories):
                 samples.append(
                     {
-                        "Prompt": probe_str,
-                        "Sampled sentence": generated_text[i],
-                        "logP(s)": log_ps[i].item(),
-                        "logP(s) unpenalized": log_ps_unpenalized[i].item(),
+                        "theorem": probe.full_name,
+                        "theorem id": probe.uid,
+                        "sampled proof": trajectory["proof"],
+                        "final_state": trajectory["states"][-1],
+                        "logP(s)": log_pfs[i].item(),
+                        "logR": log_r[i].item(),
+                        # "logP(s) unpenalized": log_ps_unpenalized[i].item(),
                     }
                 )
         samples = pd.DataFrame(samples)
-        samples = samples.sort_values(by=["Prompt", "logP(s)"], ascending=False)
+        samples = samples.sort_values(by=["theorem", "logR"], ascending=False)
         return samples
 
     def sample_probes_baselines(self, probes, n_samples=4):
-        assert isinstance(probes, list) and probes[0].ndim == 1
+        assert isinstance(probes, list) and isinstance(probes[0], Theorem)
         samples = []
         for probe in probes:
-            probe_str = self.tokenizer.decode(probe)
-            probe_samples = self.sample_baselines(
-                probe.to(self.device), n_samples=n_samples
-            )
-            for i in range(n_samples):
-                sample = {"Prompt": probe_str}
-                for baseline in probe_samples:
-                    sample[f"Sampled sentence ({baseline})"] = probe_samples[baseline][
-                        "sample"
-                    ][i]
-                    sample[f"logP(s) ({baseline})"] = probe_samples[baseline][
-                        "logP(s)"
-                    ][i].item()
-                    sample[f"logP(s) unpenalized ({baseline})"] = probe_samples[
-                        baseline
-                    ]["logP(s) unpenalized"][i].item()
-                samples.append(sample)
+            probe_samples = self.sample_baselines(probe, n_samples=n_samples)
+            for baseline in probe_samples:
+                for sample in probe_samples[baseline]:
+                    sample["baseline"] = baseline
+                    samples.append(sample)
 
         samples = pd.DataFrame(samples)
-        samples = samples.sort_values(by=["Prompt"], ascending=False)
-
+        samples = samples.sort_values(by=["theorem"], ascending=False)
         return samples
 
-    def sample_baselines(self, prompt, n_samples=4):
+    def sample_baselines(self, theorem, n_samples=4):
         # https://huggingface.co/docs/transformers/v4.31.0/en/main_classes/text_generation#transformers.GenerationMixin.generate
         # https://huggingface.co/docs/transformers/v4.31.0/en/main_classes/text_generation#transformers.GenerationConfig
         assert prompt.ndim == 1
         prompt = prompt.unsqueeze(0)
 
-        def generate(prompt, **kwargs):
+        def generate_func(prompt, **kwargs):
             with torch.no_grad():
                 lora_to_base(self.model)
-                generated_text = self.model.generate(
+                suppressed_tokens = torch.from_numpy(self.hparams.illegal_token_mask).nonzero().squeeze(-1)
+                outputs = self.model.generate(
                     prompt,
                     min_new_tokens=self.hparams.min_sentence_len,
                     max_new_tokens=self.hparams.max_sentence_len + 1,
                     eos_token_id=self.end_of_sentence_token_id,
                     pad_token_id=self.tokenizer.eos_token_id,
                     forced_eos_token_id=self.end_of_sentence_token_id,
-                    suppress_tokens=torch.from_numpy(self.hparams.illegal_token_mask)
-                    .nonzero()
-                    .squeeze(-1),
+                    suppress_tokens=suppressed_tokens,
                     **kwargs,
                 )
                 base_to_lora(self.model)
-
-                log_r, log_r_unpenalized = self.reward.score(
-                    generated_text,
-                    prompt_length=prompt.shape[1],
-                    model=self.model,
-                    tokenizer=self.tokenizer,
+                tokens = outputs.sequences
+                tokens = torch.where(
+                    tokens == self.tokenizer.eos_token_id,
+                    self.end_of_step_token_id,
+                    tokens,
                 )
-                (
-                    _,
-                    last_log_r,
-                    last_log_r_unpenalized,
-                    sentence_len,
-                ) = get_termination_vals(
-                    generated_text=generated_text,
-                    log_pf=None,
-                    log_pterm=None,
-                    log_r=log_r,
-                    log_r_unpenalized=log_r_unpenalized,
-                    termination_token_id=self.end_of_sentence_token_id,
-                    prompt_len=prompt.shape[1],
-                )
-                log_ps = last_log_r * self.reward.temperature
-                log_ps_unpenalized = last_log_r_unpenalized * self.reward.temperature
+                probs = torch.log_softmax(outputs.logits, dim=-1).detach()
+                probs = probs[:, :-1, :]
+                input_ids = outputs.input_ids[:, 1:]
+                gen_probs = torch.gather(probs, 2, input_ids[:, :, None]).squeeze(-1)
+                end_mask = (input_ids == self.end_of_step_token_id).byte()
+                gen_lengths = end_mask.argmax(dim=-1).unsqueeze(-1)
+                log_pf = torch.gather(gen_probs.cumsum(dim=-1), -1, gen_lengths).squeeze(-1)
 
-            generated_text = generated_text[:, prompt.shape[1] :]
-            generated_text = torch.where(
-                generated_text == self.tokenizer.eos_token_id,
-                self.end_of_sentence_token_id,
-                generated_text,
-            )
-            generated_text = self.tokenizer.batch_decode(generated_text)
-            generated_text = [text.replace(".", "") for text in generated_text]
+                return outputs, log_pf
 
-            if len(generated_text) > 1:
-                diversity = self.diversity_metric(generated_text)
-            else:
-                diversity = None
-
-            if len(generated_text) == 1:
-                generated_text = generated_text * n_samples
-                log_ps = log_ps.expand(n_samples, -1)
-                log_ps_unpenalized = log_ps_unpenalized.expand(n_samples, -1)
-
-            return {
-                "sample": generated_text,
-                "logP(s)": log_ps,
-                "logP(s) unpenalized": log_ps_unpenalized,
-                "sentence length": sentence_len,
-                self.diversity_metric_name: diversity,
-            }
+        sample_kwargs = {
+            "beam": {"do_sample": False, "num_beams": n_samples * 5, "length_penalty": 0.0},
+            "beam [fair]": {"do_sample": False, "num_beams": n_samples, "length_penalty": 0.0},
+            "diverse beam": {
+                "num_beams": n_samples * 5, 
+                "num_beam_groups": n_samples, 
+                "num_return_sequences": n_samples, 
+                "diversity_penalty": 1.0, 
+                "length_penalty": 0.0
+            },
+            "diverse beam [fair]": {
+                "num_beams": n_samples, 
+                "num_beam_groups": n_samples, 
+                "num_return_sequences": n_samples, 
+                "diversity_penalty": 1.0, 
+                "length_penalty": 0.0
+            },
+            "nucleus": {
+                "do_sample": True, 
+                "num_return_sequences": n_samples, 
+                "top_k": 0, 
+                "top_p": 0.95
+            },
+            "LM": {"do_sample": True, "num_return_sequences": n_samples, "top_k": 0},
+            "LM tempered": {
+                "do_sample": True, 
+                "num_return_sequences": n_samples, 
+                "top_k": 0, 
+                "temperature": self.hparams.reward_temp_end
+            },
+            "greedy": {"do_sample": False},
+        }
 
         samples = {}
-
-        # Beam search
-        samples["beam"] = generate(
-            prompt=prompt,
-            do_sample=False,
-            num_beams=n_samples * 5,
-            length_penalty=0.0,
-        )
-        samples["beam [fair]"] = generate(
-            prompt=prompt,
-            do_sample=False,
-            num_beams=n_samples,
-            length_penalty=0.0,
-        )
-
-        # Diverse beam search
-        samples["diverse beam"] = generate(
-            prompt=prompt,
-            num_beams=n_samples * 5,
-            num_beam_groups=n_samples,
-            num_return_sequences=n_samples,
-            diversity_penalty=1.0,
-            length_penalty=0.0,
-        )
-        samples["diverse beam [fair]"] = generate(
-            prompt=prompt,
-            num_beams=n_samples,
-            num_beam_groups=n_samples,
-            num_return_sequences=n_samples,
-            diversity_penalty=1.0,
-            length_penalty=0.0,
-        )
-
-        # Nucleaus sampling
-        samples["nucleus"] = generate(
-            prompt=prompt,
-            do_sample=True,
-            num_return_sequences=n_samples,
-            top_k=0,
-            top_p=0.95,
-        )
-
-        # LM
-        samples["LM"] = generate(
-            prompt=prompt,
-            do_sample=True,
-            num_return_sequences=n_samples,
-            top_k=0,
-        )
-
-        # LM with temperature
-        samples["LM tempered"] = generate(
-            prompt=prompt,
-            do_sample=True,
-            num_return_sequences=n_samples,
-            top_k=0,
-            temperature=self.hparams.reward_temp_end,
-        )
-
-        # Greedy
-        samples["greedy"] = generate(
-            prompt=prompt,
-            do_sample=False,
-        )
+        for sample_method, kwargs in sample_kwargs.items():
+            generation_func = partial(generate_func, **kwargs)
+            root, trajectories_logpf, log_r = self.forward(
+                theorem, 
+                n_samples=n_samples,
+                generate_func=generation_func,
+            )
+            trajectories = extract_trajectories(root, theorem.uid)
+            log_pfs = trajectories_logpf.sum(dim=-1)
+            samples[sample_method] = [
+                {
+                    "theorem": theorem.full_name,
+                    "theorem id": theorem.uid,
+                    "sampled proof": trajectory["proof"],
+                    "final_state": trajectory["states"][-1],
+                    "logP(s)": log_pfs[i].item(),
+                    "logR": log_r[i].item(),
+                }
+                for i, trajectory in enumerate(trajectories)
+            ]
 
         return samples
 
@@ -667,11 +535,15 @@ class NeuralTheoremProvingTask(LightningModule):
         max_depth: int = 3,
         lean_env: Optional[Dojo] = None,
         replay: bool = False,
+        generate_func: Optional[callable] = None,
     ) -> None:
-        # generates children for proof tree node
-        # - returns number of leaves generated
+        """
+        Expands a node in the proof tree by generating tactics.
+        If replay is True, the method recomputes the log_pf of the node's children instead.
+
+        """
         assert (lean_env is not None) or replay, "lean_env must be provided if not replaying tactics"
-        if node.state and not isinstance(node.state, TacticState):
+        if (node.state and not isinstance(node.state, TacticState)) or node.depth >= max_depth:
             return
         n_samples = n_samples or self.hparams.n_samples
         prompt_text = self.format_prompt(node.state.pp if node.state else node.state_str) 
@@ -686,18 +558,21 @@ class NeuralTheoremProvingTask(LightningModule):
             tokenizer=self.tokenizer,
         )
         # sample tactics (if not provided by action_seq) and compute terms needed for loss
-        tokens, log_pf = generate_step(
-            self.model,
-            prompt,
-            reward_fn=reward_fn,
-            termination_token_id=self.end_of_sentence_token_id,
-            vocab_naughty_mask=self.hparams.illegal_token_mask,
-            min_len=self.hparams.min_sentence_len,
-            max_len=self.hparams.max_sentence_len,
-            temperature=pf_temperature,
-            skip_rewards=False,
-            action_seq=node.next_tactic_token_ids if replay else None,
-        )
+        if generate_func:
+            outputs = generate_func(prompt)
+        else:
+            tokens, log_pf = generate_step(
+                self.model,
+                prompt,
+                reward_fn=reward_fn,
+                termination_token_id=self.end_of_sentence_token_id,
+                vocab_naughty_mask=self.hparams.illegal_token_mask,
+                min_len=self.hparams.min_sentence_len,
+                max_len=self.hparams.max_sentence_len,
+                temperature=pf_temperature,
+                skip_rewards=False,
+                action_seq=node.next_tactic_token_ids if replay else None,
+            )
         # log_pf outputted by generate_step is at token-level granularity
         log_pf_tactic = log_pf.sum(dim=1)
         
@@ -849,7 +724,7 @@ def generate_step(
     # after this stack operation, it is a tensor of shape (batch_size, max_completion_len)
     log_pf = torch.stack(log_pf, dim=1)
     # log_pterm = torch.stack(log_pterm, dim=1)
-    log_pterm = torch.zeros_like(log_pf)
+    # log_pterm = torch.zeros_like(log_pf)
     if skip_rewards:
         log_r, log_r_unpenalized = None, None
     else:

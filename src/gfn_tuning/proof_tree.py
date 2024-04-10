@@ -60,7 +60,7 @@ class ProofTreeNode:
         return self.trajectory_logpf
 
 
-def separate_trajectories(root: ProofTreeNode, theorem_id: str) -> list:
+def extract_trajectories(root: ProofTreeNode, theorem_id: str) -> list:
     """Separate the tree into a list of trajectories for the replay buffer"""
     assert root.tactic == "", "Only the root node can be separated into trajectories"
     trajectories = []
