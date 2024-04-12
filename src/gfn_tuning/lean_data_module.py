@@ -30,10 +30,9 @@ class NTPDataModule(LightningDataModule):
             "test",
             num_theorems=self.hparams.limit_theorems,
         )
-        print(f"{len(theorems)} loaded from file")
         num_train = int(len(theorems) * self.hparams.train_size)
-        self.train_data = TheoremDataPipe(theorems[:num_train], self.tokenizer)
-        self.val_data = TheoremDataPipe(theorems[num_train:], self.tokenizer)
+        self.train_data = TheoremDataPipe(theorems[:num_train])
+        self.val_data = TheoremDataPipe(theorems[num_train:])
 
     def train_dataloader(self):
         return DataLoader(self.train_data, shuffle=True, batch_size=None, num_workers=0)
@@ -43,10 +42,9 @@ class NTPDataModule(LightningDataModule):
 
 
 class TheoremDataPipe(MapDataPipe):
-    # def __init__(self, theorems, tokenizer) -> None:
+    # def __init__(self, theorems) -> None:
     def __init__(self, theorems) -> None:
         super().__init__()
-        # self.tokenizer = tokenizer
         self.theorems = theorems 
 
     def __len__(self):
@@ -75,7 +73,6 @@ def _get_theorems(
         num_theorems,
     )
     all_repos = {thm.repo for thm in theorems}
-    print(all_repos)
     for r in all_repos:
         assert is_available_in_cache(r), UNTRACED_MSG.format(r=r)
     return repo, theorems, positions
@@ -114,7 +111,6 @@ def _get_theorems_from_files(
     if num_theorems is not None:
         theorems = theorems[:num_theorems]
         positions = positions[:num_theorems]
-    print(f"{len(theorems)} theorems loaded from {data_path}")
 
     metadata = json.load(open(os.path.join(data_path, "../metadata.json")))
     repo = LeanGitRepo(metadata["from_repo"]["url"], metadata["from_repo"]["commit"])

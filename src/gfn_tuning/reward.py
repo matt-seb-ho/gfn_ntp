@@ -13,7 +13,7 @@ from sentence_transformers.util import cos_sim
 from transformers import (AutoModel, AutoModelForSequenceClassification,
                           AutoTokenizer)
 
-from constants import PROOF_COMPLETE_MESSAGE
+from src.gfn_tuning.constants import PROOF_COMPLETE_MESSAGE
 from verifier.verifier import batch_completion_probabilities, batch_iterator
 
 

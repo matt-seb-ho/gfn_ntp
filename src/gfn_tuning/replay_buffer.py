@@ -9,7 +9,7 @@ import numpy as np
 import torch
 from proof_tree import ProofTreeNode
 
-from constants import TACTIC_DELIMITER
+from src.gfn_tuning.constants import TACTIC_DELIMITER
 
 
 class ReplayBuffer:
