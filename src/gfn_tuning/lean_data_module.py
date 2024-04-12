@@ -1,12 +1,13 @@
-import os
 import hashlib
 import json
+import os
+import warnings
+from typing import Optional
+
+from lean_dojo import LeanGitRepo, Pos, Theorem, is_available_in_cache
+from pytorch_lightning import LightningDataModule
 from torch.utils.data import DataLoader
 from torchdata.datapipes.map import MapDataPipe
-from pytorch_lightning import LightningDataModule
-from typing import Optional
-from lean_dojo import LeanGitRepo, Theorem, Pos, is_available_in_cache
-import warnings
 
 warnings.filterwarnings("ignore", ".*does not have many workers.*")
 
@@ -26,9 +27,10 @@ class NTPDataModule(LightningDataModule):
     def setup(self, stage):
         _, theorems, _ = _get_theorems(
             self.hparams.data_path,
-            "train",
+            "test",
             num_theorems=self.hparams.limit_theorems,
         )
+        print(f"{len(theorems)} loaded from file")
         num_train = int(len(theorems) * self.hparams.train_size)
         self.train_data = TheoremDataPipe(theorems[:num_train], self.tokenizer)
         self.val_data = TheoremDataPipe(theorems[num_train:], self.tokenizer)
@@ -41,9 +43,10 @@ class NTPDataModule(LightningDataModule):
 
 
 class TheoremDataPipe(MapDataPipe):
-    def __init__(self, theorems, tokenizer) -> None:
+    # def __init__(self, theorems, tokenizer) -> None:
+    def __init__(self, theorems) -> None:
         super().__init__()
-        self.tokenizer = tokenizer
+        # self.tokenizer = tokenizer
         self.theorems = theorems 
 
     def __len__(self):
@@ -58,10 +61,10 @@ UNTRACED_MSG = "{r} has not been traced yet. Please use LeanDojo to trace it so 
 def _get_theorems(
     data_path: str,
     split: str,
-    file_path: str,
-    full_name: str,
-    name_filter: str,
-    num_theorems: int,
+    file_path: Optional[str] = None,
+    full_name: Optional[str] = None,
+    name_filter: Optional[str] = None,
+    num_theorems: Optional[int] = None,
 ) -> tuple[LeanGitRepo, list[Theorem], list[Pos]]:
     repo, theorems, positions = _get_theorems_from_files(
         data_path,
@@ -72,6 +75,7 @@ def _get_theorems(
         num_theorems,
     )
     all_repos = {thm.repo for thm in theorems}
+    print(all_repos)
     for r in all_repos:
         assert is_available_in_cache(r), UNTRACED_MSG.format(r=r)
     return repo, theorems, positions
@@ -79,10 +83,10 @@ def _get_theorems(
 def _get_theorems_from_files(
     data_path: str,
     split: str,
-    file_path: Optional[str],
-    full_name: Optional[str],
-    name_filter: Optional[str],
-    num_theorems: Optional[int],
+    file_path: Optional[str] = None,
+    full_name: Optional[str] = None,
+    name_filter: Optional[str] = None,
+    num_theorems: Optional[int] = None,
 ) -> tuple[LeanGitRepo, list[Theorem], list[Pos]]:
     data = json.load(open(os.path.join(data_path, f"{split}.json")))
     theorems = []

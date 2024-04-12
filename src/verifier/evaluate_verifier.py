@@ -1,16 +1,14 @@
 import argparse
 import json
 import random
-import torch
-from datasets import Dataset, load_dataset 
 from itertools import islice
-from transformers import (
-    AutoTokenizer,
-    AutoModelForCausalLM,
-    # BitsAndBytesConfig,
-)
+
+import torch
+from datasets import Dataset, load_dataset
 from peft import AutoPeftModelForCausalLM
 from tqdm import tqdm
+from transformers import (AutoModelForCausalLM,  # BitsAndBytesConfig,
+                          AutoTokenizer)
 from utils import add_pad_token, prepend_repo_root
 
 DPO_EVAL_DATA_PATH = prepend_repo_root("data/paired_random_val.json")

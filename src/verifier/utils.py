@@ -1,11 +1,9 @@
 import json
 import os
+
 from dotenv import load_dotenv
-from constants import (
-    DOTENV_PATH,
-    HF_ACCESS_TOKEN_VAR_NAME,
-    REPO_ROOT,
-)
+
+from constants import DOTENV_PATH, HF_ACCESS_TOKEN_VAR_NAME, REPO_ROOT
 
 
 def prepend_repo_root(p: str) -> str:

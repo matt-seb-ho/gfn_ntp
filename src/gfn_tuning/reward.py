@@ -1,17 +1,21 @@
-from typing import Optional
-import torch
+import gzip
 import heapq
 import pickle
-import gzip
+from collections import defaultdict
+from typing import Optional
+
 import editdistance
-import spacy
 import numpy as np
-from transformers import AutoTokenizer, AutoModelForSequenceClassification, AutoModel
+import spacy
+import torch
 from sentence_transformers import SentenceTransformer
 from sentence_transformers.util import cos_sim
+from transformers import (AutoModel, AutoModelForSequenceClassification,
+                          AutoTokenizer)
+
 from constants import PROOF_COMPLETE_MESSAGE
 from verifier.verifier import batch_completion_probabilities, batch_iterator
-from collections import defaultdict
+
 
 def lora_to_base(model):
     model.base_model.disable_adapter_layers()

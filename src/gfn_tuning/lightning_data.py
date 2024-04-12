@@ -1,7 +1,8 @@
+import warnings
+
+from pytorch_lightning import LightningDataModule
 from torch.utils.data import DataLoader
 from torchdata.datapipes.map import MapDataPipe
-from pytorch_lightning import LightningDataModule
-import warnings
 
 warnings.filterwarnings("ignore", ".*does not have many workers.*")
 

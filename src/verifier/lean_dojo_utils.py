@@ -1,23 +1,22 @@
+import json
 import os
+import random
 import re
 import sys
-import json
-import random
-import torch
 import tempfile
-import networkx as nx
-from loguru import logger
-from lean_dojo import Pos
-import pytorch_lightning as pl
 from dataclasses import dataclass, field
-from pytorch_lightning.utilities.deepspeed import (
-    convert_zero_checkpoint_to_fp32_state_dict,
-)
-from transformers import get_cosine_schedule_with_warmup
-from deepspeed.ops.adam import FusedAdam, DeepSpeedCPUAdam
-from typing import Optional, List, Dict, Any, Tuple, Generator
-from pytorch_lightning.strategies.deepspeed import DeepSpeedStrategy
+from typing import Any, Dict, Generator, List, Optional, Tuple
 
+import networkx as nx
+import pytorch_lightning as pl
+import torch
+from deepspeed.ops.adam import DeepSpeedCPUAdam, FusedAdam
+from lean_dojo import Pos
+from loguru import logger
+from pytorch_lightning.strategies.deepspeed import DeepSpeedStrategy
+from pytorch_lightning.utilities.deepspeed import \
+    convert_zero_checkpoint_to_fp32_state_dict
+from transformers import get_cosine_schedule_with_warmup
 
 Example = Dict[str, Any]
 Batch = Dict[str, Any]

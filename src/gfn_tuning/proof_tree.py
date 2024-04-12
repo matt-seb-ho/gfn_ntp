@@ -1,18 +1,15 @@
 # proof tree data structures
-import torch
-from copy import deepcopy
-from typing import Optional
-from dataclasses import dataclass
 from collections import deque
-from lean_dojo import (
-    TacticResult,
-    TacticState,
-    ProofFinished,
-    LeanError,
-    TimeoutError,
-    ProofGivenUp,
-)
+from copy import deepcopy
+from dataclasses import dataclass
+from typing import Optional
+
+import torch
+from lean_dojo import (LeanError, ProofFinished, ProofGivenUp, TacticResult,
+                       TacticState, TimeoutError)
+
 from constants import PROOF_COMPLETE_MESSAGE, TACTIC_DELIMITER
+
 
 @dataclass
 class ProofTreeNode:

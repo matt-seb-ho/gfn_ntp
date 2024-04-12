@@ -1,22 +1,16 @@
 from types import MethodType
+
 import hydra
-import torch
 import pytorch_lightning as pl
-from omegaconf import DictConfig, OmegaConf
-from transformers import (
-    AutoTokenizer,
-    AutoModelForCausalLM,
-    BitsAndBytesConfig,
-)
-from peft import get_peft_model, prepare_model_for_kbit_training
-from utils import (
-    FrozenModelSentenceGivenPrompt,
-    RuleSentenceValidator,
-    ModelSentenceValidator,
-    ReplayBuffer,
-)
-from lightning_module import NextSentenceGFNTask
+import torch
 from lightning_data import PromptDataModule
+from lightning_module import NextSentenceGFNTask
+from omegaconf import DictConfig, OmegaConf
+from peft import get_peft_model, prepare_model_for_kbit_training
+from transformers import (AutoModelForCausalLM, AutoTokenizer,
+                          BitsAndBytesConfig)
+from utils import (FrozenModelSentenceGivenPrompt, ModelSentenceValidator,
+                   ReplayBuffer, RuleSentenceValidator)
 
 
 @hydra.main(version_base=None, config_path="./configs/", config_name="train")
