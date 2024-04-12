@@ -1,18 +1,14 @@
 import json
 from time import perf_counter
 from typing import Optional
-from datasets import Dataset, load_dataset
-from tqdm import tqdm
-from loguru import logger
-from icecream import ic
 
-from utils import prepend_repo_root, _pp
+from datasets import Dataset, load_dataset
+from icecream import ic
+from lean_dojo_utils import format_state, format_tactic, remove_marks
+from loguru import logger
 from prompts import INSTRUCTION_PROMPT_TEMPLATE
-from lean_dojo_utils import (
-    format_state,
-    format_tactic,
-    remove_marks,
-)
+from tqdm import tqdm
+from utils import _pp, prepend_repo_root
 
 # from lean_dojo_dataset import GeneratorDataset
 

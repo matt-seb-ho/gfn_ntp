@@ -1,26 +1,18 @@
 import random
+from contextlib import contextmanager
 from functools import partial
 from typing import Optional
-import pandas as pd
+
 import numpy as np
+import pandas as pd
 import torch
-from contextlib import contextmanager
-from pytorch_lightning import LightningModule
-from utils import (
-    modified_subtb_loss,
-    get_termination_vals,
-)
-from utils import lora_to_base, base_to_lora
-from lean_dojo import (
-    Dojo,
-    TacticResult,
-    TacticState, 
-    Theorem,
-    ProofFinished,
-)
+from lean_dojo import Dojo, ProofFinished, TacticResult, TacticState, Theorem
 from proof_tree import ProofTreeNode, extract_trajectories
+from pytorch_lightning import LightningModule
 from replay_buffer import ReplayBuffer
 from reward import compute_log_reward
+from utils import (base_to_lora, get_termination_vals, lora_to_base,
+                   modified_subtb_loss)
 
 
 class NeuralTheoremProvingTask(LightningModule):

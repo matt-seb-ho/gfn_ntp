@@ -1,16 +1,13 @@
 import random
 from functools import partial
-import pandas as pd
+
 import numpy as np
+import pandas as pd
 import torch
 from pytorch_lightning import LightningModule
-from utils import (
-    generate_and_return_termination_logprob,
-    modified_subtb_loss,
-    get_termination_vals,
-    SequenceDiversity,
-)
-from utils import lora_to_base, base_to_lora
+from utils import (SequenceDiversity, base_to_lora,
+                   generate_and_return_termination_logprob,
+                   get_termination_vals, lora_to_base, modified_subtb_loss)
 
 
 class NextSentenceGFNTask(LightningModule):

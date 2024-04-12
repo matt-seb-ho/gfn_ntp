@@ -1,14 +1,15 @@
-from collections import deque
-from typing import Optional
-import editdistance
 import gzip
 import heapq
-import numpy as np
 import pickle
+from collections import deque
+from typing import Optional
+
+import editdistance
+import numpy as np
 import torch
+from proof_tree import ProofTreeNode
 
 from constants import TACTIC_DELIMITER
-from proof_tree import ProofTreeNode
 
 
 class ReplayBuffer:

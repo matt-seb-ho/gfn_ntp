@@ -1,13 +1,14 @@
-import torch
+import gzip
 import heapq
 import pickle
-import gzip
+
 import editdistance
-import spacy
 import numpy as np
-from transformers import AutoTokenizer, AutoModelForSequenceClassification
+import spacy
+import torch
 from sentence_transformers import SentenceTransformer
 from sentence_transformers.util import cos_sim
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 
 def lora_to_base(model):

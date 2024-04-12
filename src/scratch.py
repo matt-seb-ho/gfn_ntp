@@ -1,6 +1,7 @@
 from huggingface_hub import login
 from utils import get_hf_access_token
 
+
 def main():
     HF_ACCESS_TOKEN = get_hf_access_token()
     # login(token=HF_ACCESS_TOKEN, add_to_git_credential=True)

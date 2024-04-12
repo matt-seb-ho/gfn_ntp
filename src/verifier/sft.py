@@ -3,19 +3,11 @@ from datasets import load_dataset
 from huggingface_hub import login
 from icecream import ic
 from peft import LoraConfig
-from transformers import (
-    AutoTokenizer, 
-    AutoModelForCausalLM, 
-    BitsAndBytesConfig,
-    TrainingArguments
-)
+from transformers import (AutoModelForCausalLM, AutoTokenizer,
+                          BitsAndBytesConfig, TrainingArguments)
 from trl import DataCollatorForCompletionOnlyLM, SFTTrainer
 # from prep_sft_data import load_sft_data, sft_subset
-from utils import (
-    add_pad_token,
-    get_hf_access_token, 
-    prepend_repo_root
-)
+from utils import add_pad_token, get_hf_access_token, prepend_repo_root
 
 # constants
 SFT_DATA_PATH = prepend_repo_root("data/sfttif_random_train.json")

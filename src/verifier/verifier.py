@@ -1,18 +1,16 @@
 import argparse
 import json
 import random
-import torch
-from datasets import Dataset, load_dataset 
 from itertools import islice
-from transformers import (
-    AutoTokenizer,
-    AutoModelForCausalLM,
-    # BitsAndBytesConfig,
-)
+from typing import Optional
+
+import torch
+from datasets import Dataset, load_dataset
 from peft import AutoPeftModelForCausalLM
 from tqdm import tqdm
+from transformers import (AutoModelForCausalLM,  # BitsAndBytesConfig,
+                          AutoTokenizer)
 from utils import add_pad_token, prepend_repo_root
-from typing import Optional
 
 
 # Sequence probability

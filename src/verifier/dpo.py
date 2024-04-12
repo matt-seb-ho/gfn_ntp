@@ -1,20 +1,17 @@
 import json
+
 import torch
 from datasets import Dataset
 from huggingface_hub import login
 from icecream import ic
 from peft import LoraConfig
-from transformers import (
-    AutoTokenizer, 
-    AutoModelForCausalLM, 
-    BitsAndBytesConfig,
-    TrainingArguments
-)
+from prompts import INSTRUCTION_PROMPT_TEMPLATE
+from sft import _add_pad_token, sft_subset
+from transformers import (AutoModelForCausalLM, AutoTokenizer,
+                          BitsAndBytesConfig, TrainingArguments)
 from trl import DataCollatorForCompletionOnlyLM, DPOTrainer
 # from prep_sft_data import load_sft_data, sft_subset
 from utils import get_hf_access_token, prepend_repo_root
-from prompts import INSTRUCTION_PROMPT_TEMPLATE
-from sft import sft_subset, _add_pad_token
 
 # constants
 DPO_DATA_PATH = prepend_repo_root("data/paired_random_train.json")
