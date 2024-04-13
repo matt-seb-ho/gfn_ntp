@@ -1,7 +1,7 @@
 import pytest
 from lean_dojo import LeanGitRepo, Pos, Theorem, is_available_in_cache
 
-from src.gfn_tuning.constants import LEAN_DOJO_RANDOM_DATA_PATH
+from src.constants import LEAN_DOJO_RANDOM_DATA_PATH
 from src.gfn_tuning.lean_data_module import NTPDataModule, TheoremDataPipe
 
 LIMIT_THEOREMS = 100
