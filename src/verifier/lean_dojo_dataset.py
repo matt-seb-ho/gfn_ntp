@@ -5,8 +5,15 @@ import pickle
 from typing import Any, Dict, List, Optional
 
 import pytorch_lightning as pl
-from lean_dojo_utils import (Batch, Corpus, Example, format_augmented_state,
-                             format_state, format_tactic, remove_marks)
+from lean_dojo_utils import (
+    Batch,
+    Corpus,
+    Example,
+    format_augmented_state,
+    format_state,
+    format_tactic,
+    remove_marks
+)
 from loguru import logger
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm

@@ -1,19 +1,27 @@
-import json
 import os
+from typing import Optional
 
 from dotenv import load_dotenv
 
-from src.verifier.constants import DOTENV_PATH, HF_ACCESS_TOKEN_VAR_NAME, REPO_ROOT
+from src.constants import HF_ACCESS_TOKEN_VAR_NAME
 
 
-def prepend_repo_root(p: str) -> str:
-    return os.path.join(REPO_ROOT, p)
+def make_path_relative_to_repo(relative_path: str) -> str:
+    # pre-condition: this function is defined in `repo/src/verifier/utils.py`
+    return os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", relative_path)
+    )
 
-def _pp(d):
-    print(json.dumps(d, indent=2))
-
-def get_hf_access_token():
-    load_dotenv(DOTENV_PATH)
+def get_hf_access_token(
+    dotenv_path: Optional[str] = None, 
+    relative_to_repo: bool = False
+) -> str:
+    if dotenv_path is None:
+        dotenv_path = ".env"
+        relative_to_repo = True
+    if relative_to_repo:
+        dotenv_path = make_path_relative_to_repo(dotenv_path)
+    load_dotenv(dotenv_path)
     token = os.getenv(HF_ACCESS_TOKEN_VAR_NAME)
     return token
 

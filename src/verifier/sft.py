@@ -3,20 +3,28 @@ from datasets import load_dataset
 from huggingface_hub import login
 from icecream import ic
 from peft import LoraConfig
-from transformers import (AutoModelForCausalLM, AutoTokenizer,
-                          BitsAndBytesConfig, TrainingArguments)
+from transformers import (
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    BitsAndBytesConfig,
+    TrainingArguments
+)
 from trl import DataCollatorForCompletionOnlyLM, SFTTrainer
 # from prep_sft_data import load_sft_data, sft_subset
-from utils import add_pad_token, get_hf_access_token, prepend_repo_root
+from utils import (
+    add_pad_token,
+    get_hf_access_token,
+    make_path_relative_to_repo
+)
 
 # constants
-SFT_DATA_PATH = prepend_repo_root("data/sfttif_random_train.json")
+SFT_DATA_PATH = make_path_relative_to_repo("data/sfttif_random_train.json")
 USE_SUBSET = True
 SFT_SUBSET_PATH = None
 SFT_SUBSET_EXISTS = False
 SFT_SUBSET_SIZE = 10000
 BASE_MODEL_ID = "EleutherAI/llemma_7b"
-HF_ACCESS_TOKEN = get_hf_access_token()
+HF_ACCESS_TOKEN = get_hf_access_token("src/.env", True)
 
 
 """

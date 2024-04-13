@@ -7,21 +7,25 @@ from icecream import ic
 from peft import LoraConfig
 from prompts import INSTRUCTION_PROMPT_TEMPLATE
 from sft import _add_pad_token, sft_subset
-from transformers import (AutoModelForCausalLM, AutoTokenizer,
-                          BitsAndBytesConfig, TrainingArguments)
-from trl import DataCollatorForCompletionOnlyLM, DPOTrainer
+from transformers import (
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    BitsAndBytesConfig,
+    TrainingArguments
+)
+from trl import DPOTrainer
 # from prep_sft_data import load_sft_data, sft_subset
-from utils import get_hf_access_token, prepend_repo_root
+from utils import get_hf_access_token, make_path_relative_to_repo
 
 # constants
-DPO_DATA_PATH = prepend_repo_root("data/paired_random_train.json")
+DPO_DATA_PATH = make_path_relative_to_repo("data/paired_random_train.json")
 DPO_BETA = 0.01 # TODO: tune this
 USE_SUBSET = True
 DPO_SUBSET_PATH = None
 DPO_SUBSET_EXISTS = False
 DPO_SUBSET_SIZE = 10000
 BASE_MODEL_ID = "EleutherAI/llemma_7b"
-HF_ACCESS_TOKEN = get_hf_access_token()
+HF_ACCESS_TOKEN = get_hf_access_token("src/.env", True)
 # testing phase
 SANITY_CHECK = False
 

@@ -8,9 +8,8 @@ import torch
 from datasets import Dataset, load_dataset
 from peft import AutoPeftModelForCausalLM
 from tqdm import tqdm
-from transformers import (AutoModelForCausalLM,  # BitsAndBytesConfig,
-                          AutoTokenizer)
-from utils import add_pad_token, prepend_repo_root
+from transformers import AutoModelForCausalLM  # BitsAndBytesConfig,
+from transformers import AutoTokenizer
 
 
 # Sequence probability

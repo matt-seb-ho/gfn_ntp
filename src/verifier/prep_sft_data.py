@@ -8,7 +8,8 @@ from lean_dojo_utils import format_state, format_tactic, remove_marks
 from loguru import logger
 from prompts import INSTRUCTION_PROMPT_TEMPLATE
 from tqdm import tqdm
-from utils import _pp, prepend_repo_root
+
+from src.utils import make_path_relative_to_repo
 
 # from lean_dojo_dataset import GeneratorDataset
 
@@ -80,10 +81,10 @@ def sft_subset(dataset, size, seed=42, file=None):
 
 
 def main():
-    RANDOM_TRAIN_DATA_PATH = prepend_repo_root("data/leandojo_benchmark_4/random/train.json")
-    NOVELP_TRAIN_DATA_PATH = prepend_repo_root("data/leandojo_benchmark_4/novel_premises/train.json")
+    RANDOM_TRAIN_DATA_PATH = make_path_relative_to_repo("data/leandojo_benchmark_4/random/train.json")
+    # NOVELP_TRAIN_DATA_PATH = make_path_relative_to_repo("data/leandojo_benchmark_4/novel_premises/train.json")
     # sfttif: SFTTrainer Instruction Format
-    OUTPUT_PATH = prepend_repo_root("data/sfttif_random_train.json")
+    OUTPUT_PATH = make_path_relative_to_repo("data/sfttif_random_train.json")
     thm_data = preprocess_data(RANDOM_TRAIN_DATA_PATH, True, False)
     
     # -- sanity check --
