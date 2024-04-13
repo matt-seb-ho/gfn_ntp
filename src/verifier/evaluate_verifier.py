@@ -7,11 +7,12 @@ import torch
 from datasets import Dataset, load_dataset
 from peft import AutoPeftModelForCausalLM
 from tqdm import tqdm
-from transformers import (AutoModelForCausalLM,  # BitsAndBytesConfig,
-                          AutoTokenizer)
-from utils import add_pad_token, prepend_repo_root
+from transformers import AutoModelForCausalLM  # BitsAndBytesConfig,
+from transformers import AutoTokenizer
 
-DPO_EVAL_DATA_PATH = prepend_repo_root("data/paired_random_val.json")
+from src.utils import add_pad_token, make_path_relative_to_repo
+
+DPO_EVAL_DATA_PATH = make_path_relative_to_repo("data/paired_random_val.json")
 # PAIR_DATA_KEYS = ("prompt", "chosen", "rejected")
 RANDOM_SUBSET = True
 RANDOM_SEED = 42
@@ -19,7 +20,7 @@ SUBSET_SIZE = 100
 BATCH_SIZE = 1
 PAIR_DATA_KEYS = ("state", "positive", "negative")
 PROMPT_KEY, CHOSEN_KEY, REJECTED_KEY = PAIR_DATA_KEYS
-OUTPUT_FILE = prepend_repo_root("outputs/verify_eval_base100.json")
+OUTPUT_FILE = make_path_relative_to_repo("outputs/verify_eval_base100.json")
 MODEL_ID = "EleutherAI/llemma_7b"
 
 # Sequence probability
