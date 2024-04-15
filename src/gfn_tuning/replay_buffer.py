@@ -164,5 +164,8 @@ class ReplayBuffer:
                         node.children = []
                     node.children.append(child)
                     queue.append((child, selected_idxs))
+                node.next_tactic_token_ids = torch.stack(
+                    [child.token_tensor for child in node.children]
+                )[:, node.prompt_length:]
             depth += 1
         return root
