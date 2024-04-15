@@ -11,8 +11,13 @@ from proof_tree import ProofTreeNode, extract_trajectories
 from pytorch_lightning import LightningModule
 from replay_buffer import ReplayBuffer
 from reward import compute_log_reward
-from utils import (base_to_lora, get_termination_vals, lora_to_base,
-                   modified_subtb_loss)
+from peft import PeftModel
+from utils import (
+    base_to_lora, 
+    get_termination_vals, 
+    lora_to_base,
+    modified_subtb_loss
+)
 
 
 class NeuralTheoremProvingTask(LightningModule):
@@ -24,7 +29,6 @@ class NeuralTheoremProvingTask(LightningModule):
         reward_buffer: ReplayBuffer,
         n_samples,
         lr,
-        subtb_lambda,
         pf_temp_high,
         pf_temp_low,
         pf_temp_prob,
@@ -39,11 +43,13 @@ class NeuralTheoremProvingTask(LightningModule):
         val_probes=None,
         use_4bit=False,
         max_steps=3,
+        use_hf_generate=True,
     ):
         super().__init__()
         self.save_hyperparameters(ignore=["model", "tokenizer"])
 
         self.model = model
+        self.log_z = torch.nn.Linear(1, 1)
         self.tokenizer = tokenizer
         self.reward = reward
         self.reward_buffer = reward_buffer
@@ -127,7 +133,7 @@ class NeuralTheoremProvingTask(LightningModule):
             trajectories = extract_trajectories(root, theorem.uid)
             states = [t["states"] for t in trajectories]
             tactics = [t["tactics"] for t in trajectories]
-            log_reward = self.reward(states, tactics)
+            log_reward = self.reward.score(states, tactics)
             for leaf_node, log_r in zip(leaf_nodes, log_reward):
                 leaf_node.log_r = log_r.item()
 
@@ -543,26 +549,19 @@ class NeuralTheoremProvingTask(LightningModule):
         if prompt.ndim == 1:
             prompt = prompt.unsqueeze(0)
         prompt = prompt.expand(n_samples, -1)
-        reward_fn = partial(
-            self.reward.score,
-            prompt_length=prompt.shape[1],
-            model=self.model,
-            tokenizer=self.tokenizer,
-        )
+        # reward_fn = self.reward.score
         # sample tactics (if not provided by action_seq) and compute terms needed for loss
-        if generate_func:
-            outputs = generate_func(prompt)
+        if generate_func and not replay:
+            tokens, log_pf = generate_func(prompt)
         else:
             tokens, log_pf = generate_step(
                 self.model,
                 prompt,
-                reward_fn=reward_fn,
                 termination_token_id=self.end_of_sentence_token_id,
                 vocab_naughty_mask=self.hparams.illegal_token_mask,
                 min_len=self.hparams.min_sentence_len,
                 max_len=self.hparams.max_sentence_len,
                 temperature=pf_temperature,
-                skip_rewards=False,
                 action_seq=node.next_tactic_token_ids if replay else None,
             )
         # log_pf outputted by generate_step is at token-level granularity
@@ -606,12 +605,69 @@ class NeuralTheoremProvingTask(LightningModule):
                 node.children.append(child_node)
 
 
-# helper routine
+def generate_step_hf(
+    model: PeftModel,
+    input_ids: torch.Tensor,
+    termination_token_id: int,
+    pad_token_id: int,
+    temperature: float =1.0,
+    top_k: int = 999999,
+    top_p: float = 1.0,
+    action_seq: Optional[torch.Tensor] = None,
+    replay_input_length: Optional[int] = None,
+    max_new_tokens: int = 20,
+    **generation_kwargs,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    # returns (tokens, log_pf)
+    if action_seq:
+        # assert replay_input_length is not None
+        outputs = model(
+            input_ids=input_ids,
+            eos_token_id=termination_token_id,
+            pad_token_id=pad_token_id,
+            return_dict=True,
+        )
+        scores = model.compute_transition_scores(
+            input_ids,
+            outputs.logits,
+            normalize_logits=True,
+        )
+        # post processing
+        # - mask out pad tokens 
+        # - extract scores corresponding to the tactics (skip inputs/states)
+        pad_mask = input_ids == pad_token_id
+        scores[pad_mask] = 0
+        scores = scores[:, replay_input_length:-1]
+        return input_ids, scores
+        
+    outputs = model.generate(
+        input_ids=input_ids,
+        max_new_tokens=max_new_tokens,
+        eos_token_id=termination_token_id,
+        pad_token_id=model.tokenizer.eos_token_id,
+        forced_eos_token_id=termination_token_id,
+        return_dict_in_generate=True,
+        output_scores=True,
+        **generation_kwargs
+    )
+    scores = model.compute_transition_scores(
+        outputs.sequences,
+        outputs.scores,
+        normalize_logits=True,
+    )
+    # in the original generate_and_return_termination_logprob (and the new generate_step),
+    # the returned tokens include the prompt, while log_pf only includes the transition scores
+    # for the newly generated tokens (the actions).
+    pad_mask = outputs.sequences == pad_token_id
+    scores[pad_mask] = 0
+    log_pf = scores[:, input_ids.size(1):]
+    return outputs.sequences, log_pf
+
 def generate_step(
     model,
     encoded_prompt,
     termination_token_id,
-    reward_fn,
+    # reward_fn,
     vocab_nice_mask=None,
     vocab_naughty_mask=None,
     vocab_alpha=-99,
@@ -621,7 +677,7 @@ def generate_step(
     top_k=999999,
     top_p=1.0,
     action_seq=None,
-    skip_rewards=False,
+    # skip_rewards=False,
 ):
     # generate and return the probability of terminating at every step
     active_seqs = torch.ones(encoded_prompt.size(0)).bool().to(encoded_prompt.device)
@@ -717,12 +773,12 @@ def generate_step(
     log_pf = torch.stack(log_pf, dim=1)
     # log_pterm = torch.stack(log_pterm, dim=1)
     # log_pterm = torch.zeros_like(log_pf)
-    if skip_rewards:
-        log_r, log_r_unpenalized = None, None
-    else:
-        # Reward for all intermediate states
-        # - except the last one (guaranteed to be the termination token)
-        log_r, log_r_unpenalized = reward_fn(state[:, :-1])
+    # if skip_rewards:
+    #     log_r, log_r_unpenalized = None, None
+    # else:
+    #     # Reward for all intermediate states
+    #     # - except the last one (guaranteed to be the termination token)
+    #     log_r, log_r_unpenalized = reward_fn(state[:, :-1])
     # add a termination token to the end of the sequence
     # return state, log_pf, log_pterm, log_r, log_r_unpenalized
     return state, log_pf

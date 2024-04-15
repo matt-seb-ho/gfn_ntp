@@ -10,10 +10,18 @@ import spacy
 import torch
 from sentence_transformers import SentenceTransformer
 from sentence_transformers.util import cos_sim
-from transformers import (AutoModel, AutoModelForSequenceClassification,
-                          AutoTokenizer)
+from transformers import (
+    AutoModel, 
+    AutoModelForSequenceClassification,
+    AutoTokenizer
+)
+from peft import PeftModel
 
-from src.constants import PROOF_COMPLETE_MESSAGE
+from src.constants import (
+    DEFAULT_VERIFIER_ADAPTER_NAME,
+    DEFAULT_VERIFIER_BATCH_SIZE,
+    PROOF_COMPLETE_MESSAGE
+)
 from verifier.verifier import batch_completion_probabilities, batch_iterator
 
 
@@ -28,7 +36,7 @@ def base_to_lora(model):
 def compute_log_reward(
     states: list[list[str]],
     tactics: list[list[str]],
-    model: AutoModel,
+    model: PeftModel,
     tokenizer: AutoTokenizer,
     batch_size: int = 8,
 ) -> torch.Tensor:
@@ -63,7 +71,6 @@ def compute_log_reward(
 
     return torch.log(torch.max(torch.stack(is_correct - 1, model_scores, dim=-1), dim=-1))
         
-        
 def format_prompt(initial_state: str, tactic: Optional[str], resulting_state: Optional[str]) -> str:
     # TODO: finalize this to match the verifier's training
     if tactic is not None:
@@ -71,6 +78,61 @@ def format_prompt(initial_state: str, tactic: Optional[str], resulting_state: Op
             return f"{initial_state}\n###\n{tactic}\n###\n{resulting_state}"
         return f"{initial_state}\n###\n{tactic}"
     return f"{initial_state}\n###\n"
+
+
+class NTPReward:
+    def __init__(
+        self, 
+        model: Optional[PeftModel] = None,
+        tokenizer: Optional[AutoTokenizer] = None,
+        model_id: Optional[str] = None, 
+        temperature: float = 1.0, 
+        verifier_batch_size: Optional[int] = None,
+        model_loading_kwargs: Optional[dict] = None,
+        verifier_adapter_name: str = DEFAULT_VERIFIER_ADAPTER_NAME,
+    ):
+        self.temperature = temperature
+        self.verifier_batch_size = verifier_batch_size
+        self.verifier_adapter_name = verifier_adapter_name
+
+        assert (model is None) == (tokenizer is None)
+        assert model is not None or model_id is not None
+        if model:
+            self.model = model,
+            self.tokenizer = tokenizer
+        else:
+            model_loading_kwargs = model_loading_kwargs or {}
+            self.model = AutoModel.from_pretrained(model_id, **model_loading_kwargs)
+            self.tokenizer = AutoTokenizer.from_pretrained(model_id)
+            # loads but does not activate the adapter
+            model.load_adapter(verifier_adapter_name)
+    
+    def score(
+        self,
+        states: list[list[str]],
+        tactics: list[list[str]],
+        batch_size: Optional[int] = None
+    ):
+        batch_size = batch_size or self.verifier_batch_size or DEFAULT_VERIFIER_BATCH_SIZE
+        # swap to verification adapters
+        training = self.model.training
+        previous_adapter = self.model.active_adapter
+        self.model.set_adapter(self.verifier_adapter_name)
+        self.model.eval()
+        with torch.no_grad():
+            log_reward = compute_log_reward(
+                states, 
+                tactics, 
+                self.model, 
+                self.tokenizer, 
+                batch_size=batch_size
+            )
+        # reset model to original state
+        self.model.set_adapter(previous_adapter)
+        if training:
+            self.model.train()
+        return log_reward
+
 
 @torch.no_grad()
 def score_fast(
