@@ -1,3 +1,4 @@
+import src.gfn_tuning.lean_dojo_preflight # isort: split
 import random
 from contextlib import contextmanager
 from functools import partial
@@ -7,50 +8,47 @@ import numpy as np
 import pandas as pd
 import torch
 from lean_dojo import Dojo, ProofFinished, TacticResult, TacticState, Theorem
-from proof_tree import ProofTreeNode, extract_trajectories
-from pytorch_lightning import LightningModule
-from replay_buffer import ReplayBuffer
-from reward import compute_log_reward
 from peft import PeftModel
-from utils import (
-    base_to_lora, 
-    get_termination_vals, 
-    lora_to_base,
-    modified_subtb_loss
-)
+from pytorch_lightning import LightningModule
+from transformers import AutoTokenizer
+
+from .proof_tree import ProofTreeNode, extract_trajectories
+from .replay_buffer import ReplayBuffer
+from .reward import NTPReward, compute_log_reward
+from .utils import base_to_lora, lora_to_base
 
 
 class NeuralTheoremProvingTask(LightningModule):
     def __init__(
         self,
-        model,
-        tokenizer,
-        reward,
+        model: PeftModel,
+        tokenizer: AutoTokenizer,
+        reward: NTPReward,
         reward_buffer: ReplayBuffer,
-        n_samples,
-        lr,
-        pf_temp_high,
-        pf_temp_low,
-        pf_temp_prob,
-        use_buffer_prob,
-        min_sentence_len,
-        max_sentence_len,
-        reward_temp_start,
-        reward_temp_end,
-        reward_temp_horizon,
-        illegal_token_mask,
-        train_probes=None,
-        val_probes=None,
-        use_4bit=False,
-        max_steps=3,
-        use_hf_generate=True,
+        n_samples: int | list[int],
+        lr: float,
+        pf_temp_high: float,
+        pf_temp_low: float,
+        pf_temp_prob: float,
+        use_buffer_prob: float,
+        reward_temp_start: float,
+        reward_temp_end: float,
+        reward_temp_horizon: int,
+        illegal_token_mask: np.ndarray,
+        train_probes: Optional[list[Theorem]] = None,
+        val_probes: Optional[list[Theorem]] = None,
+        use_4bit: bool = False,
+        max_tactics: int = 3,
+        min_tactic_tokens: int = 2,
+        max_tactic_tokens: int = 30,
+        use_hf_generate: bool = True,
     ):
         super().__init__()
         self.save_hyperparameters(ignore=["model", "tokenizer"])
 
         self.model = model
-        self.log_z = torch.nn.Linear(1, 1)
         self.tokenizer = tokenizer
+        self.log_z = torch.nn.Parameter(torch.tensor(0.0, requires_grad=True))
         self.reward = reward
         self.reward_buffer = reward_buffer
 
@@ -86,7 +84,8 @@ class NeuralTheoremProvingTask(LightningModule):
         trajectories_logpf = []
         leaf_nodes = []
         log_reward = []
-        n_samples = [n_samples or self.hparams.n_samples] * max_depth
+        if not isinstance(n_samples, list):
+            n_samples = [n_samples or self.hparams.n_samples] * max_depth
         with lean_context(theorem, replay_tactics) as (dojo, root):
             trajectory_logpf = []
             stack = [(root, False)]
@@ -537,40 +536,58 @@ class NeuralTheoremProvingTask(LightningModule):
     ) -> None:
         """
         Expands a node in the proof tree by generating tactics.
-        If replay is True, the method recomputes the log_pf of the node's children instead.
-
+        If replaying a trajectory, the method recomputes log_pf with the updated model.
         """
         assert (lean_env is not None) or replay, "lean_env must be provided if not replaying tactics"
         if (node.state and not isinstance(node.state, TacticState)) or node.depth >= max_depth:
             return
-        n_samples = n_samples or self.hparams.n_samples
         prompt_text = self.format_prompt(node.state.pp if node.state else node.state_str) 
         prompt = self.tokenizer(prompt_text, return_tensors="pt")["input_ids"]
-        if prompt.ndim == 1:
-            prompt = prompt.unsqueeze(0)
-        prompt = prompt.expand(n_samples, -1)
-        # reward_fn = self.reward.score
+        if replay:
+            # replaying tactics: concatenate the prompt with children tactics
+            prompt = prompt.expand(len(node.children), -1)
+            prompt = torch.cat((prompt, node.next_tactic_token_ids), dim=-1)
+        else:
+            # generate n new tactics
+            n_samples = n_samples or self.hparams.n_samples
+            if prompt.ndim == 1:
+                prompt = prompt.unsqueeze(0)
+            prompt = prompt.expand(n_samples, -1)
+
         # sample tactics (if not provided by action_seq) and compute terms needed for loss
         if generate_func and not replay:
+            # for baseline generation/decoding methods
             tokens, log_pf = generate_func(prompt)
+        elif self.hparams.use_hf_generate:
+            tokens, log_pf = generate_step_hf(
+                self.model,
+                prompt,
+                termination_token_id=self.end_of_step_token_id,
+                pad_token_id=self.tokenizer.eos_token_id,
+                temperature=pf_temperature,
+                replay=replay,
+                replay_input_length=node.prompt_length,
+                max_new_tokens=self.hparams.max_tactic_tokens,
+            )
         else:
             tokens, log_pf = generate_step(
                 self.model,
                 prompt,
                 termination_token_id=self.end_of_sentence_token_id,
                 vocab_naughty_mask=self.hparams.illegal_token_mask,
-                min_len=self.hparams.min_sentence_len,
-                max_len=self.hparams.max_sentence_len,
+                min_len=self.hparams.min_tactic_tokens,
+                max_len=self.hparams.s,
                 temperature=pf_temperature,
                 action_seq=node.next_tactic_token_ids if replay else None,
             )
         # log_pf outputted by generate_step is at token-level granularity
+        # NOTE: this assumes that padded tokens have a log_pf of 0
         log_pf_tactic = log_pf.sum(dim=1)
         
         if replay:
             for i, child in enumerate(node.children):
                 child.step_log_pf = log_pf_tactic[i].item()
-                child.trajectory_logpf = torch.cat(node.trajectory_logpf + [log_pf_tactic[i].item()])
+                child.trajectory_logpf = torch.cat(node.trajectory_logpf + [log_pf_tactic[i]])
         else:
             # save the generated tactics for replay
             node.next_tactic_token_ids = tokens[:, prompt.shape[1]:]
@@ -610,17 +627,18 @@ def generate_step_hf(
     input_ids: torch.Tensor,
     termination_token_id: int,
     pad_token_id: int,
-    temperature: float =1.0,
+    temperature: float = 1.0,
     top_k: int = 999999,
     top_p: float = 1.0,
-    action_seq: Optional[torch.Tensor] = None,
+    replay: bool = False,
     replay_input_length: Optional[int] = None,
-    max_new_tokens: int = 20,
+    max_new_tokens: int = 30,
     **generation_kwargs,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     # returns (tokens, log_pf)
-    if action_seq:
+    if replay:
         # assert replay_input_length is not None
+        # TODO: figure out how to add temp/top_k/top_p to this branch
         outputs = model(
             input_ids=input_ids,
             eos_token_id=termination_token_id,
@@ -648,6 +666,9 @@ def generate_step_hf(
         forced_eos_token_id=termination_token_id,
         return_dict_in_generate=True,
         output_scores=True,
+        temperature=temperature,
+        top_k=top_k,
+        top_p=top_p,
         **generation_kwargs
     )
     scores = model.compute_transition_scores(
@@ -679,15 +700,9 @@ def generate_step(
     action_seq=None,
     # skip_rewards=False,
 ):
-    # generate and return the probability of terminating at every step
     active_seqs = torch.ones(encoded_prompt.size(0)).bool().to(encoded_prompt.device)
     state = encoded_prompt.clone()
     log_pf = []
-    # NOTE:
-    # - original next sentence log_pterm code is commented out
-    # - currently stubbing it with a tensor of zeros (e.g. p(term) = 1)
-    # - this is to marginally improve efficiency without changing return signature
-    # log_pterm = []
     token_ids = state  # For caching hidden states during generation
     past_key_values = None  # For caching hidden states during generation
     for i in range(max_len + 1):
@@ -748,13 +763,6 @@ def generate_step(
             logits[:, vocab_naughty_mask] += vocab_alpha
         # logprob has ndim=2 and shape (batch_size, vocab_size)
         logprob = logits.log_softmax(dim=-1)
-        # log_pterm.append(
-        #     torch.where(
-        #         active_seqs,
-        #         logprob[:, termination_token_id],
-        #         0,
-        #     )
-        # )
         active_seqs = active_seqs * (token_ids != termination_token_id).squeeze(-1)
         log_pf.append(
             torch.where(
@@ -771,16 +779,6 @@ def generate_step(
     # before this stack operation, it is a list of tensors of shape (batch_size,)
     # after this stack operation, it is a tensor of shape (batch_size, max_completion_len)
     log_pf = torch.stack(log_pf, dim=1)
-    # log_pterm = torch.stack(log_pterm, dim=1)
-    # log_pterm = torch.zeros_like(log_pf)
-    # if skip_rewards:
-    #     log_r, log_r_unpenalized = None, None
-    # else:
-    #     # Reward for all intermediate states
-    #     # - except the last one (guaranteed to be the termination token)
-    #     log_r, log_r_unpenalized = reward_fn(state[:, :-1])
-    # add a termination token to the end of the sequence
-    # return state, log_pf, log_pterm, log_r, log_r_unpenalized
     return state, log_pf
 
 @contextmanager

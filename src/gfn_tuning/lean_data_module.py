@@ -27,7 +27,7 @@ class NTPDataModule(LightningDataModule):
     def setup(self, stage):
         _, theorems, _ = _get_theorems(
             self.hparams.data_path,
-            "test",
+            stage,
             num_theorems=self.hparams.limit_theorems,
         )
         num_train = int(len(theorems) * self.hparams.train_size)

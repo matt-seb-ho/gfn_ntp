@@ -7,9 +7,10 @@ from typing import Optional
 import editdistance
 import numpy as np
 import torch
-from proof_tree import ProofTreeNode
 
 from src.constants import TACTIC_DELIMITER
+
+from .proof_tree import ProofTreeNode
 
 
 class ReplayBuffer:

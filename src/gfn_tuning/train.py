@@ -7,10 +7,17 @@ from lightning_data import PromptDataModule
 from lightning_module import NextSentenceGFNTask
 from omegaconf import DictConfig, OmegaConf
 from peft import get_peft_model, prepare_model_for_kbit_training
-from transformers import (AutoModelForCausalLM, AutoTokenizer,
-                          BitsAndBytesConfig)
-from utils import (FrozenModelSentenceGivenPrompt, ModelSentenceValidator,
-                   ReplayBuffer, RuleSentenceValidator)
+from transformers import (
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    BitsAndBytesConfig
+)
+from utils import (
+    FrozenModelSentenceGivenPrompt,
+    ModelSentenceValidator,
+    ReplayBuffer,
+    RuleSentenceValidator
+)
 
 
 @hydra.main(version_base=None, config_path="./configs/", config_name="train")
