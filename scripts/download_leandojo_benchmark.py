@@ -34,7 +34,8 @@ def check_md5(filename: str, gt_hashcode: str) -> bool:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data-path", type=str, default="data")
+    default_data_path = os.path.join(os.path.dirname(__file__), "..", "data")
+    parser.add_argument("--data-path", type=str, default=default_data_path)
     args = parser.parse_args()
     logger.info(args)
 
