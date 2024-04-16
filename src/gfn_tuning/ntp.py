@@ -60,8 +60,6 @@ class NeuralTheoremProvingTask(LightningModule):
         # end step generation at newline char
         self.end_of_step_token_id = tokenizer.encode("assumption\n", add_special_tokens=False)[-1]
 
-        # TODO: add a method to format the prompt into the format seen in PT/FT
-        self.format_prompt = lambda goal_str: goal_str
     
 
     def forward(
@@ -599,7 +597,7 @@ class NeuralTheoremProvingTask(LightningModule):
             )
             tactics_token_length = (tokens[:, prompt.shape[1]:] == self.end_of_sentence_token_id).count_nonzero(dim=-1)
             state_action_length = prompt.shape[1] + tactics_token_length
-            # create new child nodes by running the 
+            # create new child nodes by running the generated tactics through the environment
             for i, tactic in enumerate(generated_tactics):
                 next_state = lean_env.run_tac(node.state, tactic.rstrip())
                 child_node = ProofTreeNode(
@@ -620,6 +618,18 @@ class NeuralTheoremProvingTask(LightningModule):
                 if node.children is None:
                     node.children = []
                 node.children.append(child_node)
+
+    @staticmethod
+    def format_prompt(state: str):
+        # TODO: verify Dojo's pp output is the "goals:..."
+        # prepending "-- " to every line to match the evaluation setup in Llemma-7B paper
+        # - see figure 4
+        # appending a newline to the end of the prompt if it doesn't exist
+        lines = state.split("\n")
+        lines[-1] = lines[-1].rstrip() + "\n"
+        # TODO: check if we want line.lstrip() 
+        commented_lines = ["-- INPUT:"] + ["-- " + line for line in lines]
+        return "\n".join(commented_lines)
 
 
 def generate_step_hf(
@@ -789,3 +799,4 @@ def lean_context(theorem: Theorem, replay_tactics: Optional[ProofTreeNode] = Non
         with Dojo(theorem) as (dojo, initial_state):
             new_root = ProofTreeNode(state=initial_state, children=[], trajectory_logpf=[])
             yield dojo, new_root
+
