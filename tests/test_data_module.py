@@ -1,3 +1,4 @@
+import src.gfn_tuning.lean_dojo_preflight # isort: split
 import pytest
 from lean_dojo import LeanGitRepo, Pos, Theorem, is_available_in_cache
 
@@ -17,3 +18,12 @@ def test_data_module():
     train_data = data.train_dataloader()
     thm0 = next(iter(train_data))
     assert isinstance(thm0, Theorem)
+
+def test_lean_dojo():
+    data = NTPDataModule(data_path="single_thm.json",)
+    train_data = data.train_dataloader()
+    for thm in train_data:
+        continue
+    print(thm)
+        
+    

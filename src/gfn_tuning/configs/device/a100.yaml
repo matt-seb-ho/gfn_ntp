@@ -1,3 +1,0 @@
-accelerator: "cuda"
-count: 1
-kind: "a100:"
