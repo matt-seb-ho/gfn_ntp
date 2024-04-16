@@ -5,8 +5,14 @@ from dataclasses import dataclass
 from typing import Optional
 
 import torch
-from lean_dojo import (LeanError, ProofFinished, ProofGivenUp, TacticResult,
-                       TacticState, TimeoutError)
+from lean_dojo import (
+    LeanError,
+    ProofFinished,
+    ProofGivenUp,
+    TacticResult,
+    TacticState,
+    TimeoutError
+)
 
 from src.constants import PROOF_COMPLETE_MESSAGE, TACTIC_DELIMITER
 

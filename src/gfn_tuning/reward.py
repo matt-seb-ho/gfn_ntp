@@ -8,21 +8,24 @@ import editdistance
 import numpy as np
 import spacy
 import torch
+from peft import PeftModel
 from sentence_transformers import SentenceTransformer
 from sentence_transformers.util import cos_sim
 from transformers import (
-    AutoModel, 
+    AutoModel,
     AutoModelForSequenceClassification,
     AutoTokenizer
 )
-from peft import PeftModel
 
 from src.constants import (
     DEFAULT_VERIFIER_ADAPTER_NAME,
     DEFAULT_VERIFIER_BATCH_SIZE,
     PROOF_COMPLETE_MESSAGE
 )
-from verifier.verifier import batch_completion_probabilities, batch_iterator
+from src.verifier.verifier import (
+    batch_completion_probabilities,
+    batch_iterator
+)
 
 
 def lora_to_base(model):
