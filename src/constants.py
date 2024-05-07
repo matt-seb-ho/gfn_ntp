@@ -1,6 +1,3 @@
-# verifier training and evaluation
-HF_ACCESS_TOKEN_VAR_NAME = "HF_ACCESS_TOKEN"
-
 # GFN tuning
 TACTIC_DELIMITER = "\n" 
 PROOF_COMPLETE_MESSAGE = "No goals"

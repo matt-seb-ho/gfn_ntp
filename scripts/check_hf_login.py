@@ -1,8 +1,10 @@
+# TODO: fix this to not depend on utils
+
 import os
 import sys
 
 # Assuming the script is running from the scripts directory and src is at the root
-project_src_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src'))
+project_src_path = os.path.realpath(os.path.join(os.path.dirname(__file__), '..', 'src'))
 sys.path.insert(0, project_src_path)
 
 from huggingface_hub import login

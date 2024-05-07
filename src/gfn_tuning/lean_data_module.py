@@ -4,12 +4,15 @@ import os
 import warnings
 from typing import Optional
 
-from lean_dojo import LeanGitRepo, Pos, Theorem, is_available_in_cache
 from pytorch_lightning import LightningDataModule
 from torch.utils.data import DataLoader
 from torchdata.datapipes.map import MapDataPipe
 
+from src.utils import load_github_access_token
+
 warnings.filterwarnings("ignore", ".*does not have many workers.*")
+load_github_access_token()
+from lean_dojo import LeanGitRepo, Pos, Theorem, is_available_in_cache # isort: skip
 
 
 class NTPDataModule(LightningDataModule):

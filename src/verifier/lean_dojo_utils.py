@@ -11,13 +11,16 @@ import networkx as nx
 import pytorch_lightning as pl
 import torch
 from deepspeed.ops.adam import DeepSpeedCPUAdam, FusedAdam
-from lean_dojo import Pos
 from loguru import logger
 from pytorch_lightning.strategies.deepspeed import DeepSpeedStrategy
 from pytorch_lightning.utilities.deepspeed import (
     convert_zero_checkpoint_to_fp32_state_dict
 )
 from transformers import get_cosine_schedule_with_warmup
+
+from src.utils import load_github_access_token
+load_github_access_token()
+from lean_dojo import Pos # isort: skip
 
 Example = Dict[str, Any]
 Batch = Dict[str, Any]

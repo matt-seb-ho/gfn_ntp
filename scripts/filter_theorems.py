@@ -93,7 +93,7 @@ def deciles(data):
 
 def relative_to_repo(path):
     scripts_dir = os.path.dirname(__file__)
-    return os.path.abspath(os.path.join(scripts_dir, "..", path))
+    return os.path.realpath(os.path.join(scripts_dir, "..", path))
 
 if __name__ == "__main__":
     psr = argparse.ArgumentParser()
