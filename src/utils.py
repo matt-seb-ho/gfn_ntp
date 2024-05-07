@@ -1,29 +1,40 @@
+import hydra
 import os
 from typing import Optional
-
 from dotenv import load_dotenv
+from omegaconf import OmegaConf
 
 from src.constants import HF_ACCESS_TOKEN_VAR_NAME
 
 
 def make_path_relative_to_repo(relative_path: str) -> str:
-    # pre-condition: this function is defined in `repo/src/verifier/utils.py`
+    # pre-condition: this function is defined in `repo/src/utils.py`
     return os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "..", relative_path)
+        os.path.join(os.path.dirname(__file__), "..", relative_path)
     )
+
+
+def load_github_access_token():
+    if "GITHUB_ACCESS_TOKEN" in os.environ:
+        return
+    with hydra.initialize(config_path="../config"):
+        config = hydra.compose(config_name="train")
+    load_dotenv(config.env_files.github_access_token)
+
 
 def get_hf_access_token(
     dotenv_path: Optional[str] = None, 
     relative_to_repo: bool = False
 ) -> str:
+    if HF_ACCESS_TOKEN_VAR_NAME in os.environ:
+        return os.environ[HF_ACCESS_TOKEN_VAR_NAME]
     if dotenv_path is None:
-        dotenv_path = ".env"
-        relative_to_repo = True
-    if relative_to_repo:
+        dotenv_path = make_path_relative_to_repo(".env")
+    elif relative_to_repo:
         dotenv_path = make_path_relative_to_repo(dotenv_path)
     load_dotenv(dotenv_path)
-    token = os.getenv(HF_ACCESS_TOKEN_VAR_NAME)
-    return token
+    return os.getenv(HF_ACCESS_TOKEN_VAR_NAME)
+
 
 def add_pad_token(model, tokenizer, pad_token="<pad>", padding_side="right"):
     # CodeLlama/Llama2 does not have a default mask/pad token

@@ -15,7 +15,7 @@ from transformers import (
 )
 from trl import DPOTrainer
 # from prep_sft_data import load_sft_data, sft_subset
-from utils import get_hf_access_token, make_path_relative_to_repo
+from src.utils import get_hf_access_token, make_path_relative_to_repo
 
 # constants
 DPO_DATA_PATH = make_path_relative_to_repo("data/paired_random_train.json")

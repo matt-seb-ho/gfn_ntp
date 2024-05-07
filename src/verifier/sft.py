@@ -11,7 +11,7 @@ from transformers import (
 )
 from trl import DataCollatorForCompletionOnlyLM, SFTTrainer
 # from prep_sft_data import load_sft_data, sft_subset
-from utils import (
+from src.utils import (
     add_pad_token,
     get_hf_access_token,
     make_path_relative_to_repo
