@@ -5,10 +5,7 @@ from time import perf_counter
 from dotenv import load_dotenv
 
 # isort: split
-if "GITHUB_ACCESS_TOKEN" not in os.environ:
-    load_dotenv("/home/matthewho/.env")
-    token_in_env = "GITHUB_ACCESS_TOKEN" in os.environ
-    print(f"successfully loaded GH Token: {token_in_env}")
+from src
 from lean_dojo import Dojo, LeanGitRepo, ProofFinished, TacticState, Theorem
 
 
