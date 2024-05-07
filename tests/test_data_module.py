@@ -1,10 +1,11 @@
-import src.gfn_tuning.lean_dojo_preflight # isort: split
 import pytest
-from lean_dojo import LeanGitRepo, Pos, Theorem, is_available_in_cache
 
 from src.constants import LEAN_DOJO_RANDOM_DATA_PATH
 from src.gfn_tuning.lean_data_module import NTPDataModule, TheoremDataPipe
-from src.verifier.utils import make_path_relative_to_repo
+from src.utils import make_path_relative_to_repo, load_github_access_token
+
+load_github_access_token()
+from lean_dojo import LeanGitRepo, Pos, Theorem, is_available_in_cache # isort: skip
 
 LIMIT_THEOREMS = 100
 DATA_PATH = make_path_relative_to_repo(LEAN_DOJO_RANDOM_DATA_PATH)

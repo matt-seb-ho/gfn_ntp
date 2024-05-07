@@ -3,13 +3,15 @@ import os
 from typing import Optional
 from dotenv import load_dotenv
 from omegaconf import OmegaConf
+from functools import lru_cache
 
-from src.constants import HF_ACCESS_TOKEN_VAR_NAME
+
+HF_ACCESS_TOKEN_VAR_NAME = "HF_ACCESS_TOKEN"
 
 
 def make_path_relative_to_repo(relative_path: str) -> str:
     # pre-condition: this function is defined in `repo/src/utils.py`
-    return os.path.abspath(
+    return os.path.realpath(
         os.path.join(os.path.dirname(__file__), "..", relative_path)
     )
 
@@ -17,9 +19,28 @@ def make_path_relative_to_repo(relative_path: str) -> str:
 def load_github_access_token():
     if "GITHUB_ACCESS_TOKEN" in os.environ:
         return
-    with hydra.initialize(config_path="../config"):
+    with hydra.initialize(config_path="../configs", version_base=None):
         config = hydra.compose(config_name="train")
     load_dotenv(config.env_files.github_access_token)
+
+
+# cache individual attribute imports
+@lru_cache(maxsize=None)
+def import_attr_from_lean_dojo(attr_name):
+    load_github_access_token()
+    import lean_dojo
+    return getattr(lean_dojo, attr_name)
+
+
+# wrapper for multiple attributes
+def import_from_lean_dojo(*args):
+    if len(args) == 0:
+        load_github_access_token()
+        import lean_dojo
+        return lean_dojo
+    if len(args) == 1:
+        return import_attr_from_lean_dojo(args[0])
+    return tuple(import_attr_from_lean_dojo(arg) for arg in args)
 
 
 def get_hf_access_token(

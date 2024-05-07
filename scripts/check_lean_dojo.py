@@ -2,11 +2,11 @@ import json
 import os
 from contextlib import contextmanager
 from time import perf_counter
-from dotenv import load_dotenv
 
-# isort: split
-from src
-from lean_dojo import Dojo, LeanGitRepo, ProofFinished, TacticState, Theorem
+from load_gh_token import load_github_access_token
+
+load_github_access_token()
+from lean_dojo import Dojo, LeanGitRepo, ProofFinished, TacticState, Theorem # isort: skip
 
 
 def load_theorems_from_json(file, num_theorems=1, filter=None):
@@ -59,8 +59,8 @@ def time_tactics(dojo, initial_state, tacs):
         state = res
 
 if __name__ == "__main__":
-    scripts_dir = os.path.dirname(os.path.abspath(__file__))
-    wrt2repo = lambda p: os.path.abspath(os.path.join(scripts_dir, "..", p))
+    scripts_dir = os.path.dirname(os.path.realpath(__file__))
+    wrt2repo = lambda p: os.path.realpath(os.path.join(scripts_dir, "..", p))
     # tts = load_theorems_from_benchmark(wrt2repo("data/"), num_theorems=2)
     tts = load_theorems_from_json(wrt2repo("data/novel_premises_train_md3_tlinf.json"), 2)
     tt = tts[0]

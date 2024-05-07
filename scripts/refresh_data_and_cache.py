@@ -8,8 +8,10 @@ from pathlib import Path
 
 from loguru import logger
 
-import load_gh_token # isort: split
-from lean_dojo import LeanGitRepo, is_available_in_cache
+from load_gh_token import load_github_access_token
+
+load_github_access_token()
+from lean_dojo import LeanGitRepo, is_available_in_cache # isort: skip
 
 DEFAULT_DATA_PATH = os.path.join(os.path.dirname(__file__), "..", "data")
 DEFAULT_CACHE_DIR = Path(os.environ.get("CACHE_DIR", Path.home() / ".cache/lean_dojo"))

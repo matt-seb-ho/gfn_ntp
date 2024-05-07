@@ -5,16 +5,11 @@ from dataclasses import dataclass
 from typing import Optional
 
 import torch
-from lean_dojo import (
-    LeanError,
-    ProofFinished,
-    ProofGivenUp,
-    TacticResult,
-    TacticState,
-    TimeoutError
-)
 
 from src.constants import PROOF_COMPLETE_MESSAGE, TACTIC_DELIMITER
+from src.utils import load_github_access_token
+load_github_access_token()
+from lean_dojo import ProofFinished, TacticResult, TacticState # isort: skip
 
 
 @dataclass
@@ -106,6 +101,7 @@ def extract_trajectories(root: ProofTreeNode, theorem_id: str) -> list:
             })
     
     return trajectories
+
 
 def convert_tactic_result_to_state_string(res: TacticResult) -> str:
     if isinstance(res, TacticState):

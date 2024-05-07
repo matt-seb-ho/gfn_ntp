@@ -3,9 +3,10 @@ from time import perf_counter
 import numpy as np
 from tqdm import tqdm
 
-from dotenv import load_dotenv
-load_dotenv("/home/matthewho/.env") # load GH token env var
-from lean_dojo import Dojo, Theorem, LeanGitRepo
+from load_gh_token import load_github_access_token
+
+load_github_access_token()
+from lean_dojo import Dojo, Theorem, LeanGitRepo # isort: skip
 
 with open("data/leandojo_benchmark_4/novel_premises/train.json") as f:
     thm_dicts = json.load(f)

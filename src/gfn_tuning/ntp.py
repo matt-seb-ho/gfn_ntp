@@ -1,4 +1,3 @@
-import src.gfn_tuning.lean_dojo_preflight # isort: split
 import random
 from contextlib import contextmanager
 from functools import partial
@@ -7,7 +6,6 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 import torch
-from lean_dojo import Dojo, ProofFinished, TacticResult, TacticState, Theorem
 from peft import PeftModel
 from pytorch_lightning import LightningModule
 from transformers import AutoTokenizer
@@ -16,6 +14,11 @@ from .proof_tree import ProofTreeNode, extract_trajectories
 from .replay_buffer import ReplayBuffer
 from .reward import NTPReward, compute_log_reward
 from .utils import base_to_lora, lora_to_base
+
+from src.utils import load_github_access_token
+
+load_github_access_token()
+from lean_dojo import Dojo, TacticState, Theorem  # isort: skip
 
 
 class NeuralTheoremProvingTask(LightningModule):
