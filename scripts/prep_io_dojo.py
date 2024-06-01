@@ -7,7 +7,13 @@ from load_gh_token import load_github_access_token
 load_github_access_token()
 
 start = perf_counter()
-from lean_dojo import InitOptimizedDojo, Theorem, LeanGitRepo
+from lean_dojo import (
+    InitOptimizedDojo, 
+    Theorem, 
+    LeanGitRepo,
+    ProofFinished,
+    TacticState
+)
 print(f"imported from lean_dojo in {perf_counter() - start}s")
 
 # assuming __file__ is in gfn_ntp/scripts/
@@ -20,6 +26,21 @@ theorem_file_path = (
     / benchmark_splits
     / f"{split}.json"
 )
+
+
+def time_tactics(dojo, initial_state, tacs):
+    state = initial_state
+    print("timing tactic run times")
+    for i, tt_ in enumerate(tacs):
+        assert state.pp == tt_["state_before"]
+        start = perf_counter()
+        res = dojo.run_tac(state, tt_["tactic"])
+        print(f"tactic #{i+1} latency: {perf_counter() - start}s")
+        if isinstance(res, TacticState):
+            assert res.pp == tt_["state_after"]
+        else:
+            assert isinstance(res, ProofFinished) and tt_["state_after"] == "no goals"
+        state = res
 
 
 def main():
@@ -43,8 +64,10 @@ def main():
     # - subsequent runs only takes .0001s to check that it's there
 
     start = perf_counter()
-    with InitOptimizedDojo(test_theorem, tmp_dir, hard_timeout=30) as (dojo, initial_state):
+    InitOptimizedDojo.default_tmp_dir = tmp_dir
+    with InitOptimizedDojo(test_theorem, hard_timeout=30) as (dojo, initial_state):
         print(f"entered dojo in {perf_counter() - start}s")
+        time_tactics(dojo, initial_state, ttd["traced_tactics"])
         
 
 if __name__ == "__main__":
