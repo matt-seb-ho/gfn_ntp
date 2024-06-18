@@ -130,6 +130,10 @@ def time_theorem(
         return None, [], TimeDojoError.DOJO_TIMEOUT, ""
     except Exception as e:
         return None, [], TimeDojoError.OTHER_ENTRY_ERROR, str(e)
+    finally:
+        # if entry fails for some other reason, we need to cancel the timer
+        # because the exception might not be caught in the right place.
+        time_limit.cancel()
 
 
 def time_theorems(
@@ -165,31 +169,34 @@ def time_theorems(
 
     time_limit = HardTimeLimit(entry_timeout)
     for i, (thm_idx, thm_info) in enumerate(tqdm(thm_dicts.items())):
-        # construct theorem object
-        thm = Theorem(repo, thm_info["file_path"], thm_info["full_name"])
-        # time theorem entry and try running tactics
-        entry_time, tac_times, error, error_msg = time_theorem(
-            thm,
-            time_limit,
-            thm_info["traced_tactics"],
-            dojo_timeout=dojo_timeout,
-        )
-        # record results
-        entry_times[thm_idx] = entry_time
-        thm_info["entry_time"] = entry_time
-        thm_info["entry_failed"] = (
-            error == TimeDojoError.ENTRY_TIMEOUT
-            or error == TimeDojoError.OTHER_ENTRY_ERROR
-        )
-        tactics_times.extend(tac_times)
-        if error is None or error == TimeDojoError.EARLY_FINISH:
-            proof_times.append(sum(tac_times))
-        elif error is not None:
-            errors[error].append((thm_idx, error_msg))
+        try:
+            # construct theorem object
+            thm = Theorem(repo, thm_info["file_path"], thm_info["full_name"])
+            # time theorem entry and try running tactics
+            entry_time, tac_times, error, error_msg = time_theorem(
+                thm,
+                time_limit,
+                thm_info["traced_tactics"],
+                dojo_timeout=dojo_timeout,
+            )
+            # record results
+            entry_times[thm_idx] = entry_time
+            thm_info["entry_time"] = entry_time
+            thm_info["entry_failed"] = (
+                error == TimeDojoError.ENTRY_TIMEOUT
+                or error == TimeDojoError.OTHER_ENTRY_ERROR
+            )
+            tactics_times.extend(tac_times)
+            if error is None or error == TimeDojoError.EARLY_FINISH:
+                proof_times.append(sum(tac_times))
+            elif error is not None:
+                errors[error].append((thm_idx, error_msg))
 
-        # routinely save results in case of crash
-        if i != 0 and i % save_every == 0:
-            save_output(output_dir / f"intermediate{i}{suffix}.json")
+            # routinely save results in case of crash
+            if i != 0 and i % save_every == 0:
+                save_output(output_dir / f"intermediate{i}{suffix}.json")
+        except Exception as e:
+            print(f"Error timing theorem {thm_idx} (iter {i}): {type(e)}: {e}")
     
     return save_output(output_dir / f"final{suffix}.json")
 
@@ -201,6 +208,7 @@ def main():
     psr.add_argument("--timeout", type=int, default=60, help="timeout for each theorem")
     psr.add_argument("--suffix", help="suffix to add to output filename")
     psr.add_argument("--entry_timeout", type=int, default=5, help="timeout for entering theorem")
+    psr.add_argument("--skip_first", type=int, help="continuing a failed run")
     psr.add_argument("--test_run", action="store_true")
     args = psr.parse_args()
 
@@ -214,6 +222,8 @@ def main():
     else:
         random.seed(42)
         idxs_to_test = random.sample(range(len(data)), args.n)
+        if args.skip_first:
+            idxs_to_test = idxs_to_test[args.skip_first:]
     theorems = {i: data[i] for i in idxs_to_test}
     
     # setup
