@@ -4,10 +4,12 @@ import os
 import random
 from collections import Counter, defaultdict
 from pathlib import Path
+import shutil
 from time import perf_counter
 from enum import Enum
 from typing import Optional
-import signal
+from multiprocessing import Process, Queue
+import time
 
 from tqdm import tqdm
 
@@ -29,24 +31,6 @@ print(f"imported from lean_dojo in {perf_counter() - start}s")
 # assuming __file__ is in gfn_ntp/scripts/
 project_root = Path(__file__).parents[1]
 
-
-class HardTimeLimit:
-    def __init__(self, time_limit):
-        self.time_limit = time_limit
-        self.timed_out = False
-    
-    def start(self):
-        signal.signal(signal.SIGALRM, self.alarm_handler)
-        signal.alarm(self.time_limit)
-    
-    def cancel(self):
-        signal.alarm(0) # disable alarm
-        signal.signal(signal.SIGALRM, signal.SIG_DFL) # reset signal handler
-    
-    def alarm_handler(self, signum, frame):
-        raise HitEntryTimeLimit()
-
-
 class HitEntryTimeLimit(Exception):
     pass
 
@@ -59,6 +43,58 @@ class TimeDojoError(Enum):
     DOJO_TIMEOUT = 5
     OTHER_ENTRY_ERROR = 6
     OTHER_TACTIC_ERROR = 7
+
+
+class TimeoutException(Exception):
+    pass
+
+
+def dojo_enter_wrapper(theorem, dojo_timeout, queue):
+    start = perf_counter()
+    stop = None
+    try:
+        with InitOptimizedDojo(theorem, hard_timeout=dojo_timeout) as (dojo, initial_state):
+            stop = perf_counter()
+        queue.put((stop - start, None))
+    except Exception as e:
+        stop = perf_counter()
+        queue.put((stop - start, e))
+
+
+def time_entry_with_timeout(
+    thm_info: dict, 
+    repo: LeanGitRepo, 
+    dojo_timeout: int, 
+    timing_timeout: int,
+    tmp_dir: Path,
+) -> tuple[Optional[float], Optional[TimeDojoError], str]:
+    queue = Queue()
+    thm = Theorem(repo, thm_info["file_path"], thm_info["full_name"])
+
+    # ensure backup is created
+    thm_file_path = tmp_dir / repo.name / thm.file_path
+    manual_backup = thm_file_path.with_suffix(".backup")
+    shutil.copy(thm_file_path, manual_backup)
+    
+    proc = Process(target=dojo_enter_wrapper, args=(thm, dojo_timeout, queue))
+    proc.start()
+    proc.join(timing_timeout)
+    if proc.is_alive():
+        proc.terminate()
+        proc.join()
+        res = None, TimeDojoError.ENTRY_TIMEOUT, ""
+    else:
+        entry_time, error = queue.get()
+        if error is None:
+            res = entry_time, None, ""
+        else:
+            res = entry_time, TimeDojoError.OTHER_ENTRY_ERROR, str(error)
+
+    # ensure backup is restored
+    os.rename(manual_backup, thm_file_path)
+
+    # return entry time, exception
+    return res
 
 
 def time_tactics(dojo, initial_state, tacs) -> tuple[list[int], Optional[TimeDojoError]]:
@@ -106,6 +142,7 @@ def time_tactics(dojo, initial_state, tacs) -> tuple[list[int], Optional[TimeDoj
 def entry_timeout_handler(signum, frame):
     raise HitEntryTimeLimit
     
+"""
 def time_theorem(
     thm: Theorem, 
     time_limit: HardTimeLimit,
@@ -113,41 +150,19 @@ def time_theorem(
     dojo_timeout: int = 60, 
 ) -> tuple[Optional[int], list[int], Optional[TimeDojoError], str]:
     # returns entry_time, tactic_times, error, error message
-    try:
-        time_limit.start()
-        start = perf_counter()
-        with InitOptimizedDojo(thm, hard_timeout=dojo_timeout) as (dojo, initial_state):
-            entry_time = perf_counter() - start
-            time_limit.cancel()
-            try:
-                tac_times, error = time_tactics(dojo, initial_state, traced_tactics)
-                return entry_time, tac_times, error, ""
-            except Exception as e:
-                return entry_time, [], TimeDojoError.OTHER_TACTIC_ERROR, str(e)
-    except HitEntryTimeLimit:
-        return None, [], TimeDojoError.ENTRY_TIMEOUT, ""
-    except DojoHardTimeoutError:
-        return None, [], TimeDojoError.DOJO_TIMEOUT, ""
-    except Exception as e:
-        return None, [], TimeDojoError.OTHER_ENTRY_ERROR, str(e)
-    finally:
-        # if entry fails for some other reason, we need to cancel the timer
-        # because the exception might not be caught in the right place.
-        time_limit.cancel()
+"""
 
 
 def time_theorems(
-    thm_dicts, 
-    repo, 
-    output_dir, 
-    dojo_timeout, 
-    save_every=500, 
-    suffix="",
-    entry_timeout=5,
-):
+    thm_dicts: dict[int, dict],
+    repo: LeanGitRepo, 
+    output_dir: str, 
+    dojo_timeout: int = 10, 
+    save_every: int = 500, 
+    suffix: str = "",
+    entry_timeout: int = 5,
+) -> dict[str, dict]:
     errors = defaultdict(list)
-    tactics_times = []
-    proof_times = []
     entry_times = {}
     output_dir = Path(output_dir)
     suffix = f"_{suffix}" if suffix else ""
@@ -158,54 +173,57 @@ def time_theorems(
         json_friendly_errors = {key_to_str(k): v for k, v in errors.items()}
         res = {
             "theorems": thm_dicts,
+            "entry_times": entry_times, # negative value x indicates error after -x seconds
             "errors": json_friendly_errors,
-            "tactics_times": tactics_times, # all tactic times
-            "proof_times": proof_times,     # sum of tactic times for each theorem
-            "entry_times": entry_times,     # time to enter each theorem
         }
         with open(output_file, "w") as f:
             json.dump(res, f, indent=2)
         return res
 
-    time_limit = HardTimeLimit(entry_timeout)
     for i, (thm_idx, thm_info) in enumerate(tqdm(thm_dicts.items())):
         try:
-            # construct theorem object
-            thm = Theorem(repo, thm_info["file_path"], thm_info["full_name"])
-            # time theorem entry and try running tactics
-            entry_time, tac_times, error, error_msg = time_theorem(
-                thm,
-                time_limit,
-                thm_info["traced_tactics"],
-                dojo_timeout=dojo_timeout,
+            entry_time, error, error_msg = time_entry_with_timeout(
+                thm_info, 
+                repo, 
+                dojo_timeout, 
+                entry_timeout,
+                InitOptimizedDojo.default_tmp_dir,
             )
+
             # record results
-            entry_times[thm_idx] = entry_time
+            entry_times[thm_idx] = -entry_time
             thm_info["entry_time"] = entry_time
-            thm_info["entry_failed"] = (
-                error == TimeDojoError.ENTRY_TIMEOUT
-                or error == TimeDojoError.OTHER_ENTRY_ERROR
-            )
-            tactics_times.extend(tac_times)
-            if error is None or error == TimeDojoError.EARLY_FINISH:
-                proof_times.append(sum(tac_times))
-            elif error is not None:
+            thm_info["entry_failed"] = error is not None
+            if error is not None:
                 errors[error].append((thm_idx, error_msg))
 
             # routinely save results in case of crash
             if i != 0 and i % save_every == 0:
                 save_output(output_dir / f"intermediate{i}{suffix}.json")
+
         except Exception as e:
             print(f"Error timing theorem {thm_idx} (iter {i}): {type(e)}: {e}")
+            entry_times[thm_idx] = None
+            thm_info["entry_time"] = None
+            thm_info["entry_failed"] = True
+            errors[TimeDojoError.OTHER_ENTRY_ERROR].append((thm_idx, str(e)))
     
+    # print summary
+    total_error_count = sum(len(v) for v in errors.values())
+    print(f"total errors: {total_error_count}, total theorems: {len(thm_dicts)}")
+    print("error types:")
+    for k, v in errors.items():
+        print(f"{k.name}: {len(v)}")
+
+    # save final result
     return save_output(output_dir / f"final{suffix}.json")
 
 
 def main():
     psr = argparse.ArgumentParser()
-    psr.add_argument("-n", type=int, default=1000, help="how many theorems to time entry")
+    psr.add_argument("-n", type=int, default=1000, help="how many theorems to time entry, 0 for all")
     psr.add_argument("--input", type=str, default="/mnt/hdd/msho/gfn_ntp/data/random_train_pl1_3_tl30.json", help="theorems to time")
-    psr.add_argument("--timeout", type=int, default=60, help="timeout for each theorem")
+    psr.add_argument("--dojo_timeout", type=int, default=60, help="timeout for each theorem")
     psr.add_argument("--suffix", help="suffix to add to output filename")
     psr.add_argument("--entry_timeout", type=int, default=5, help="timeout for entering theorem")
     psr.add_argument("--skip_first", type=int, help="continuing a failed run")
@@ -218,7 +236,11 @@ def main():
     # randomly select args.n theorems to time
     if args.test_run:
         # expecting 3965 to be ~1.7s, 8108 to be ~20s (timeout error)
-        idxs_to_test = [3965, 8108]
+        # idxs_to_test = [3965, 8108]
+        # err2s from v2 (file not founds)
+        idxs_to_test = [20989, 19216, 25936, 25418, 18805, 15458, 25980, 13436, 2782, 15271]
+    elif args.n == 0:
+        idxs_to_test = range(len(data))
     else:
         random.seed(42)
         idxs_to_test = random.sample(range(len(data)), args.n)
@@ -239,9 +261,8 @@ def main():
     time_theorems(
         theorems, 
         mathlib_repo, 
-        # project_root / f"data/dojo_times_n{args.n}_{args.suffix}.json", 
         project_root / "data/timing",
-        args.timeout,
+        dojo_timeout=args.dojo_timeout,
         suffix=args.suffix,
     )
 
