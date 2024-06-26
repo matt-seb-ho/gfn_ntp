@@ -3,7 +3,7 @@ defaults:
   - task: openwebtext_gpt2
   - device: gpu
   - hydra: default
-  - env_files: mb
+  - env_paths: mb
 
 seed: 27
 save_dir: "runs/"
