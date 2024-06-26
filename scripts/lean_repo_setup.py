@@ -3,8 +3,8 @@ import os
 from pathlib import Path
 from time import perf_counter
 
-from load_gh_token import load_github_access_token
-load_github_access_token()
+from lean_dojo_env_setup import prepare_environment_for_lean_dojo
+prepare_environment_for_lean_dojo()
 
 start = perf_counter()
 from lean_dojo import (

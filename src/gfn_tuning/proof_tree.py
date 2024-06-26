@@ -7,8 +7,8 @@ from typing import Optional
 import torch
 
 from src.constants import PROOF_COMPLETE_MESSAGE, TACTIC_DELIMITER
-from src.utils import load_github_access_token
-load_github_access_token()
+from src.utils import prepare_environment_for_lean_dojo
+prepare_environment_for_lean_dojo()
 from lean_dojo import ProofFinished, TacticResult, TacticState # isort: skip
 
 

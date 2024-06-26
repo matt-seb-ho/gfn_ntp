@@ -16,18 +16,23 @@ def make_path_relative_to_repo(relative_path: str) -> str:
     )
 
 
-def load_github_access_token():
-    if "GITHUB_ACCESS_TOKEN" in os.environ:
-        return
-    with hydra.initialize(config_path="../configs", version_base=None):
-        config = hydra.compose(config_name="train")
-    load_dotenv(config.env_files.github_access_token)
+def prepare_environment_for_lean_dojo():
+    # github access token
+    if not "GITHUB_ACCESS_TOKEN" in os.environ:
+        with hydra.initialize(config_path="../configs", version_base=None):
+            config = hydra.compose(config_name="train")
+        load_dotenv(config.env_paths.github_access_token)
+
+    # lean dojo cache path
+    cache_path_key = "CACHE_DIR"
+    if not cache_path_key in os.environ:
+        os.environ[cache_path_key] = config.env_paths.lean_dojo_cache_path
 
 
 # cache individual attribute imports
 @lru_cache(maxsize=None)
 def import_attr_from_lean_dojo(attr_name):
-    load_github_access_token()
+    prepare_environment_for_lean_dojo()
     import lean_dojo
     return getattr(lean_dojo, attr_name)
 
@@ -35,7 +40,7 @@ def import_attr_from_lean_dojo(attr_name):
 # wrapper for multiple attributes
 def import_from_lean_dojo(*args):
     if len(args) == 0:
-        load_github_access_token()
+        prepare_environment_for_lean_dojo()
         import lean_dojo
         return lean_dojo
     if len(args) == 1:

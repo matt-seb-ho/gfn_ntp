@@ -8,9 +8,9 @@ from pathlib import Path
 
 from loguru import logger
 
-from load_gh_token import load_github_access_token
+from lean_dojo_env_setup import prepare_environment_for_lean_dojo
 
-load_github_access_token()
+prepare_environment_for_lean_dojo()
 from lean_dojo import LeanGitRepo, is_available_in_cache # isort: skip
 
 DEFAULT_DATA_PATH = os.path.join(os.path.dirname(__file__), "..", "data")

@@ -20,9 +20,9 @@ from src.gfn_tuning.lean_data_module import NTPDataModule
 from src.gfn_tuning.ntp import NeuralTheoremProvingTask, lean_context
 from src.gfn_tuning.reward import NTPReward
 from src.gfn_tuning.replay_buffer import ReplayBuffer
-from src.utils import make_path_relative_to_repo, load_github_access_token
+from src.utils import make_path_relative_to_repo, prepare_environment_for_lean_dojo
 
-load_github_access_token()
+prepare_environment_for_lean_dojo()
 from lean_dojo import TacticState, LeanGitRepo, Theorem, is_available_in_cache # isort: skip
 
 BASE_MODEL_ID = "EleutherAI/llemma_7b"

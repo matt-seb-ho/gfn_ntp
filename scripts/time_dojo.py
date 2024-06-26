@@ -3,9 +3,9 @@ from time import perf_counter
 import numpy as np
 from tqdm import tqdm
 
-from load_gh_token import load_github_access_token
+from lean_dojo_env_setup import prepare_environment_for_lean_dojo
 
-load_github_access_token()
+prepare_environment_for_lean_dojo()
 from lean_dojo import Dojo, Theorem, LeanGitRepo # isort: skip
 
 with open("data/leandojo_benchmark_4/novel_premises/train.json") as f:

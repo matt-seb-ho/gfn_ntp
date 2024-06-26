@@ -1,2 +1,3 @@
 github_access_token: "/mnt/hdd/msho/.env"
 hf_access_token: "/mnt/hdd/msho/.env"
+lean_dojo_cache_path: "/mnt/hdd/msho/gfn_ntp/.cache/lean_dojo"

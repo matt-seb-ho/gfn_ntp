@@ -11,8 +11,78 @@ from transformers import AutoTokenizer
 # import matplotlib.pyplot as plt
 # plt.style.use("rose-pine-dawn")
 
+# time_entry handles GH auth token
+from time_entry import time_theorems
+from lean_dojo import LeanGitRepo
+
 # assumption: this script is in the scripts/ directory
 data_dir = Path(__file__).parents[1] / "data"
+
+def filter_dataset_for_init_time(
+    threshold: int,
+    timing_files: list[str],
+    output_file: str,
+    thm_dicts: Optional[dict[int, dict]] = None,
+    **timing_kwargs
+) -> dict[int, dict]:
+    """
+    Filter theorems based on initialization time.
+
+    input:
+    - either provide timing files from `time_entry.py:time_theorems()`
+    - or {idx: thm_dict} to time theorems from scratch (provide time_theorems() kwargs)
+    output:
+    - filtered {idx: thm_dict}
+
+    """
+    if len(timing_files):
+        # gather timing data
+        timed_theorems = {}
+        for timing_file in timing_files:
+            with open(timing_file, "r") as f:
+                timing_data = json.load(f)
+                timed_theorems.update(timing_data["theorems"])
+        print(f"timed theorems count: {len(timed_theorems)}")
+    else:
+        # get new timing data
+        assert thm_dicts is not None, "Please provide theorems to time"
+        thm0 = next(iter(thm_dicts.values()))
+        repo = LeanGitRepo(thm0["url"], thm0["commit"])
+        timing_data = time_theorems(
+            thm_dicts,
+            repo,
+            timing_kwargs.get("output_dir", data_dir / "timing"),
+            **timing_kwargs,
+        )
+        timed_theorems = timing_data["theorems"]
+    
+    # gather theorems that initialized successfully and within the time threshold
+    filtered_theorems = {}
+    entry_failures = 0
+    overtime = 0
+    for idx, thm_info in timed_theorems.items():
+        if (
+            thm_info.get("entry_failed", True) 
+            or thm_info.get("entry_time", threshold + 1) > threshold
+        ):
+            if thm_info.get("entry_failed"):
+                entry_failures += 1
+            elif thm_info.get("entry_time", threshold + 1) > threshold:
+                overtime += 1
+            continue
+        filtered_theorems[idx] = thm_info
+
+    print(f"filtered theorems count: {len(filtered_theorems)}")
+    print(f"entry failures: {entry_failures}")
+    print(f"overtime: {overtime}")
+    
+    # save the filtered data
+    with open(output_file, "w") as f:
+        json.dump(filtered_theorems, f, indent=2)
+        print(f"Saved to: {output_file}")
+    
+    return filtered_theorems
+        
 
 def filter_dataset_for_length(
     data_file_path: Optional[str] = None,
@@ -23,6 +93,7 @@ def filter_dataset_for_length(
     min_depth: int = 1,
     max_depth: int = 3,
     token_limit: Optional[int] = None,
+    output_filename: Optional[str] = None,
 ) -> tuple[list[int], list[int]]:
     """
     - creates a data subset with proofs of a maximum depth of `max_depth`.
@@ -67,7 +138,10 @@ def filter_dataset_for_length(
             filtered.append(proof)
     
     # save the filtered data
-    filename = f"{benchmark_splits}_{split}_pl{min_depth}_{max_depth}_tl{token_limit}.json"
+    filename = (
+        output_filename 
+        or f"{benchmark_splits}_{split}_pl{min_depth}_{max_depth}_tl{token_limit}.json"
+    )
     output_path = os.path.join(data_dir, filename)
     start = time.perf_counter()
     with open(output_path, "w") as f:
@@ -102,8 +176,10 @@ def main():
 
     # filtering on length (proof steps, and tokens within each step)
     psr.add_argument("--filter_length", action="store_true", help="filter on proof step count and tokens per step")
+    psr.add_argument("--output_file", type=str, default="filtered_theorems.json")
+
     # - specifying initial data
-    psr.add_argument("--data_dir", default="data/")
+    psr.add_argument("--data_dir", default=str(data_dir), help="directory to read benchmark from and write filtered files to")
     psr.add_argument("--splits", choices=["random", "novel_premises"], default="random")
     psr.add_argument("--split", choices=["train", "val", "test"], default="train")
     psr.add_argument("--tokenizer", type=str, default="EleutherAI/llemma_7b")
@@ -114,9 +190,9 @@ def main():
 
     # filtering on entry time (TODO: set threshold default)
     psr.add_argument("--filter_time", action="store_true", help="filter on (real and estimated) entry time")
-    psr.add_argument("--data_file", type=str)
-    psr.add_argument("--time_file", type=str, help="file containing real entry times")
-    psr.add_argument("--time_threshold", type=float, default=10, help="threshold for entry time (in seconds) to filter on")
+    psr.add_argument("--data_file", nargs="+", help="files containing timing data")
+    psr.add_argument("--retime", action="store_true", help="retime theorems")
+    psr.add_argument("--time_threshold", type=int, default=5, help="threshold for entry time (in seconds) to filter on")
 
     # misc options
     psr.add_argument("--show_stats", "-ss", action="store_true")
@@ -131,6 +207,7 @@ def main():
             min_depth=args.min_depth,
             max_depth=args.max_depth,
             token_limit=args.token_limit,
+            output_filename=args.output_file,
         )
 
         if not args.show_stats:
@@ -141,16 +218,23 @@ def main():
                 summary_statistics(proof_lengths),
                 deciles(proof_lengths),
                 "------------------------------\n"
-                "# Tactic Lengths Statistics\n",
+                "# Tactic Lengths Statistics",
                 "  - note: only theorems with acceptable proof lengths are included",
                 summary_statistics(tactic_lengths),
                 deciles(tactic_lengths),
             ])
         )
     
-    if args.filter_time:
-        # TODO
-        raise NotImplementedError("Filtering on entry time is not yet implemented")
+    elif args.filter_time:
+        if args.retime:
+            # TODO
+            raise NotImplementedError("Filtering on entry time is not yet implemented")
+        else:
+            filter_dataset_for_init_time(
+                args.time_threshold,
+                args.data_file,
+                data_dir / args.output_file
+            )
 
 if __name__ == "__main__":
     main()
