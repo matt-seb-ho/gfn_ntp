@@ -3,9 +3,9 @@ import os
 from contextlib import contextmanager
 from time import perf_counter
 
-from load_gh_token import load_github_access_token
+from lean_dojo_env_setup import prepare_environment_for_lean_dojo
 
-load_github_access_token()
+prepare_environment_for_lean_dojo()
 from lean_dojo import Dojo, LeanGitRepo, ProofFinished, TacticState, Theorem # isort: skip
 
 

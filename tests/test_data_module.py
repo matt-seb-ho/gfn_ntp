@@ -2,9 +2,9 @@ import pytest
 
 from src.constants import LEAN_DOJO_RANDOM_DATA_PATH
 from src.gfn_tuning.lean_data_module import NTPDataModule, TheoremDataPipe
-from src.utils import make_path_relative_to_repo, load_github_access_token
+from src.utils import make_path_relative_to_repo, prepare_environment_for_lean_dojo
 
-load_github_access_token()
+prepare_environment_for_lean_dojo()
 from lean_dojo import LeanGitRepo, Pos, Theorem, is_available_in_cache # isort: skip
 
 LIMIT_THEOREMS = 100

@@ -39,6 +39,12 @@ def main() -> None:
     args = parser.parse_args()
     logger.info(args)
 
+    print(f"data_path: {args.data_path}. Ok? [y/n]:")
+    res = input()
+    if res != "y":
+        return
+    
+
     if not os.path.exists(args.data_path):
         os.mkdir(args.data_path)
 

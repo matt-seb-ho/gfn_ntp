@@ -15,9 +15,9 @@ from .replay_buffer import ReplayBuffer
 from .reward import NTPReward, compute_log_reward
 from .utils import base_to_lora, lora_to_base
 
-from src.utils import load_github_access_token
+from src.utils import prepare_environment_for_lean_dojo
 
-load_github_access_token()
+prepare_environment_for_lean_dojo()
 from lean_dojo import Dojo, TacticState, Theorem  # isort: skip
 
 

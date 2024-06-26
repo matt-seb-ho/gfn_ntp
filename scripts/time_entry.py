@@ -13,8 +13,8 @@ import time
 
 from tqdm import tqdm
 
-from load_gh_token import load_github_access_token
-load_github_access_token()
+from lean_dojo_env_setup import prepare_environment_for_lean_dojo
+prepare_environment_for_lean_dojo()
 
 start = perf_counter()
 from lean_dojo import (
@@ -82,7 +82,7 @@ def time_entry_with_timeout(
     if proc.is_alive():
         proc.terminate()
         proc.join()
-        res = None, TimeDojoError.ENTRY_TIMEOUT, ""
+        res = None, TimeDojoError.ENTRY_TIMEOUT, "entry timeout"
     else:
         entry_time, error = queue.get()
         if error is None:
@@ -173,7 +173,7 @@ def time_theorems(
         json_friendly_errors = {key_to_str(k): v for k, v in errors.items()}
         res = {
             "theorems": thm_dicts,
-            "entry_times": entry_times, # negative value x indicates error after -x seconds
+            "entry_times": entry_times,
             "errors": json_friendly_errors,
         }
         with open(output_file, "w") as f:
@@ -191,7 +191,7 @@ def time_theorems(
             )
 
             # record results
-            entry_times[thm_idx] = -entry_time
+            entry_times[thm_idx] = entry_time
             thm_info["entry_time"] = entry_time
             thm_info["entry_failed"] = error is not None
             if error is not None:
@@ -221,7 +221,7 @@ def time_theorems(
 
 def main():
     psr = argparse.ArgumentParser()
-    psr.add_argument("-n", type=int, default=1000, help="how many theorems to time entry, 0 for all")
+    psr.add_argument("--n", type=int, default=1000, help="how many theorems to time entry, 0 for all")
     psr.add_argument("--input", type=str, default="/mnt/hdd/msho/gfn_ntp/data/random_train_pl1_3_tl30.json", help="theorems to time")
     psr.add_argument("--dojo_timeout", type=int, default=60, help="timeout for each theorem")
     psr.add_argument("--suffix", help="suffix to add to output filename")

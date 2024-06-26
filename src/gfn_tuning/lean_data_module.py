@@ -8,10 +8,10 @@ from pytorch_lightning import LightningDataModule
 from torch.utils.data import DataLoader
 from torchdata.datapipes.map import MapDataPipe
 
-from src.utils import load_github_access_token
+from src.utils import prepare_environment_for_lean_dojo
 
 warnings.filterwarnings("ignore", ".*does not have many workers.*")
-load_github_access_token()
+prepare_environment_for_lean_dojo()
 from lean_dojo import LeanGitRepo, Pos, Theorem, is_available_in_cache # isort: skip
 
 
