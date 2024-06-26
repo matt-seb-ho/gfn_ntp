@@ -1,3 +1,9 @@
+# path to .env file defining env variable: GITHUB_ACCESS_TOKEN 
 github_access_token: "/mnt/hdd/msho/.env"
+
+# '' same but for HF_ACCESS_TOKEN
 hf_access_token: "/mnt/hdd/msho/.env"
+
+# directory to store lean dojo cache 
+# (if none, defaults to $HOME/.cache/lean_dojo)
 lean_dojo_cache_path: "/mnt/hdd/msho/gfn_ntp/.cache/lean_dojo"
