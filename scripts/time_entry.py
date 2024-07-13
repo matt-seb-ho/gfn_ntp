@@ -18,7 +18,7 @@ prepare_environment_for_lean_dojo()
 
 start = perf_counter()
 from lean_dojo import (
-    InitOptimizedDojo, 
+    Dojo,
     Theorem, 
     LeanGitRepo,
     ProofFinished,
@@ -53,7 +53,7 @@ def dojo_enter_wrapper(theorem, dojo_timeout, queue):
     start = perf_counter()
     stop = None
     try:
-        with InitOptimizedDojo(theorem, hard_timeout=dojo_timeout) as (dojo, initial_state):
+        with Dojo(theorem, timeout=dojo_timeout) as (dojo, initial_state):
             stop = perf_counter()
         queue.put((stop - start, None))
     except Exception as e:
@@ -66,15 +66,14 @@ def time_entry_with_timeout(
     repo: LeanGitRepo, 
     dojo_timeout: int, 
     timing_timeout: int,
-    tmp_dir: Path,
 ) -> tuple[Optional[float], Optional[TimeDojoError], str]:
     queue = Queue()
     thm = Theorem(repo, thm_info["file_path"], thm_info["full_name"])
 
     # ensure backup is created
-    thm_file_path = tmp_dir / repo.name / thm.file_path
-    manual_backup = thm_file_path.with_suffix(".backup")
-    shutil.copy(thm_file_path, manual_backup)
+    # thm_file_path = tmp_dir / repo.name / thm.file_path
+    # manual_backup = thm_file_path.with_suffix(".backup")
+    # shutil.copy(thm_file_path, manual_backup)
     
     proc = Process(target=dojo_enter_wrapper, args=(thm, dojo_timeout, queue))
     proc.start()
@@ -187,7 +186,6 @@ def time_theorems(
                 repo, 
                 dojo_timeout, 
                 entry_timeout,
-                InitOptimizedDojo.default_tmp_dir,
             )
 
             # record results
@@ -255,7 +253,6 @@ def main():
     mathlib_repo = LeanGitRepo(example_theorem["url"], example_theorem["commit"])
     print(f"constructed LeanGitRepo in {perf_counter() - start}s")
     # - set tmp_dir
-    InitOptimizedDojo.default_tmp_dir = project_root / "tmp"
 
     # timing code
     time_theorems(

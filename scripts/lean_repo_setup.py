@@ -8,7 +8,7 @@ prepare_environment_for_lean_dojo()
 
 start = perf_counter()
 from lean_dojo import (
-    InitOptimizedDojo, 
+    Dojo, 
     Theorem, 
     LeanGitRepo,
     ProofFinished,
@@ -57,15 +57,12 @@ def main():
     # 1. downloads repo copy into tmp
     # 2. downloads traced repo into cache
     start = perf_counter()
-    tmp_dir = project_root / "tmp"
-    InitOptimizedDojo.init_repo(mathlib_repo, tmp_dir)
     print(f"downloaded repo and traced version in {perf_counter() - start}s")
     # - downloading both initially takes 170s
     # - subsequent runs only takes .0001s to check that it's there
 
     start = perf_counter()
-    InitOptimizedDojo.default_tmp_dir = tmp_dir
-    with InitOptimizedDojo(test_theorem, hard_timeout=30) as (dojo, initial_state):
+    with Dojo(test_theorem, timeout=30) as (dojo, initial_state):
         print(f"entered dojo in {perf_counter() - start}s")
         time_tactics(dojo, initial_state, ttd["traced_tactics"])
         
