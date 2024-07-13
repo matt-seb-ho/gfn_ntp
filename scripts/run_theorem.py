@@ -1,7 +1,6 @@
 import argparse
 import json
 import os
-from pathlib import Path
 from time import perf_counter
 
 from time_entry import time_entry_with_timeout
@@ -10,7 +9,7 @@ from time_entry import time_entry_with_timeout
 os.environ["DEBUG"] = "true"
 
 from lean_dojo import (
-    InitOptimizedDojo, 
+    Dojo,
     # Theorem, 
     LeanGitRepo,
     # ProofFinished,
@@ -18,9 +17,6 @@ from lean_dojo import (
     # DojoHardTimeoutError,
     # LeanError,
 )
-
-project_root = Path(__file__).parents[1]
-InitOptimizedDojo.default_tmp_dir = project_root / "tmp"
 
 def main():
     psr = argparse.ArgumentParser()
@@ -45,7 +41,6 @@ def main():
             repo,
             args.dojo_timeout,
             args.entry_timeout, 
-            tmp_dir = InitOptimizedDojo.default_tmp_dir,
         )
         if error is None:
             print(f"-> entry time: {entry_time}")
