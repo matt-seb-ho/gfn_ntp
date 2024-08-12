@@ -1,3 +1,6 @@
+# repo
+repo: "/mnt/hdd/msho/gfn_ntp"
+
 # path to .env file defining env variable: GITHUB_ACCESS_TOKEN 
 github_access_token: "/mnt/hdd/msho/.env"
 
