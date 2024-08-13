@@ -16,11 +16,11 @@ import os
 import json
 from time import perf_counter
 
-from src.gfn_tuning.lean_data_module import NTPDataModule
-from src.gfn_tuning.ntp import NeuralTheoremProvingTask, lean_context
-from src.gfn_tuning.reward import NTPReward
-from src.gfn_tuning.replay_buffer import ReplayBuffer
-from src.utils import make_path_relative_to_repo, prepare_environment_for_lean_dojo
+from proof_flow.src.gfn_tuning.lean_data_module import NTPDataModule
+from proof_flow.src.gfn_tuning.ntp import NeuralTheoremProvingTask, lean_context
+from proof_flow.src.gfn_tuning.reward import NTPReward
+from proof_flow.src.gfn_tuning.replay_buffer import ReplayBuffer
+from proof_flow.src.utils import repo_root, prepare_environment_for_lean_dojo
 
 prepare_environment_for_lean_dojo()
 from lean_dojo import TacticState, LeanGitRepo, Theorem, is_available_in_cache # isort: skip
@@ -124,7 +124,7 @@ def ntp_task_module(configs, model_and_tokenizer):
     return ntp_task
 
 def load_test_theorem(method="direct", traced_theorem_only=False):
-    data_path = make_path_relative_to_repo("tests/test_data")
+    data_path = repo_root() / "tests/test_data"
     with open(os.path.join(data_path, "test.json")) as f:
         # traced theorem
         tt = json.load(f)[0] 
