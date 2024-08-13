@@ -4,8 +4,8 @@ ghat = os.getenv("GITHUB_ACCESS_TOKEN", None)
 print(f"ghat: {ghat}")
 
 from lean_dojo import LeanGitRepo, Theorem, Pos, is_available_in_cache
-from src.gfn_tuning.lean_data_module import NTPDataModule, TheoremDataPipe
-from src.gfn_tuning.constants import LEAN_DOJO_RANDOM_DATA_PATH 
+from proof_flow.src.gfn_tuning.lean_data_module import NTPDataModule, TheoremDataPipe
+from proof_flow.src.gfn_tuning.constants import LEAN_DOJO_RANDOM_DATA_PATH 
 
 
 def test_data_module():
