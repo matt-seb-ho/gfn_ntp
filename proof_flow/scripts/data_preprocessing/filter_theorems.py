@@ -9,7 +9,7 @@ from typing import Optional
 import numpy as np
 from lean_dojo import LeanGitRepo
 # time_entry handles GH auth token
-from time_entry import time_theorems
+from proof_flow.scripts.data_preprocessing.time_entry import time_theorems
 from tqdm import tqdm
 from transformers import AutoTokenizer
 
@@ -183,6 +183,7 @@ def main():
     psr.add_argument("--splits", choices=["random", "novel_premises"], default="random")
     psr.add_argument("--split", choices=["train", "val", "test"], default="train")
     psr.add_argument("--tokenizer", type=str, default="EleutherAI/llemma_7b")
+
     # - length filter parameters 
     psr.add_argument("--min_depth", type=int, default=1)
     psr.add_argument("--max_depth", type=int, default=3)
@@ -195,7 +196,7 @@ def main():
     psr.add_argument("--time_threshold", type=int, default=5, help="threshold for entry time (in seconds) to filter on")
 
     # misc options
-    psr.add_argument("--show_stats", "-ss", action="store_true")
+    psr.add_argument("--collect_stats", action="store_true")
     args = psr.parse_args()
 
     if args.filter_length:   
@@ -210,20 +211,27 @@ def main():
             output_filename=args.output_file,
         )
 
-        if not args.show_stats:
-            return
-        print(
-            "\n".join([
-                "# Proof Lengths Statistics",
-                summary_statistics(proof_lengths),
-                deciles(proof_lengths),
-                "------------------------------\n"
-                "# Tactic Lengths Statistics",
-                "  - note: only theorems with acceptable proof lengths are included",
-                summary_statistics(tactic_lengths),
-                deciles(tactic_lengths),
-            ])
-        )
+        if args.collect_stats:
+            stats_printout = (
+                "\n".join([
+                    "# Proof Lengths Statistics",
+                    summary_statistics(proof_lengths),
+                    deciles(proof_lengths),
+                    "------------------------------\n"
+                    "# Tactic Lengths Statistics",
+                    "  - note: only theorems with acceptable proof lengths are included",
+                    summary_statistics(tactic_lengths),
+                    deciles(tactic_lengths),
+                ])
+            )
+            with open(data_dir / "length_filter_stats.txt", "w") as f:
+                f.write(stats_printout)
+            print(
+                stats_printout, 
+                f"Saved to: {data_dir / 'length_filter_stats.txt'}", 
+                sep="\n"
+            )
+        
     
     elif args.filter_time:
         if args.retime:
