@@ -2,15 +2,16 @@ import argparse
 import json
 import random
 from collections import defaultdict
+from enum import Enum
+from multiprocessing import Process, Queue
 from pathlib import Path
 from time import perf_counter
-from enum import Enum
 from typing import Optional
-from multiprocessing import Process, Queue
 
 from tqdm import tqdm
 
 from proof_flow.src.utils import prepare_environment_for_lean_dojo, repo_root
+
 prepare_environment_for_lean_dojo()
 
 start = perf_counter()

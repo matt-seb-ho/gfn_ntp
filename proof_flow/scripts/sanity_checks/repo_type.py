@@ -1,15 +1,17 @@
 import os
 import re
-import urllib
 import tempfile
-from enum import Enum
-from typing import Optional, Union, Generator
-from pathlib import Path
+import urllib
 from contextlib import contextmanager
+from enum import Enum
 from functools import cache
+from pathlib import Path
+from typing import Generator, Optional, Union
+
 from loguru import logger
 
 from proof_flow.src.utils import prepare_environment_for_lean_dojo
+
 prepare_environment_for_lean_dojo()
 
 from lean_dojo import LeanGitRepo # isort: skip

@@ -1,6 +1,7 @@
 import argparse
 import json
 from time import perf_counter
+
 import numpy as np
 from tqdm import tqdm
 

@@ -8,6 +8,7 @@ import torch
 
 from proof_flow.src.constants import PROOF_COMPLETE_MESSAGE, TACTIC_DELIMITER
 from proof_flow.src.utils import prepare_environment_for_lean_dojo
+
 prepare_environment_for_lean_dojo()
 from lean_dojo import ProofFinished, TacticResult, TacticState # isort: skip
 

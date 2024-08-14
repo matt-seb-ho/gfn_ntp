@@ -10,12 +10,12 @@ from peft import PeftModel
 from pytorch_lightning import LightningModule
 from transformers import AutoTokenizer
 
+from proof_flow.src.utils import prepare_environment_for_lean_dojo
+
 from .proof_tree import ProofTreeNode, extract_trajectories
 from .replay_buffer import ReplayBuffer
 from .reward import NTPReward, compute_log_reward
 from .utils import base_to_lora, lora_to_base
-
-from proof_flow.src.utils import prepare_environment_for_lean_dojo
 
 prepare_environment_for_lean_dojo()
 from lean_dojo import Dojo, TacticState, Theorem  # isort: skip

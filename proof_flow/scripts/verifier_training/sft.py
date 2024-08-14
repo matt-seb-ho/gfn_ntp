@@ -10,12 +10,9 @@ from transformers import (
     TrainingArguments
 )
 from trl import DataCollatorForCompletionOnlyLM, SFTTrainer
+
 # from prep_sft_data import load_sft_data, sft_subset
-from proof_flow.src.utils import (
-    add_pad_token,
-    get_hf_access_token,
-    repo_root,
-)
+from proof_flow.src.utils import add_pad_token, get_hf_access_token, repo_root
 
 # constants
 SFT_DATA_PATH = repo_root() / "data/sfttif_random_train.json"

@@ -4,6 +4,7 @@ from pathlib import Path
 from time import perf_counter
 
 from proof_flow.src.utils import prepare_environment_for_lean_dojo, repo_root
+
 prepare_environment_for_lean_dojo()
 
 start = perf_counter()

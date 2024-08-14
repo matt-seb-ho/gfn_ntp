@@ -1,17 +1,18 @@
 import argparse
 import json
+import math
 import os
 import time
-from tqdm import tqdm
-from typing import Optional
-import math
-import numpy as np
 from pathlib import Path
-from transformers import AutoTokenizer
+from typing import Optional
 
+import numpy as np
+from lean_dojo import LeanGitRepo
 # time_entry handles GH auth token
 from time_entry import time_theorems
-from lean_dojo import LeanGitRepo
+from tqdm import tqdm
+from transformers import AutoTokenizer
+
 from proof_flow.src.utils import repo_root
 
 data_dir = repo_root() / "data"

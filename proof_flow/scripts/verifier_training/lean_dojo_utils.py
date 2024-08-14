@@ -19,6 +19,7 @@ from pytorch_lightning.utilities.deepspeed import (
 from transformers import get_cosine_schedule_with_warmup
 
 from proof_flow.src.utils import prepare_environment_for_lean_dojo
+
 prepare_environment_for_lean_dojo()
 from lean_dojo import Pos # isort: skip
 
