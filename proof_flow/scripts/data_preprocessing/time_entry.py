@@ -1,15 +1,12 @@
 import argparse
 import json
-import os
 import random
-from collections import Counter, defaultdict
+from collections import defaultdict
 from pathlib import Path
-import shutil
 from time import perf_counter
 from enum import Enum
 from typing import Optional
 from multiprocessing import Process, Queue
-import time
 
 from tqdm import tqdm
 
@@ -22,15 +19,8 @@ from lean_dojo import ( # isort: skip
     Theorem, 
     LeanGitRepo,
     ProofFinished,
-    TacticState,
-    DojoHardTimeoutError,
     LeanError,
 )
-print(f"imported from lean_dojo in {perf_counter() - start}s")
-
-
-class HitEntryTimeLimit(Exception):
-    pass
 
 
 class TimeDojoError(Enum):
@@ -41,10 +31,6 @@ class TimeDojoError(Enum):
     DOJO_TIMEOUT = 5
     OTHER_ENTRY_ERROR = 6
     OTHER_TACTIC_ERROR = 7
-
-
-class TimeoutException(Exception):
-    pass
 
 
 def dojo_enter_wrapper(theorem, dojo_timeout, queue):
@@ -68,11 +54,6 @@ def time_entry_with_timeout(
     queue = Queue()
     thm = Theorem(repo, thm_info["file_path"], thm_info["full_name"])
 
-    # ensure backup is created
-    # thm_file_path = tmp_dir / repo.name / thm.file_path
-    # manual_backup = thm_file_path.with_suffix(".backup")
-    # shutil.copy(thm_file_path, manual_backup)
-    
     proc = Process(target=dojo_enter_wrapper, args=(thm, dojo_timeout, queue))
     proc.start()
     proc.join(timing_timeout)
@@ -87,10 +68,6 @@ def time_entry_with_timeout(
         else:
             res = entry_time, TimeDojoError.OTHER_ENTRY_ERROR, str(error)
 
-    # ensure backup is restored
-    # os.rename(manual_backup, thm_file_path)
-
-    # return entry time, exception
     return res
 
 
@@ -108,48 +85,12 @@ def time_tactics(dojo, initial_state, tacs) -> tuple[list[int], Optional[TimeDoj
         elif isinstance(tactic_result, ProofFinished) and i < len(tacs) - 1:
             return tactic_times, TimeDojoError.EARLY_FINISH
         state = tactic_result
-
-        ### v1 code (used for initial n=500, 4096)
-        #
-        # if state.pp != tt_["state_before"]:
-        #     return tactic_times, TimeDojoError.MISMATCH_BEFORE
-        #
-        # start = perf_counter()
-        # res = dojo.run_tac(state, tt_["tactic"])
-        # tactic_times.append(perf_counter() - start)
-        #
-        # if isinstance(res, TacticState):
-        #     if res.pp != tt_["state_after"]:
-        #         return tactic_times, TimeDojoError.MISMATCH_AFTER
-        # else:
-        #     if not isinstance(res, ProofFinished):
-        #         # if tt_["state_after"] != "no goals":
-        #         #     return tactic_times, TimeDojoError.BOTH_PROOFS_UNFINISHED
-        #         return tactic_times, TimeDojoError.SIMULATED_PROOF_UNFINISHED
-        #     if tt_["state_after"] != "no goals":
-        #         return tactic_times, TimeDojoError.TRACED_PROOF_UNFINISHED
-        #
-        # state = res
     
     if not isinstance(state, ProofFinished):
         return tactic_times, TimeDojoError.INCOMPLETE_PROOF
     return tactic_times, None
 
     
-def entry_timeout_handler(signum, frame):
-    raise HitEntryTimeLimit
-    
-"""
-def time_theorem(
-    thm: Theorem, 
-    time_limit: HardTimeLimit,
-    traced_tactics: list[dict],
-    dojo_timeout: int = 60, 
-) -> tuple[Optional[int], list[int], Optional[TimeDojoError], str]:
-    # returns entry_time, tactic_times, error, error message
-"""
-
-
 def time_theorems(
     thm_dicts: dict[int, dict],
     repo: LeanGitRepo, 
@@ -166,6 +107,7 @@ def time_theorems(
 
     # helper routine to write progress to file
     def save_output(output_file):
+        # json can't serialize Enum keys
         key_to_str = lambda x: x.name if isinstance(x, Enum) else str(x)
         json_friendly_errors = {key_to_str(k): v for k, v in errors.items()}
         res = {
@@ -195,7 +137,7 @@ def time_theorems(
 
             # routinely save results in case of crash
             if i != 0 and i % save_every == 0:
-                save_output(output_dir / f"intermediate{i}{suffix}.json")
+                save_output(output_dir / f"partial_times_n{i}{suffix}.json")
 
         except Exception as e:
             print(f"Error timing theorem {thm_idx} (iter {i}): {type(e)}: {e}")
@@ -212,7 +154,7 @@ def time_theorems(
         print(f"{k.name}: {len(v)}")
 
     # save final result
-    return save_output(output_dir / f"final{suffix}.json")
+    return save_output(output_dir / f"time_data{suffix}.json")
 
 
 def main():
