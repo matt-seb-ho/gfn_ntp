@@ -1,5 +1,7 @@
 from huggingface_hub import login
+
 from proof_flow.src.utils import get_hf_access_token
+
 
 def main():
     HF_ACCESS_TOKEN = get_hf_access_token()

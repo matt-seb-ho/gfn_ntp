@@ -3,22 +3,17 @@ import json
 import os
 from time import perf_counter
 
+from proof_flow.scripts.data_preprocessing.time_entry import (
+    time_entry_with_timeout
+)
 from proof_flow.src.utils import repo_root
-from proof_flow.scripts.data_preprocessing.time_entry import time_entry_with_timeout
 
 # comment this line to disable debug logs -> stderr
 os.environ["DEBUG"] = "true"
 
 # environment setup handled by time_entry
-from lean_dojo import (
-    Dojo,
-    # Theorem, 
-    LeanGitRepo,
-    # ProofFinished,
-    # TacticState,
-    # DojoHardTimeoutError,
-    # LeanError,
-)
+from lean_dojo import LeanGitRepo
+
 
 def main():
     default_theorem_file = repo_root() / "data/random_train_pl1_3_tl30.json"

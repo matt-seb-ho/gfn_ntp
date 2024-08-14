@@ -1,12 +1,12 @@
 """Script to download LeanDojo Benchmark and LeanDojo Benchmark 4 into `./data`."""
 
-import os
 import argparse
+import os
 from hashlib import md5
+
 from loguru import logger
 
 from proof_flow.src.utils import repo_root
-
 
 # lean dojo benchmark 4 url: https://zenodo.org/records/12740403
 LEANDOJO_BENCHMARK_4_URL = (
