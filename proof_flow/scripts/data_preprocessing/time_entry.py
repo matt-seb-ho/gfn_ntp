@@ -159,25 +159,36 @@ def time_theorems(
 
 
 def main():
+    default_input_file = repo_root() / "data/length_filtered.json"
+    default_test_idxs = [0, 1]
+
     psr = argparse.ArgumentParser()
     psr.add_argument("--n", type=int, default=1000, help="how many theorems to time entry, 0 for all")
-    psr.add_argument("--input", type=str, default="/mnt/hdd/msho/gfn_ntp/data/random_train_pl1_3_tl30.json", help="theorems to time")
+    psr.add_argument("--input", type=str, default=default_input_file, help="theorems to time")
     psr.add_argument("--dojo_timeout", type=int, default=60, help="timeout for each theorem")
     psr.add_argument("--suffix", help="suffix to add to output filename")
     psr.add_argument("--entry_timeout", type=int, default=5, help="timeout for entering theorem")
-    psr.add_argument("--skip_first", type=int, help="continuing a failed run")
-    psr.add_argument("--test_run", action="store_true")
+    psr.add_argument("--skip_first", type=int, help="continuing an interrupted run")
+    psr.add_argument("--test_run", nargs="*", type=int, help="run with test indices")
     args = psr.parse_args()
 
     with open(args.input) as f:
         data = json.load(f)
     
-    # randomly select args.n theorems to time
-    if args.test_run:
-        # expecting 3965 to be ~1.7s, 8108 to be ~20s (timeout error)
-        # idxs_to_test = [3965, 8108]
-        # err2s from v2 (file not founds)
-        idxs_to_test = [20989, 19216, 25936, 25418, 18805, 15458, 25980, 13436, 2782, 15271]
+    # which theorems to time
+    # - test_run: specific indices to test
+    # - n = 0: all theorems
+    # - n > 0: random sample of n theorems
+    if args.test_run is not None:
+        if len(args.test_run) == 0:
+            idxs_to_test = default_test_idxs
+            # old test idxs (previous version of benchmark data)
+            # expecting 3965 to be ~1.7s, 8108 to be ~20s (timeout error)
+            # idxs_to_test = [3965, 8108]
+            # err2s from v2 (file not founds)
+            # idxs_to_test = [20989, 19216, 25936, 25418, 18805, 15458, 25980, 13436, 2782, 15271]
+        else: 
+            idxs_to_test = args.test_run
     elif args.n == 0:
         idxs_to_test = range(len(data))
     else:

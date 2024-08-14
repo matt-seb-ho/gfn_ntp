@@ -1,3 +1,4 @@
+import argparse
 import json
 import os
 from pathlib import Path
@@ -17,8 +18,8 @@ from lean_dojo import ( # isort: skip
 )
 print(f"imported from lean_dojo in {perf_counter() - start}s")
 
-benchmark_splits = "random" # or "novel_premises"
-split = "val" # or "train", "test"
+benchmark_splits = "random" # {"random", "novel_premises"}
+split = "train" # {"val", "train", "test"}
 theorem_file_path = (
     repo_root()
     / "data/leandojo_benchmark_4"
@@ -43,9 +44,20 @@ def time_tactics(dojo, initial_state, tacs):
 
 
 def main():
-    with open(theorem_file_path) as f:
+    psr = argparse.ArgumentParser()
+    psr.add_argument("--theorem_file_path", type=str, default=theorem_file_path)
+    psr.add_argument("--idx", type=int, default=0)
+    args = psr.parse_args()
+
+    init_msg = (
+        f"initializing repo based on\n"
+        f"- theorem idx: {args.idx}\n"
+        f"- theorem file path: {args.theorem_file_path}"
+    )
+    print(init_msg)
+    with open(args.theorem_file_path) as f:
         data = json.load(f)
-    ttd = data[0] # test theorem dict
+    ttd = data[args.idx] # test theorem dict
 
     # initialize repo for dojo
     # 1. LeanGitRepo.__post_init__ downloads repo copy into tmp
@@ -62,7 +74,6 @@ def main():
         print(f"entered dojo in {perf_counter() - start}s")
         time_tactics(dojo, initial_state, ttd["traced_tactics"])
 
-        
 
 if __name__ == "__main__":
     main()
