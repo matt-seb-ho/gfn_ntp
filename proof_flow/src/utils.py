@@ -10,6 +10,7 @@ from omegaconf import OmegaConf
 HF_ACCESS_TOKEN_VAR_NAME = "HF_ACCESS_TOKEN"
 
 
+@cache
 def get_config(config_path: str = "../../configs") -> OmegaConf:
     with hydra.initialize(config_path=config_path, version_base=None):
         config = hydra.compose(config_name="train")
@@ -39,13 +40,12 @@ def repo_root() -> Path:
 def prepare_environment_for_lean_dojo():
     # github access token
     if not "GITHUB_ACCESS_TOKEN" in os.environ:
-        config = get_config()
-        load_dotenv(config.paths.github_access_token)
+        load_dotenv(get_config().paths.github_access_token)
 
     # lean dojo cache path
     cache_path_key = "CACHE_DIR"
     if not cache_path_key in os.environ:
-        os.environ[cache_path_key] = config.paths.lean_dojo_cache_path
+        os.environ[cache_path_key] = get_config().paths.lean_dojo_cache_path
 
 
 # cache individual attribute imports
