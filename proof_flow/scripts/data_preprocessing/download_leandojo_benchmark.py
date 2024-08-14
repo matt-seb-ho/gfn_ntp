@@ -8,11 +8,12 @@ from loguru import logger
 from proof_flow.src.utils import repo_root
 
 
+# lean dojo benchmark 4 url: https://zenodo.org/records/12740403
 LEANDOJO_BENCHMARK_4_URL = (
-    "https://zenodo.org/records/10929138/files/leandojo_benchmark_4.tar.gz?download=1"
+    "https://zenodo.org/records/12740403/files/leandojo_benchmark_4.tar.gz?download=1"
 )
 DOWNLOADS = {
-    LEANDOJO_BENCHMARK_4_URL: "84a75ce552b31731165d55542b1aaca9",
+    LEANDOJO_BENCHMARK_4_URL: "25e1ee60cd8925b9d2e8673ddcc34b4c",
 }
 
 
@@ -36,17 +37,19 @@ def check_md5(filename: str, gt_hashcode: str) -> bool:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    # default_data_path = os.path.join(os.path.dirname(__file__), "..", "data")
     default_data_path = str(repo_root() / "data")
     parser.add_argument("--data-path", type=str, default=default_data_path)
     args = parser.parse_args()
     logger.info(args)
 
-    print(f"data_path: {args.data_path} (will download into f'{{data_path}}/leandojo_benchmark''). Confirm [y/n]: ")
+    confirm_msg = (
+        f"data_path: {args.data_path} (will download into f'{{data_path}}/leandojo_benchmark'').\n"
+        "Confirm [y/n]: "
+    )
+    print(confirm_msg, end="")
     res = input()
     if res != "y":
         return
-    
 
     if not os.path.exists(args.data_path):
         os.mkdir(args.data_path)
