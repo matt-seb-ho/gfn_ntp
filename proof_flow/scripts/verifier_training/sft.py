@@ -1,6 +1,7 @@
 import torch
 from datasets import load_from_disk
 from huggingface_hub import login
+from omegaconf import OmegaConf
 from peft import LoraConfig
 from transformers import (
     AutoModelForCausalLM,
@@ -36,8 +37,8 @@ def main():
     model_id = config.sft.model.base_model_id
     
     # BitsAndBytesConfig int-4 config
-    bnb_file_cfg = config.sft.model.bnb
-    bnb_file_cfg.bnb_4bit_compute_dtype = getattr(torch, bnb_file_cfg.bnb_4bit_compute_dtype)
+    bnb_file_cfg = OmegaConf.to_container(config.sft.model.bnb)
+    bnb_file_cfg["bnb_4bit_compute_dtype"] = getattr(torch, bnb_file_cfg["bnb_4bit_compute_dtype"])
     bnb_config = BitsAndBytesConfig(**bnb_file_cfg)
     
     # Load model and tokenizer
