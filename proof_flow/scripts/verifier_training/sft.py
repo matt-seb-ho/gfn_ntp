@@ -37,7 +37,7 @@ def main():
     
     # BitsAndBytesConfig int-4 config
     bnb_file_cfg = config.sft.model.bnb
-    bnb_file_cfg.bnb_4bit_compute_dtype = torch.get(bnb_file_cfg.bnb_4bit_compute_dtype)
+    bnb_file_cfg.bnb_4bit_compute_dtype = getattr(torch, bnb_file_cfg.bnb_4bit_compute_dtype)
     bnb_config = BitsAndBytesConfig(**bnb_file_cfg)
     
     # Load model and tokenizer
