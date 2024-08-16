@@ -11,24 +11,10 @@ HF_ACCESS_TOKEN_VAR_NAME = "HF_ACCESS_TOKEN"
 
 
 @cache
-def get_config(config_path: str = "../../configs") -> OmegaConf:
+def get_config(config_path: str = "../../configs", config_name: str = "train") -> OmegaConf:
     with hydra.initialize(config_path=config_path, version_base=None):
-        config = hydra.compose(config_name="train")
+        config = hydra.compose(config_name=config_name)
     return config
-
-
-def make_path_relative_to_repo(relative_path: str) -> str:
-    # NOTE: deprecated in favor of `repo_root`
-    # two ways of going about this, 
-    # 1) use the fact that `__file__` is in repo/pkg/src/utils.py
-    return os.path.normpath(
-        os.path.join(
-            os.path.dirname(__file__), 
-            "..",
-            "..",
-            relative_path
-        )
-    )
 
 
 @cache
