@@ -10,18 +10,25 @@ from transformers import (
 )
 from trl import SFTTrainer
 
-from proof_flow.src.utils import add_pad_token, get_config, get_hf_access_token
+from proof_flow.src.utils import (
+    add_pad_token, 
+    get_config, 
+    get_hf_access_token,
+    repo_root,
+)
 
 # code based on:
 # https://www.philschmid.de/fine-tune-llms-in-2024-with-trl
 # (from the blog of HF's tech lead)
 
 def main():
+    # load config
     config = get_config(config_name="verifier_training")
-    # from datasets import load_dataset
-    # # Load jsonl data from disk
-    # dataset = load_dataset("json", data_files="train_dataset.json", split="train")
+    # make output directory relative to repo root
+    config_train_args = config.sft.model.training_args
+    config_train_args.output_dir = repo_root() / config_train_args.output_dir
     
+    # load dataset
     dataset = load_from_disk(config.sft.data.formatted_dataset_dir)
     train_data = dataset["train"]
 

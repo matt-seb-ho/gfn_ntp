@@ -31,7 +31,9 @@ def prepare_environment_for_lean_dojo():
     # lean dojo cache path
     cache_path_key = "CACHE_DIR"
     if not cache_path_key in os.environ:
-        os.environ[cache_path_key] = get_config().paths.lean_dojo_cache_path
+        config_cache_path = get_config().paths.lean_dojo_cache_path
+        if config_cache_path is not None:
+            os.environ[cache_path_key] = config_cache_path
 
 
 # cache individual attribute imports
