@@ -58,23 +58,30 @@ def filter_dataset_for_init_time(
     
     # gather theorems that initialized successfully and within the time threshold
     filtered_theorems = {}
-    entry_failures = 0
-    overtime = 0
+    exclusion_stats = {
+        "entry_failure": 0,
+        "threshold": 0,
+        "no_timing_info": 0,
+    }
+    
     for idx, thm_info in timed_theorems.items():
-        if (
-            thm_info.get("entry_failed", True) 
-            or thm_info.get("entry_time", threshold + 1) > threshold
-        ):
-            if thm_info.get("entry_failed"):
-                entry_failures += 1
-            elif thm_info.get("entry_time", threshold + 1) > threshold:
-                overtime += 1
+        if "entry_time" not in thm_info and "entry_failed" not in thm_info:
+            # case 1: lacking timing info (skip)
+            exclusion_stats["no_timing_info"] += 1
             continue
+        elif (thm_info.get("entry_time", None) or -1) > threshold:
+            # case 2: entry time exceeds threshold (skip)
+            exclusion_stats["threshold"] += 1
+            continue
+        elif thm_info.get("entry_failed", False):
+            # case 3: entry otherwise failed (skip)
+            exclusion_stats["entry_failure"] += 1
+            continue
+        # case 4: passes time criteria (include in filtered results)
         filtered_theorems[idx] = thm_info
 
     print(f"filtered theorems count: {len(filtered_theorems)}")
-    print(f"entry failures: {entry_failures}")
-    print(f"overtime: {overtime}")
+    print("excluded theorem stats:", json.dumps(exclusion_stats, indent=2))
     
     # save the filtered data
     with open(output_file, "w") as f:
@@ -192,7 +199,6 @@ def main():
     # filtering on entry time (TODO: set threshold default)
     psr.add_argument("--filter_time", action="store_true", help="filter on (real and estimated) entry time")
     psr.add_argument("--data_file", nargs="+", help="files containing timing data")
-    psr.add_argument("--retime", action="store_true", help="retime theorems")
     psr.add_argument("--time_threshold", type=int, default=5, help="threshold for entry time (in seconds) to filter on")
 
     # misc options
@@ -234,15 +240,11 @@ def main():
         
     
     elif args.filter_time:
-        if args.retime:
-            # TODO
-            raise NotImplementedError("Filtering on entry time is not yet implemented")
-        else:
-            filter_dataset_for_init_time(
-                args.time_threshold,
-                args.data_file,
-                data_dir / args.output_file
-            )
+        filter_dataset_for_init_time(
+            args.time_threshold,
+            args.data_file,
+            data_dir / args.output_file
+        )
 
 if __name__ == "__main__":
     main()
