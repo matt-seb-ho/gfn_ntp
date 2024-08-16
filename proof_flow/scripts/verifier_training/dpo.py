@@ -26,7 +26,8 @@ DPO_SUBSET_PATH = None
 DPO_SUBSET_EXISTS = False
 DPO_SUBSET_SIZE = 10000
 BASE_MODEL_ID = "EleutherAI/llemma_7b"
-HF_ACCESS_TOKEN = get_hf_access_token("src/.env", True)
+# HF_ACCESS_TOKEN = get_hf_access_token("src/.env", True)
+HF_ACCESS_TOKEN = get_hf_access_token()
 # testing phase
 SANITY_CHECK = False
 

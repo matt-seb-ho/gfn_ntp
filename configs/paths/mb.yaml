@@ -1,2 +1,12 @@
+# repo
+repo: "/Users/matthewho/Documents/research/gfn_ntp"
+
+# path to .env file defining env variable: GITHUB_ACCESS_TOKEN 
 github_access_token: "/Users/matthewho/Documents/research/.env"
+
+# '' same but for HF_ACCESS_TOKEN
 hf_access_token: "/Users/matthewho/Documents/research/.env"
+
+# directory to store lean dojo cache 
+# (if none, defaults to $HOME/.cache/lean_dojo)
+lean_dojo_cache_path: "/Users/matthewho/.cache/lean_dojo"

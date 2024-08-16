@@ -53,17 +53,9 @@ def import_from_lean_dojo(*args):
     return tuple(import_attr_from_lean_dojo(arg) for arg in args)
 
 
-def get_hf_access_token(
-    dotenv_path: Optional[str] = None, 
-    relative_to_repo: bool = False
-) -> str:
-    if HF_ACCESS_TOKEN_VAR_NAME in os.environ:
-        return os.environ[HF_ACCESS_TOKEN_VAR_NAME]
-    if dotenv_path is None:
-        dotenv_path = repo_root / ".env"
-    elif relative_to_repo:
-        dotenv_path = repo_root / dotenv_path
-    load_dotenv(dotenv_path)
+def get_hf_access_token(): 
+    config = get_config()
+    load_dotenv(config.paths.hf_access_token)
     return os.getenv(HF_ACCESS_TOKEN_VAR_NAME)
 
 
