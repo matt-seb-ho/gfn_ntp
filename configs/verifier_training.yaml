@@ -21,7 +21,7 @@ sft:
       optim: "adamw_torch_fused"              # use fused adamw optimizer
       logging_steps: 10                       # log every 10 steps
       save_strategy: "epoch"                  # save checkpoint every epoch
-      learning_rate: 2e-4                     # learning rate, based on QLoRA paper
+      learning_rate: 0.0002                   # learning rate, based on QLoRA paper
       bf16: True                              # use bfloat16 precision
       tf32: True                              # use tf32 precision
       max_grad_norm: 0.3                      # max gradient norm based on QLoRA paper
