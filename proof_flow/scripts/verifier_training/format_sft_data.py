@@ -4,13 +4,14 @@ from typing import Optional, Union
 
 from datasets import Dataset, DatasetDict
 from loguru import logger
-from prompts import (
+from tqdm import tqdm
+from hydra import compose, initialize
+
+from proof_flow.src.utils import get_config, repo_root
+from proof_flow.scripts.verifier_training.prompts import (
     INSTRUCTION_PROMPT_TEMPLATE, 
     INSTRUCTION_COMPLETION_TEMPLATE_WITH_NEXT_STATE
 )
-from tqdm import tqdm
-
-from proof_flow.src.utils import get_config, repo_root
 
 MARK_START_SYMBOL = "<a>"
 MARK_END_SYMBOL = "</a>"
@@ -27,11 +28,12 @@ def preprocess_data(data_path: str) -> list[dict[str, str]]:
     data = []
     with open(data_path) as f:
         theorem_data = json.load(f)
-    for thm in tqdm(theorem_data):
+    for thm_idx, thm in tqdm(theorem_data.items()):
         for tac in thm["traced_tactics"]:
             tactic = remove_marks(tac["tactic"])
             data.append(
                 {
+                    "idx": thm_idx,
                     "url": thm["url"],
                     "commit": thm["commit"],
                     "file_path": thm["file_path"],
@@ -64,18 +66,18 @@ def format_sft_dataset(
         completions = [r["tactic"] for r in records]
     # convert to arrow dataset, create train-test split, and save to disk
     dataset = Dataset.from_dict({"prompt": prompts, "completion": completions})
-    dataset = dataset.train_test_split(train_size=train_size)
+    dataset = dataset.train_test_split(train_size=train_size, seed=42)
     dataset.save_to_disk(output_path)
     return dataset
 
 
 if __name__ == "__main__":
     psr = argparse.ArgumentParser()
-    psr.add_argument("--config_file", type=str, default="verifier_training")
+    psr.add_argument("--config", type=str, default="verifier_training")
     args = psr.parse_args()
 
     # read options from config file
-    config = get_config(args.config_file)
+    config = get_config(config_name=args.config)
     
     # load and preprocess data
     records = preprocess_data(repo_root() / config.sft.data.raw_data)

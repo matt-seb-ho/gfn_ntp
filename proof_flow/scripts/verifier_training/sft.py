@@ -1,7 +1,6 @@
 import torch
 from datasets import load_dataset
 from huggingface_hub import login
-from icecream import ic
 from peft import LoraConfig
 from transformers import (
     AutoModelForCausalLM,
