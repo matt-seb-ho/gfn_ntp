@@ -29,7 +29,7 @@ def main():
     config_train_args.output_dir = repo_root() / config_train_args.output_dir
     
     # load dataset
-    dataset = load_from_disk(config.sft.data.formatted_dataset_dir)
+    dataset = load_from_disk(repo_root() / config.sft.data.formatted_dataset_dir)
     train_data = dataset["train"]
 
     # Hugging Face model id
