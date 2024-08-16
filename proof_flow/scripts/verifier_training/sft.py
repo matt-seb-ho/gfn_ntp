@@ -53,7 +53,7 @@ def main():
     add_pad_token(model, tokenizer)
 
     # LoRA config based on QLoRA paper & Sebastian Raschka experiment
-    peft_config = LoraConfig(**config.sft.model.peft)
+    peft_config = LoraConfig(**config.sft.model.lora)
 
     training_args = TrainingArguments(
         **config.sft.model.training_args
