@@ -36,12 +36,9 @@ def main():
     model_id = config.sft.model.base_model_id
     
     # BitsAndBytesConfig int-4 config
-    bnb_config = BitsAndBytesConfig(
-        load_in_4bit=config.sft.model.bnb.load_in_4bit,
-        bnb_4bit_use_double_quant=config.sft.model.bnb.4bit_use_double_quant,
-        bnb_4bit_quant_type=config.sft.model.bnb.4bit_quant_type,
-        bnb_4bit_compute_dtype=torch.get(config.sft.model.bnb.4bit_compute_dtype),
-    )
+    bnb_file_cfg = config.sft.model.bnb
+    bnb_file_cfg.bnb_4bit_compute_dtype = torch.get(bnb_file_cfg.bnb_4bit_compute_dtype)
+    bnb_config = BitsAndBytesConfig(**bnb_file_cfg)
     
     # Load model and tokenizer
     model = AutoModelForCausalLM.from_pretrained(
