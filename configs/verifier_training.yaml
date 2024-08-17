@@ -11,7 +11,7 @@ sft:
   model:
     # TODO: figure this out
     base_model_id: "EleutherAI/llemma_7b"
-    max_seq_len: 1024
+    max_seq_length: 1024
     packing: true                             # pack examples together for better efficiency
 
     training_args:
