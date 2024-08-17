@@ -22,6 +22,23 @@ from proof_flow.src.utils import (
 # https://www.philschmid.de/fine-tune-llms-in-2024-with-trl
 # (from the blog of HF's tech lead)
 
+# prompt formatting references:
+# https://huggingface.co/docs/trl/en/sft_trainer#format-your-input-prompts
+# https://github.com/huggingface/trl/pull/444#issue-1760952763
+# key points
+# - packed datset requires non-batched formatting_func
+# - non-packed dataset requires batched formatting_func
+def sft_formatting_func(example):
+    return f"{example['prompt']}{example['completion']}"
+
+
+def batch_sft_formatting_func(batch):
+    output_text = []
+    for example in batch:
+        output_text.append(f"{example['prompt']}{example['completion']}")
+    return output_text
+
+
 def main():
     # load config
     config = get_config(config_name="verifier_training")
@@ -61,6 +78,10 @@ def main():
 
     # login to the hub (needed for saving the model)
     login(token=get_hf_access_token())
+
+    use_packing = config.sft.model.training_args.packing,
+    print(f"Using packed dataset: {use_packing}")
+    formatting_func = sft_formatting_func if use_packing else batch_sft_formatting_func
     
     trainer = SFTTrainer(
         model=model,
@@ -68,6 +89,8 @@ def main():
         train_dataset=train_data,
         peft_config=peft_config,
         tokenizer=tokenizer,
+        packing=use_packing,
+        formatting_func=formatting_func,
     )
 
     # start training, the model will be automatically saved to the hub and the output directory
