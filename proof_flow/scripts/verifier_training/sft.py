@@ -79,7 +79,7 @@ def main():
     # login to the hub (needed for saving the model)
     login(token=get_hf_access_token())
 
-    use_packing = config.sft.model.training_args.packing,
+    use_packing = config.sft.model.packing,
     print(f"Using packed dataset: {use_packing}")
     formatting_func = sft_formatting_func if use_packing else batch_sft_formatting_func
     
@@ -89,6 +89,7 @@ def main():
         train_dataset=train_data,
         peft_config=peft_config,
         tokenizer=tokenizer,
+        max_seq_length=config.sft.model.max_seq_length,
         packing=use_packing,
         formatting_func=formatting_func,
     )
