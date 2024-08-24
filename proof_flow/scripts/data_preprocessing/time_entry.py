@@ -159,12 +159,12 @@ def time_theorems(
 
 
 def main():
-    default_input_file = repo_root() / "data/length_filtered.json"
+    default_input_file = "data/initial_filtered.json"
     default_test_idxs = [0, 1]
 
     psr = argparse.ArgumentParser()
     psr.add_argument("--n", type=int, default=1000, help="how many theorems to time entry, 0 for all")
-    psr.add_argument("--input", type=str, default=default_input_file, help="theorems to time")
+    psr.add_argument("--input", type=str, default=default_input_file, help="theorems to time (path relative to repo root)")
     psr.add_argument("--dojo_timeout", type=int, default=60, help="timeout for each theorem")
     psr.add_argument("--suffix", help="suffix to add to output filename")
     psr.add_argument("--entry_timeout", type=int, default=5, help="timeout for entering theorem")
@@ -172,8 +172,10 @@ def main():
     psr.add_argument("--test_run", nargs="*", type=int, help="run with test indices")
     args = psr.parse_args()
 
-    with open(args.input) as f:
+    with open(repo_root() / args.input) as f:
         data = json.load(f)
+    if isinstance(data, list):
+        data = {i: thm for i, thm in enumerate(data)}
     
     # which theorems to time
     # - test_run: specific indices to test
@@ -190,10 +192,10 @@ def main():
         else: 
             idxs_to_test = args.test_run
     elif args.n == 0:
-        idxs_to_test = range(len(data))
+        idxs_to_test = list(data.keys())
     else:
         random.seed(42)
-        idxs_to_test = random.sample(range(len(data)), args.n)
+        idxs_to_test = random.sample(list(data.keys()), args.n)
         if args.skip_first:
             idxs_to_test = idxs_to_test[args.skip_first:]
     theorems = {i: data[i] for i in idxs_to_test}
@@ -201,7 +203,8 @@ def main():
     # setup
     # - construct LeanGitRepo
     start = perf_counter()
-    example_theorem = data[0]
+    # example_theorem = data[0] 
+    example_theorem = next(iter(theorems.values()))
     mathlib_repo = LeanGitRepo(example_theorem["url"], example_theorem["commit"])
     print(f"constructed LeanGitRepo in {perf_counter() - start}s")
 

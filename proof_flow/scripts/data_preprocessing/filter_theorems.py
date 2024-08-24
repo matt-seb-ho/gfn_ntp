@@ -9,6 +9,9 @@ from typing import Optional
 import numpy as np
 from lean_dojo import LeanGitRepo
 # time_entry handles GH auth token
+from proof_flow.scripts.data_preprocessing.formal_statements import (
+    add_formal_statements,
+)
 from proof_flow.scripts.data_preprocessing.time_entry import time_theorems
 from tqdm import tqdm
 from transformers import AutoTokenizer
@@ -86,7 +89,7 @@ def filter_dataset_for_init_time(
     # save the filtered data
     with open(output_file, "w") as f:
         json.dump(filtered_theorems, f, indent=2)
-        print(f"Saved to: {output_file}")
+        print(f"finished dojo entry time filter; saved {len(filtered_theorems)} to: {output_file}")
     
     return filtered_theorems
         
@@ -100,7 +103,7 @@ def filter_dataset_for_length(
     min_depth: int = 1,
     max_depth: int = 3,
     token_limit: Optional[int] = None,
-    output_filename: Optional[str] = None,
+    output_file: Optional[str] = None,
 ) -> tuple[list[int], list[int]]:
     """
     - creates a data subset with proofs of a maximum depth of `max_depth`.
@@ -145,18 +148,37 @@ def filter_dataset_for_length(
             filtered.append(proof)
     
     # save the filtered data
-    filename = (
-        output_filename 
-        or f"{benchmark_splits}_{split}_pl{min_depth}_{max_depth}_tl{token_limit}.json"
+    output_path = (
+        output_file 
+        or os.path.join(data_dir, f"{benchmark_splits}_{split}_pl{min_depth}_{max_depth}_tl{token_limit}.json")
     )
-    output_path = os.path.join(data_dir, filename)
-    start = time.perf_counter()
     with open(output_path, "w") as f:
-        json.dump(filtered, f, indent=2)
-        print(f"Saved to: {output_path}")
-        print(f"- {len(filtered)} proofs in {time.perf_counter() - start:.2f} seconds")
+        filtered_dict = {idx: thm for idx, thm in enumerate(filtered)}
+        json.dump(filtered_dict, f, indent=2)
+        print(f"finished initial length filter; saved {len(filtered)} entries to: {output_path}")
     
     return proof_lengths, tactic_lengths
+
+
+def filter_dataset_for_tactics_style(
+    thm_dicts_file: str,
+    output_file: str,
+    stats_file: Optional[str] = None,
+):
+    """
+    Only keep theorems with proofs completely in tactic style.
+    """
+    with open(thm_dicts_file, "r") as f:
+        thm_dicts = json.load(f)
+    data, _ = add_formal_statements(thm_dicts, stats_file=stats_file)
+    filtered_theorems = {}
+    for idx, thm_info in data.items():
+        if thm_info.get("is_tactic_proof", False):
+            filtered_theorems[idx] = thm_info
+    with open(output_file, "w") as f:
+        json.dump(filtered_theorems, f, indent=2)
+        print(f"finished proof style (tactics only) filter; saved {len(filtered_theorems)} entries to: {output_file}")
+    
 
 def summary_statistics(data):
     return (
@@ -170,6 +192,7 @@ def summary_statistics(data):
         f"25th percentile: {np.percentile(data, 25):.2f}\n"
         f"75th percentile: {np.percentile(data, 75):.2f}"
     )
+
 
 def deciles(data):
     return "\n".join(
@@ -196,14 +219,26 @@ def main():
     psr.add_argument("--max_depth", type=int, default=3)
     psr.add_argument("--token_limit", type=int, default=None)
 
+    # filtering on proof style
+    psr.add_argument("--filter_tactic_proof", action="store_true", help="keep only proofs entirely in tactic style")
+    psr.add_argument("--fs_stats_file", type=str, help="file to save formal statement extraction stats to")
+
     # filtering on entry time (TODO: set threshold default)
     psr.add_argument("--filter_time", action="store_true", help="filter on (real and estimated) entry time")
     psr.add_argument("--data_file", nargs="+", help="files containing timing data")
     psr.add_argument("--time_threshold", type=int, default=5, help="threshold for entry time (in seconds) to filter on")
 
     # misc options
-    psr.add_argument("--collect_stats", action="store_true")
+    psr.add_argument(
+        "--stats", 
+        nargs='?', 
+        const="data/filter_theorems_stats.json",
+        default=None, 
+        help="pass as flag to collect statistics and optionally specify stats file path",
+    )
+        
     args = psr.parse_args()
+    fs_stats_file = repo_root() / args.fs_stats_file if args.fs_stats_file else None
 
     if args.filter_length:   
         proof_lengths, tactic_lengths = filter_dataset_for_length(
@@ -214,36 +249,39 @@ def main():
             min_depth=args.min_depth,
             max_depth=args.max_depth,
             token_limit=args.token_limit,
-            output_filename=args.output_file,
+            output_file=args.output_file,
         )
-
-        if args.collect_stats:
-            stats_printout = (
-                "\n".join([
-                    "# Proof Lengths Statistics",
-                    summary_statistics(proof_lengths),
-                    deciles(proof_lengths),
-                    "------------------------------\n"
-                    "# Tactic Lengths Statistics",
-                    "  - note: only theorems with acceptable proof lengths are included",
-                    summary_statistics(tactic_lengths),
-                    deciles(tactic_lengths),
-                ])
+        # print length statistics
+        print((
+            "\n".join([
+                "# Proof Lengths Statistics",
+                summary_statistics(proof_lengths),
+                deciles(proof_lengths),
+                "------------------------------\n"
+                "# Tactic Lengths Statistics",
+                "  - note: only theorems with acceptable proof lengths are included",
+                summary_statistics(tactic_lengths),
+                deciles(tactic_lengths),
+            ])
+        ))
+        # filter on proof style (tactics only)
+        if args.filter_tactic_proof:
+            filter_dataset_for_tactics_style(
+                repo_root() / args.output_file,
+                repo_root() / args.output_file,
+                stats_file=fs_stats_file,
             )
-            with open(data_dir / "length_filter_stats.txt", "w") as f:
-                f.write(stats_printout)
-            print(
-                stats_printout, 
-                f"Saved to: {data_dir / 'length_filter_stats.txt'}", 
-                sep="\n"
-            )
-        
-    
+    elif args.filter_tactic_proof:
+        filter_dataset_for_tactics_style(
+            repo_root() / args.data_file,
+            repo_root() / args.output_file,
+            stats_file=fs_stats_file,
+        )
     elif args.filter_time:
         filter_dataset_for_init_time(
             args.time_threshold,
-            args.data_file,
-            data_dir / args.output_file
+            [repo_root() / f for f in args.data_file],
+            repo_root() / args.output_file
         )
 
 if __name__ == "__main__":
