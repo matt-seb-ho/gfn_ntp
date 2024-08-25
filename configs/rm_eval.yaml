@@ -1,0 +1,23 @@
+input_file: "data/time_filtered_val.json"
+output_file: "data/sampled_proofs.json"
+verification_results_file: "data/verification_results.json"
+use_tqdm: true
+input_limit: null
+
+# values from DeepSeek-Prover-V1.5/configs/sampling.py
+# initialization from DeepSeek-Prover-V1.5/prover/workers/generator.py
+# - except seed which was `seed = int(time.time()) % 1000 + (self.node_rank * 8 + self.local_rank) * 1000`
+
+llm:
+  model: deepseek-ai/DeepSeek-Prover-V1.5-RL
+  max_num_batched_tokens: 8192
+  seed: 42
+  trust_remote_code: true
+
+sampling_params:
+  temperature: 1
+  max_tokens: 2048
+  top_p: 0.95
+  n: 16
+
+
