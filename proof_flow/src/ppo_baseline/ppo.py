@@ -40,6 +40,7 @@ from proof_flow.src.gfn_tuning.verifier import (
 from gfn_tuning.ntp import NeuralTheoremProvingTask
 
 import torch
+import wandb
 from pathlib import Path
 
 class NTP_PPO(NeuralTheoremProvingTask):
@@ -66,7 +67,10 @@ class NTP_PPO(NeuralTheoremProvingTask):
         min_tactic_tokens: int = 2,
         max_tactic_tokens: int = 30,
         use_hf_generate: bool = True,
-        save_dir: str = "model_checkpoints",
+        save_dir: str = "ppo_model_checkpoints",
+        wandb_log: bool = False,
+        wandb_entity: str = "vincentzhu",
+        wandb_project: str = "ntp-ppo-training",        
     ):
         super().__init__(
             model=model,
@@ -92,6 +96,8 @@ class NTP_PPO(NeuralTheoremProvingTask):
             use_hf_generate=use_hf_generate,
         )
 
+        self.wandb_log = wandb_log
+
         # PPO-specific configuration
         self.ppo_config = PPOConfig(
             learning_rate=lr,
@@ -111,6 +117,12 @@ class NTP_PPO(NeuralTheoremProvingTask):
         self.save_dir = Path(save_dir)
         self.save_dir.mkdir(parents=True, exist_ok=True)
 
+        # Initialize wandb
+        if self.wandb_log:
+            self.entity = wandb_entity
+            self.project_name = wandb_project
+            wandb.init(entity=self.entity, project=self.project_name, config=self.ppo_config)
+
     def training_step(self, theorem: Theorem, batch_idx):
         """
         Override the training step to use PPO for fine-tuning the model and save checkpoints.
@@ -125,10 +137,14 @@ class NTP_PPO(NeuralTheoremProvingTask):
         stats = self.ppo_trainer.step(proof_texts, log_r)
 
         # Step 4: Log PPO-specific metrics
-        self.log("train/ppo_loss", stats["ppo/total_loss"])
-        self.log("train/ppo_policy_loss", stats["ppo/policy_loss"])
-        self.log("train/ppo_value_loss", stats["ppo/value_loss"])
-        self.log("train/ppo_entropy_loss", stats["ppo/entropy_loss"])
+        if self.wandb_log:
+            wandb.log({
+                "train/ppo_loss": stats["ppo/total_loss"],
+                "train/ppo_policy_loss": stats["ppo/policy_loss"],
+                "train/ppo_value_loss": stats["ppo/value_loss"],
+                "train/ppo_entropy_loss": stats["ppo/entropy_loss"],
+                "train/batch_idx": batch_idx,
+            })
 
         # Step 5: Save model checkpoint
         if batch_idx % 100 == 0:  # Save every 100 batches, adjust as needed
@@ -152,11 +168,15 @@ class NTP_PPO(NeuralTheoremProvingTask):
         )
 
         # Log metrics
-        self.log("val/loss", loss, sync_dist=True, prog_bar=True)
-        self.log("val/logR", log_r.mean(), sync_dist=True)
-        self.log("val/ppo_policy_loss", policy_loss, sync_dist=True)
-        self.log("val/ppo_value_loss", value_loss, sync_dist=True)
-        self.log("val/ppo_entropy_loss", entropy_loss, sync_dist=True)
+        if self.wandb_log:
+            wandb.log({
+                "val/loss": loss,
+                "val/logR": log_r.mean(),
+                "val/ppo_policy_loss": policy_loss,
+                "val/ppo_value_loss": value_loss,
+                "val/ppo_entropy_loss": entropy_loss,
+                "val/batch_idx": batch_idx,
+            })
 
         # Save the best model based on validation loss
         if self.best_val_loss is None or loss < self.best_val_loss:
@@ -167,7 +187,7 @@ class NTP_PPO(NeuralTheoremProvingTask):
 
     def save_model(self, name: str):
         """
-        Save the model parameters.
+        Save the model parameters and log as wandb artifact.
         """
         save_path = self.save_dir / f"{name}.pt"
         torch.save({
@@ -177,19 +197,34 @@ class NTP_PPO(NeuralTheoremProvingTask):
         }, save_path)
         print(f"Model saved to {save_path}")
 
+        # Log model as wandb artifact
+        artifact = wandb.Artifact(name=f"model-{name}", type="model")
+        artifact.add_file(str(save_path))
+        wandb.log_artifact(artifact)
+
     def load_model(self, name: str):
         """
-        Load the model parameters.
+        Load the model parameters from a local file or wandb artifact.
         """
         load_path = self.save_dir / f"{name}.pt"
         if load_path.exists():
             checkpoint = torch.load(load_path)
-            self.model.load_state_dict(checkpoint['model_state_dict'])
-            self.ppo_trainer.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-            self.best_val_loss = checkpoint['loss']
-            print(f"Model loaded from {load_path}")
         else:
-            print(f"No checkpoint found at {load_path}")
+            # Try to load from wandb artifact
+            artifact = wandb.use_artifact(f"model-{name}:latest")
+            artifact_dir = artifact.download()
+            checkpoint = torch.load(Path(artifact_dir) / f"{name}.pt")
+
+        self.model.load_state_dict(checkpoint['model_state_dict'])
+        self.ppo_trainer.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        self.best_val_loss = checkpoint['loss']
+        print(f"Model loaded: {name}")
+
+    def on_train_end(self):
+        """
+        Finish the wandb run when training ends.
+        """
+        wandb.finish()
     
 
 # Ignore: this was very general and not integrated into the reat of the code
