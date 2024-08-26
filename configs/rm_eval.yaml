@@ -1,6 +1,7 @@
 input_file: "data/time_filtered_val.json"
 output_file: "data/sampled_proofs.json"
 verification_results_file: "data/verification_results.json"
+rm_data_file: "data/rm_eval_dataset.json"
 use_tqdm: true
 input_limit: null
 
