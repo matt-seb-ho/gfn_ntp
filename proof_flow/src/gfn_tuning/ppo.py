@@ -14,34 +14,23 @@ from collections import defaultdict
 import numpy as np
 import pandas as pd
 from peft import PeftModel
-from pytorch_lightning import LightningModule
 from transformers import AutoTokenizer
 
 from proof_flow.src.utils import prepare_environment_for_lean_dojo
 
-from gfn_tuning.proof_tree import ProofTreeNode, extract_trajectories
-from gfn_tuning.replay_buffer import ReplayBuffer
-from gfn_tuning.reward import NTPReward, compute_log_reward
-from gfn_tuning.utils import base_to_lora, lora_to_base
+from .proof_tree import extract_trajectories
+from .replay_buffer import ReplayBuffer
+from .reward import NTPReward
+from .utils import base_to_lora, lora_to_base
 
 prepare_environment_for_lean_dojo()
 from lean_dojo import Dojo, TacticState, Theorem  # isort: skip
 
-from gfn_tuning.reward import compute_log_reward
-from proof_flow.src.constants import (
-    DEFAULT_VERIFIER_ADAPTER_NAME,
-    DEFAULT_VERIFIER_BATCH_SIZE,
-    PROOF_COMPLETE_MESSAGE
-)
-from proof_flow.src.gfn_tuning.verifier import (
-    batch_completion_probabilities,
-    batch_iterator
-)
-from gfn_tuning.ntp import NeuralTheoremProvingTask
-
+from .ntp import NeuralTheoremProvingTask
 import torch
 import wandb
 from pathlib import Path
+
 
 class NTP_PPO(NeuralTheoremProvingTask):
     def __init__(
@@ -70,7 +59,9 @@ class NTP_PPO(NeuralTheoremProvingTask):
         save_dir: str = "ppo_model_checkpoints",
         wandb_log: bool = False,
         wandb_entity: str = "vincentzhu",
-        wandb_project: str = "ntp-ppo-training",        
+        wandb_project: str = "ntp-ppo-training",  
+        mini_batch_size: int = 1,
+        optimize_cuda_cache: bool = True,      
     ):
         super().__init__(
             model=model,
@@ -96,14 +87,12 @@ class NTP_PPO(NeuralTheoremProvingTask):
             use_hf_generate=use_hf_generate,
         )
 
-        self.wandb_log = wandb_log
-
         # PPO-specific configuration
         self.ppo_config = PPOConfig(
             learning_rate=lr,
             batch_size=n_samples if isinstance(n_samples, int) else max(n_samples),
-            mini_batch_size=1,  # You can adjust this as needed
-            optimize_cuda_cache=True,
+            mini_batch_size=mini_batch_size,  # You can adjust this as needed
+            optimize_cuda_cache=optimize_cuda_cache,
         )
 
         # Initialize PPO Trainer
@@ -118,6 +107,7 @@ class NTP_PPO(NeuralTheoremProvingTask):
         self.save_dir.mkdir(parents=True, exist_ok=True)
 
         # Initialize wandb
+        self.wandb_log = wandb_log
         if self.wandb_log:
             self.entity = wandb_entity
             self.project_name = wandb_project
@@ -226,6 +216,9 @@ class NTP_PPO(NeuralTheoremProvingTask):
         """
         wandb.finish()
     
+
+
+
 
 # Ignore: this was very general and not integrated into the reat of the code
 class General_PPO_Fine_Tuner():

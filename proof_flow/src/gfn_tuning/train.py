@@ -19,8 +19,10 @@ from utils import (
     RuleSentenceValidator
 )
 
+# from ppo import NTP_PPO
 
-@hydra.main(version_base=None, config_path="./configs/", config_name="train")
+@hydra.main(version_base=None, config_path="/Users/vincentwork/Documents/GFN_NTP/gfn_ntp/configs/", config_name="example_train")
+# @hydra.main(version_base=None, config_path="/Users/vincentwork/Documents/GFN_NTP/gfn_ntp/configs/")
 def train(config: DictConfig):
     pl.seed_everything(config.seed, workers=True)
 
@@ -59,6 +61,7 @@ def train(config: DictConfig):
     train_probes = [data.train_data[i][0] for i in range(config.task.eval.n_probes)]
     val_probes = [data.val_data[i][0] for i in range(config.task.eval.n_probes)]
 
+    # if config.task == "NextSentenceGFNTask":
     task = NextSentenceGFNTask(
         model=model,
         tokenizer=tokenizer,
@@ -82,6 +85,30 @@ def train(config: DictConfig):
         diversity_metric=config.task.eval.diversity_metric,
         use_4bit=config.task.training.use_4bit,
     )
+    # elif config.task == "NTP_PPO":
+    #     task = NTP_PPO(
+    #         model=model,
+    #         tokenizer=tokenizer,
+    #         reward=reward,
+    #         reward_buffer=reward_buffer,
+    #         n_samples=config.task.training.n_samples,
+    #         lr=config.task.training.lr,
+    #         pf_temp_high=config.task.training.pf_temp_high,
+    #         pf_temp_low=config.task.training.pf_temp_low,
+    #         pf_temp_prob=config.task.training.pf_temp_prob,
+    #         use_buffer_prob=config.task.training.use_buffer_prob,
+    #         reward_temp_start=config.task.reward.temp_start,
+    #         reward_temp_end=config.task.reward.temp_end,
+    #         reward_temp_horizon=config.task.reward.temp_horizon,
+    #         illegal_token_mask=illegal_token_mask,
+    #         train_probes=train_probes,
+    #         val_probes=val_probes,
+    #         save_dir=config.task.training.save_dir,
+    #         wandb_log=config.task.training.wandb_log,
+    #         wandb_entity=config.task.training.wandb_entity,
+    #         wandb_project=config.task.training.wandb_project,
+    #     )
+
 
     trainer = pl.Trainer(
         accelerator=config.device.accelerator,
@@ -121,7 +148,7 @@ def get_model(config: DictConfig):
         config.task.model.name, add_bos_token=False
     )
     model = AutoModelForCausalLM.from_pretrained(
-        config.task.model.name, device_map="auto", quantization_config=bnb_config
+        config.task.model.name, device_map="auto", quantization_config=bnb_config, cache_dir=""
     )
 
     # Prepare model for k-bit training
