@@ -7,6 +7,7 @@ from typing import Callable, Optional
 from tqdm import tqdm
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from peft import AutoPeftModelForCausalLM
 
 from proof_flow.src.utils import get_config, repo_root
 from proof_flow.src.gfn_tuning.verifier import batch_completion_probabilities
@@ -58,49 +59,44 @@ def evaluate_reward_model(
     device: Optional[torch.device] = None,
 ) -> dict:
     # first select pairs from pair_data
-    prompt_completion_pairs = select_pairs(pair_selection_strategy, pair_data)
+    selected_pairs = select_pairs(pair_selection_strategy, pair_data)
     
-    results = {"acc": None, "per_thm": {}, "correct": 0, "total": None}
+    results = {"acc": None, "completion_log_prob": {}, "correct": 0, "total": None}
     # then evaluate the model on these pairs
-    for pair_data in tqdm(prompt_completion_pairs):
-        prompt_completion_pairs = [
-            formatting_func(
-                pair_data["state_before"], 
-                pair_data["positive"], 
-                next_state=(pair_data["state_after_positive"] if use_next_state else None),
-            ),
-            formatting_func(
-                pair_data["state_before"], 
-                pair_data["negative"], 
-                next_state=(pair_data["state_after_negative"] if use_next_state else None),
-            ),
-        ]
+    for pair_data in tqdm(selected_pairs):
+        pos_neg_log_probs = {}
+        for key in ["positive", "negative"]:
+            prompt_completion_pair = [
+                formatting_func(
+                    pair_data["state_before"], 
+                    pair_data[key], 
+                    next_state=(pair_data[f"state_after_{key}"] if use_next_state else None),
+                ),
+            ]
 
-        if SANITY_CHECK:
-            print("sanity check")
-            print(
-                prompt_completion_pairs[0][0],
-                prompt_completion_pairs[0][1],
-                sep="(<-prompt)(completion->)",
+            if SANITY_CHECK:
+                print("sanity check")
+                print(
+                    prompt_completion_pair[0][0],
+                    prompt_completion_pair[0][1],
+                    sep="(<-prompt)(completion->)",
+                )
+
+            completion_probs = batch_completion_probabilities(
+                model, 
+                tokenizer, 
+                prompt_completion_pair,
+                device=device,
             )
+            log_prob = completion_probs[0]["log_prob_sum"]
+            pos_neg_log_probs[key] = log_prob
 
-        completion_probs = batch_completion_probabilities(
-            model, 
-            tokenizer, 
-            prompt_completion_pairs,
-            device=device,
-        )
-        pos_log_prob = completion_probs[0]["log_prob_sum"]
-        neg_log_prob = completion_probs[1]["log_prob_sum"]
-        results["per_thm"][pair_data["thm_idx"]] = {
-            "pos_log_prob": pos_log_prob,
-            "neg_log_prob": neg_log_prob,
-        }
-        if pos_log_prob > neg_log_prob:
+        results["completion_log_prob"][pair_data["thm_idx"]] = pos_neg_log_probs
+        if pos_neg_log_probs["positive"] > pos_neg_log_probs["negative"]:
             results["correct"] += 1
 
-    results["total"] = len(prompt_completion_pairs)
-    results["acc"] = results["correct"] / len(prompt_completion_pairs)
+    results["total"] = len(selected_pairs)
+    results["acc"] = results["correct"] / len(selected_pairs)
     return results
     
 
@@ -162,10 +158,17 @@ if __name__ == "__main__":
 
     model_id = cfg.model
     device = torch.device("cuda")
-    model = AutoModelForCausalLM.from_pretrained(
-        model_id, 
-        trust_remote_code=True,
-    )
+
+    if cfg.use_peft:
+        model = AutoPeftModelForCausalLM.from_pretrained(
+            model_id, 
+        )
+    else:
+        model = AutoModelForCausalLM.from_pretrained(
+            model_id, 
+            trust_remote_code=True,
+        )
+
     model.to(device)
     tokenizer = AutoTokenizer.from_pretrained(model_id)
     if tokenizer.pad_token_id is None:
