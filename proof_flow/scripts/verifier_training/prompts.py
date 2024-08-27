@@ -69,6 +69,8 @@ Next tactic:
 ---
 """
 
+INSTRUCTION_COMPLETION_TEMPLATE = "{tactic}"
+
 INSTRUCTION_COMPLETION_TEMPLATE_WITH_NEXT_STATE = """{tactic}
 ---
 Resulting state:

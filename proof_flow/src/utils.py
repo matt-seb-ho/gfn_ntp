@@ -11,9 +11,15 @@ HF_ACCESS_TOKEN_VAR_NAME = "HF_ACCESS_TOKEN"
 
 
 @cache
-def get_config(config_path: str = "../../configs", config_name: str = "train") -> OmegaConf:
+def get_config(
+    config_path: str = "../../configs", 
+    config_name: str = "train",
+    overrides: Optional[str] = None,
+) -> OmegaConf:
+    if overrides:
+        overrides = overrides.split(",")
     with hydra.initialize(config_path=config_path, version_base=None):
-        config = hydra.compose(config_name=config_name)
+        config = hydra.compose(config_name=config_name, overrides=overrides)
     return config
 
 

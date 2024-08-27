@@ -10,21 +10,15 @@ from proof_flow.src.utils import get_config, repo_root
 """
 given: 
 - set of theorems and tactic proofs
-- a set of generated proof completions for each theorem
-- verification results of proof completions
+- a set of generated proof completions for each theorem (STEP 1)
+- verification results of proof completions (STEP 2)
     - for each theorem, for each completion...
       - whether the completion yields a correct proof
       - list[tactic_dict], where tactic_dict has form {state_before: str, tactic: str, state_after: str}
 goal:
 - RM evaluation set: triples of form (proof state, correct tactic, incorrect tactic)
-approach:
-- use a current SOTA model to sample proofs
-- SOTA solve rate on miniF2F is still ~50% (32-128) attempts, so we'll still get incorrect proofs
-- pass all attempts through Lean verifier
-- for incorrect attempts, we get a correct tactic t_i if t_1,...t_i does not appear in a correct proof
 
-current (3rd) step:
-REVISED APPROACH
+current step (STEP 3): determine which sampled tactics are good/bad/neutral
 - figure out every state's minimum distance to a complete proof
 - tactics transition state_before to state_after
 - measure tactic "goodness" by min_dist(state_before) - min_dist(state_after)
