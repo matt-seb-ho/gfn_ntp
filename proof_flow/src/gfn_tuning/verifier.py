@@ -38,6 +38,7 @@ def batch_completion_probabilities(
     tokenizer,
     prompt_completion_pairs,
     sep="",
+    device=None,
 ):
     input_texts = []
     # idx of first completion char + last completion char
@@ -51,6 +52,8 @@ def batch_completion_probabilities(
     
     batch_enc = tokenizer(input_texts, padding=True, return_tensors="pt")
     input_ids = batch_enc.input_ids
+    if device:
+        input_ids = input_ids.to(device)
     outputs = model(input_ids)
     probs = torch.log_softmax(outputs.logits, dim=-1).detach()
 

@@ -4,13 +4,13 @@ import pickle
 from collections import defaultdict
 from typing import Optional
 
-import editdistance
+# import editdistance
 import numpy as np
-import spacy
+# import spacy
 import torch
 from peft import PeftModel
-from sentence_transformers import SentenceTransformer
-from sentence_transformers.util import cos_sim
+# from sentence_transformers import SentenceTransformer
+# from sentence_transformers.util import cos_sim
 from transformers import (
     AutoModel,
     AutoModelForSequenceClassification,
@@ -26,15 +26,42 @@ from proof_flow.src.gfn_tuning.verifier import (
     batch_completion_probabilities,
     batch_iterator
 )
+from proof_flow.src.prompts import (
+    INSTRUCTION_PROMPT_TEMPLATE,
+    INSTRUCTION_COMPLETION_TEMPLATE,
+    INSTRUCTION_COMPLETION_TEMPLATE_WITH_NEXT_STATE,
+    RM_TEMPLATES,
+)
 
 
 def lora_to_base(model):
     model.base_model.disable_adapter_layers()
     model.eval()
 
+
 def base_to_lora(model):
     model.base_model.enable_adapter_layers()
     model.train()
+
+
+def build_reward_inputs(
+    state: str,
+    tactic: str,
+    next_state: Optional[str] = None,
+    use_sts_format: bool = False,
+    prompts_for_model: Optional[str] = "llemma",
+) -> tuple[str, str]:
+    st_or_sts = "sts" if use_sts_format else "st"
+    templates = RM_TEMPLATES[prompts_for_model][st_or_sts]
+    return (
+        templates["prompt"].format(
+            state=state, tactic=tactic, next_state=next_state
+        ),
+        templates["completion"].format(
+            state=state, tactic=tactic, next_state=next_state
+        ),
+    )
+
 
 def compute_log_reward(
     states: list[list[str]],
@@ -42,6 +69,8 @@ def compute_log_reward(
     model: PeftModel,
     tokenizer: AutoTokenizer,
     batch_size: int = 8,
+    use_sts_format: bool = False,
+    prompts_for_model: Optional[str] = "llemma",
 ) -> torch.Tensor:
     """
     Computes reward for a batch of trajectores (states, tactics) using heuristics and model.
@@ -60,10 +89,20 @@ def compute_log_reward(
     # - model based score
     prompt_completion_pairs = []
     batch_idx_to_pair_idx = defaultdict(list)
-    for i in len(states):
-        for state, tactic in zip(states[i], tactics[i]):
-            batch_idx_to_pair_idx[i].append(len(prompt_completion_pairs))
-            prompt_completion_pairs.append((state, tactic))
+    for batch_i, (_states, _tactics) in enumerate(zip(states, tactics)):
+        # _states: list[str]: represents states for this trajectory
+        # _tactics: list[str]: represents tactics for this trajectory
+        # for state_i, (state, tactic) in enumerate(zip(_states, _tactics), start=1):
+        for idx in range(len(tactics)):
+            batch_idx_to_pair_idx[batch_i].append(len(prompt_completion_pairs))
+            rm_inputs = build_reward_inputs(
+                _states[idx], 
+                _tactics[idx], 
+                _states[idx + 1],
+                use_sts_format=use_sts_format,
+                prompts_for_model=prompts_for_model,
+            )
+            prompt_completion_pairs.append(rm_inputs)
     results = []
     for batch in batch_iterator(prompt_completion_pairs, batch_size):
         results.extend(batch_completion_probabilities(model, tokenizer, batch))
@@ -73,6 +112,23 @@ def compute_log_reward(
     ])
 
     return torch.log(torch.max(torch.stack(is_correct - 1, model_scores, dim=-1), dim=-1))
+
+
+def rm_formatting_func(
+    state: str, 
+    tactic: str, 
+    next_state: Optional[str]
+) -> tuple[str, str]:
+    prompt = INSTRUCTION_PROMPT_TEMPLATE.format(state=state)
+    if next_state is None:
+        completion = INSTRUCTION_COMPLETION_TEMPLATE.format(tactic=tactic)
+    else:
+        completion = INSTRUCTION_COMPLETION_TEMPLATE_WITH_NEXT_STATE.format(
+            tactic=tactic, 
+            next_state=next_state
+        )
+    return prompt, completion
+
         
 def format_prompt(initial_state: str, tactic: Optional[str], resulting_state: Optional[str]) -> str:
     # TODO: finalize this to match the verifier's training
@@ -268,41 +324,42 @@ class SentenceValidator:
 
 
 class RuleSentenceValidator(SentenceValidator):
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-        self.nlp = spacy.load("en_core_web_lg")
+    pass
+    # def __init__(self, *args, **kwargs) -> None:
+    #     super().__init__(*args, **kwargs)
+    #     self.nlp = spacy.load("en_core_web_lg")
 
-    def __call__(self, sentences, tokenizer):
-        invalid = torch.zeros(
-            sentences.shape[0],
-            sentences.shape[1] + 1,
-            dtype=torch.bool,
-            device=sentences.device,
-        )
-        invalid[:, 0] = True  # Empty sentence is never valid
-        for i in range(sentences.shape[0]):
-            for j in range(sentences.shape[1]):
-                if sentences[i, j] == self.sentence_token_id:
-                    break  # Only unterminated sentences get a reward
-                sent = tokenizer.decode(sentences[i, : j + 1])
-                sent = self.nlp(sent).sents
-                tokens = []
-                for s in sent:
-                    for t in s:
-                        tokens.append(t)
-                if not (len(tokens) >= 2 and tokens[0].is_space and tokens[1].is_title):
-                    invalid[i, j + 1] = True  # Must start with a space and capital
-                    continue
-                has_noun = 1
-                has_verb = 1
-                for token in tokens:
-                    if token.pos_ in ["NOUN", "PROPN", "PRON"]:
-                        has_noun -= 1
-                    elif token.pos_ in ["VERB", "AUX"]:
-                        has_verb -= 1
-                if has_noun > 0 or has_verb > 0:
-                    invalid[i, j + 1] = True  # Must have a noun and a verb
-        return invalid
+    # def __call__(self, sentences, tokenizer):
+    #     invalid = torch.zeros(
+    #         sentences.shape[0],
+    #         sentences.shape[1] + 1,
+    #         dtype=torch.bool,
+    #         device=sentences.device,
+    #     )
+    #     invalid[:, 0] = True  # Empty sentence is never valid
+    #     for i in range(sentences.shape[0]):
+    #         for j in range(sentences.shape[1]):
+    #             if sentences[i, j] == self.sentence_token_id:
+    #                 break  # Only unterminated sentences get a reward
+    #             sent = tokenizer.decode(sentences[i, : j + 1])
+    #             sent = self.nlp(sent).sents
+    #             tokens = []
+    #             for s in sent:
+    #                 for t in s:
+    #                     tokens.append(t)
+    #             if not (len(tokens) >= 2 and tokens[0].is_space and tokens[1].is_title):
+    #                 invalid[i, j + 1] = True  # Must start with a space and capital
+    #                 continue
+    #             has_noun = 1
+    #             has_verb = 1
+    #             for token in tokens:
+    #                 if token.pos_ in ["NOUN", "PROPN", "PRON"]:
+    #                     has_noun -= 1
+    #                 elif token.pos_ in ["VERB", "AUX"]:
+    #                     has_verb -= 1
+    #             if has_noun > 0 or has_verb > 0:
+    #                 invalid[i, j + 1] = True  # Must have a noun and a verb
+    #     return invalid
 
 
 class ModelSentenceValidator(SentenceValidator):
@@ -415,27 +472,28 @@ def get_termination_vals(
 
 
 class SequenceDiversity:
-    def __init__(self, method, **kwargs):
-        self.method = method
-        if method is None:
-            pass
-        elif method == "sequence_embedding":
-            model_name = kwargs.get(
-                "model_name", "sentence-transformers/all-mpnet-base-v2"
-            )
-            self.model = SentenceTransformer(model_name)
-        else:
-            raise ValueError(f"Unknown sequence diversity method: {method}")
+    pass
+    # def __init__(self, method, **kwargs):
+    #     self.method = method
+    #     if method is None:
+    #         pass
+    #     elif method == "sequence_embedding":
+    #         model_name = kwargs.get(
+    #             "model_name", "sentence-transformers/all-mpnet-base-v2"
+    #         )
+    #         self.model = SentenceTransformer(model_name)
+    #     else:
+    #         raise ValueError(f"Unknown sequence diversity method: {method}")
 
-    @torch.no_grad()
-    def __call__(self, sequences):
-        if self.method is None:
-            return None
-        elif self.method == "sequence_embedding":
-            embeddings = self.model.encode(sequences, show_progress_bar=False)
-            sim = cos_sim(embeddings, embeddings)
-            indices = torch.triu_indices(len(sequences), len(sequences), offset=1)
-            diversity = 1 - sim[indices[0], indices[1]].mean().item()
-        else:
-            raise ValueError(f"Unknown sequence diversity method: {self.method}")
-        return diversity
+    # @torch.no_grad()
+    # def __call__(self, sequences):
+    #     if self.method is None:
+    #         return None
+    #     elif self.method == "sequence_embedding":
+    #         embeddings = self.model.encode(sequences, show_progress_bar=False)
+    #         sim = cos_sim(embeddings, embeddings)
+    #         indices = torch.triu_indices(len(sequences), len(sequences), offset=1)
+    #         diversity = 1 - sim[indices[0], indices[1]].mean().item()
+    #     else:
+    #         raise ValueError(f"Unknown sequence diversity method: {self.method}")
+    #     return diversity

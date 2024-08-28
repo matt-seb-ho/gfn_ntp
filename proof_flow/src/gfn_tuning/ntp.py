@@ -575,7 +575,7 @@ class NeuralTheoremProvingTask(LightningModule):
                 self.model,
                 prompt,
                 termination_token_id=self.end_of_sentence_token_id,
-                vocab_naughty_mask=self.hparams.illegal_token_mask,
+                # vocab_naughty_mask=self.hparams.illegal_token_mask,
                 min_len=self.hparams.min_tactic_tokens,
                 max_len=self.hparams.s,
                 temperature=pf_temperature,

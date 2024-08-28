@@ -87,8 +87,8 @@ if __name__ == "__main__":
     with open(theorem_file) as f:
         input_data = json.load(f)
 
-    sampling_params = SamplingParams(**cfg.sampling_params)
-    llm = LLM(**cfg.llm)
+    sampling_params = SamplingParams(**cfg.data_generation.sampling_params)
+    llm = LLM(**cfg.data_generation.llm)
     
     # subset data for sanity checking/testing phase
     if cfg.input_limit is not None:

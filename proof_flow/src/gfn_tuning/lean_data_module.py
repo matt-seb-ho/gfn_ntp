@@ -10,8 +10,11 @@ from torchdata.datapipes.map import MapDataPipe
 
 from proof_flow.src.utils import prepare_environment_for_lean_dojo
 
+
 warnings.filterwarnings("ignore", ".*does not have many workers.*")
 prepare_environment_for_lean_dojo()
+
+
 from lean_dojo import LeanGitRepo, Pos, Theorem, is_available_in_cache # isort: skip
 
 

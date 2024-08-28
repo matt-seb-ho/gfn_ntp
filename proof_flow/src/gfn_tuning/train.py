@@ -3,8 +3,7 @@ from types import MethodType
 import hydra
 import pytorch_lightning as pl
 import torch
-from .lightning_data import PromptDataModule
-from .lightning_module import NextSentenceGFNTask
+# from lightning_module import NextSentenceGFNTask
 from omegaconf import DictConfig, OmegaConf
 from peft import get_peft_model, prepare_model_for_kbit_training
 from transformers import (
@@ -12,12 +11,10 @@ from transformers import (
     AutoTokenizer,
     BitsAndBytesConfig
 )
-from .utils import (
-    FrozenModelSentenceGivenPrompt,
-    ModelSentenceValidator,
-    ReplayBuffer,
-    RuleSentenceValidator
-)
+from proof_flow.src.gfn_tuning.reward import NTPReward
+from proof_flow.src.gfn_tuning.replay_buffer import ReplayBuffer
+from proof_flow.src.gfn_tuning.lean_data_module import NTPDataModule
+from proof_flow.src.gfn_tuning.ntp import NeuralTheoremProvingTask
 
 from .ppo import NTP_PPO
 
@@ -28,64 +25,47 @@ def train(config: DictConfig):
 
     model, tokenizer = get_model(config)
 
-    try:  # Some tokenizers encode a "." differently when it is the first token
-        end_of_sentence_token_id = tokenizer.encode(
-            "A sentence.", add_special_tokens=False
-        )[-1]
-    except:
-        end_of_sentence_token_id = tokenizer.convert_tokens_to_ids(".")
-    illegal_token_mask = torch.zeros(tokenizer.vocab_size, dtype=torch.bool)
-    illegal_tokens = OmegaConf.to_container(config.task.constraints.illegal_tokens)
-    illegal_tokens = [
-        [t] if isinstance(t, int) else tokenizer.encode(t, add_special_tokens=False)
-        for t in illegal_tokens
-    ]
-    assert all(len(t) == 1 for t in illegal_tokens)
-    illegal_tokens = [t[0] for t in illegal_tokens]
-    illegal_token_mask[illegal_tokens] = True
-    illegal_token_mask = illegal_token_mask.numpy()
-
-    reward = get_reward(config, end_of_sentence_token_id, illegal_token_mask)
+    reward = get_reward(config, model, tokenizer)
     reward_buffer = ReplayBuffer(
-        buffer_size=config.task.reward.buffer_size,
-        termination_token_id=end_of_sentence_token_id,
+        buffer_size=config.task.replay_buffer.buffer_size,
+        termination_token_id=tokenizer.eos_token_id,
+        sim_tolerance=config.task.replay_buffer.sim_tolerance,
     )
-
-    data = PromptDataModule(
+    data = NTPDataModule(
         data_path=config.task.data.path,
         tokenizer=tokenizer,
         train_size=config.task.data.train_size,
-        limit_prompts=config.task.data.limit_prompts,
+        # limit_theorems=config.task.data.limit_theorems,
     )
+
     data.setup("fit")
     train_probes = [data.train_data[i][0] for i in range(config.task.eval.n_probes)]
     val_probes = [data.val_data[i][0] for i in range(config.task.eval.n_probes)]
 
-    if config.task.name == "openwebtext":
-        task = NextSentenceGFNTask(
-            model=model,
-            tokenizer=tokenizer,
-            reward=reward,
-            reward_buffer=reward_buffer,
-            n_samples=config.task.training.n_samples,
-            lr=config.task.training.lr,
-            subtb_lambda=config.task.training.subtb_lambda,
-            pf_temp_high=config.task.training.pf_temp_high,
-            pf_temp_low=config.task.training.pf_temp_low,
-            pf_temp_prob=config.task.training.pf_temp_prob,
-            use_buffer_prob=config.task.training.use_buffer_prob,
-            min_sentence_len=config.task.constraints.min_sentence_len,
-            max_sentence_len=config.task.constraints.max_sentence_len,
-            reward_temp_start=config.task.reward.temp_start,
-            reward_temp_end=config.task.reward.temp_end,
-            reward_temp_horizon=config.task.reward.temp_horizon,
-            illegal_token_mask=illegal_token_mask,
-            train_probes=train_probes,
-            val_probes=val_probes,
-            diversity_metric=config.task.eval.diversity_metric,
-            use_4bit=config.task.training.use_4bit,
-        )
-    elif config.task.name == "ntp":
+    task = NeuralTheoremProvingTask(
+        model=model,
+        tokenizer=tokenizer,
+        reward=reward,
+        reward_buffer=reward_buffer,
+        n_samples=config.task.training.n_samples,
+        lr=config.task.training.lr,
+        subtb_lambda=config.task.training.subtb_lambda,
+        pf_temp_high=config.task.training.pf_temp_high,
+        pf_temp_low=config.task.training.pf_temp_low,
+        pf_temp_prob=config.task.training.pf_temp_prob,
+        use_buffer_prob=config.task.training.use_buffer_prob,
+        reward_temp_start=config.task.reward.temp_start,
+        reward_temp_end=config.task.reward.temp_end,
+        reward_temp_horizon=config.task.reward.temp_horizon,
+        train_probes=train_probes,
+        val_probes=val_probes,
+        use_4bit=config.task.training.use_4bit,
+        max_tactics=config.task.max_tactics,
+        min_tactic_tokens=config.task.min_tactic_tokens,
+        max_tactic_tokens=config.task.max_tactic_tokens,
+        use_hf_generate=config.task.use_hf_generate,
+    )
+    if config.task.name == "ntp":
         task = NTP_PPO(
             model=model,
             tokenizer=tokenizer,
@@ -100,7 +80,6 @@ def train(config: DictConfig):
             reward_temp_start=config.task.reward.temp_start,
             reward_temp_end=config.task.reward.temp_end,
             reward_temp_horizon=config.task.reward.temp_horizon,
-            illegal_token_mask=illegal_token_mask,
             train_probes=train_probes,
             val_probes=val_probes,
             save_dir=config.task.training.save_dir,
@@ -170,31 +149,18 @@ def get_model(config: DictConfig):
     return model, tokenizer
 
 
-def get_reward(config: DictConfig, sentence_token_id, illegal_token_mask):
-    if config.task.reward.sentence_validator is None:
-        sentence_validator, valid_sentence_alpha = None, None
-    elif config.task.reward.sentence_validator == "rule":
-        sentence_validator, valid_sentence_alpha = (
-            RuleSentenceValidator(sentence_token_id=sentence_token_id),
-            config.task.reward.valid_sentence_alpha,
-        )
-    elif config.task.reward.sentence_validator == "model":
-        sentence_validator, valid_sentence_alpha = (
-            ModelSentenceValidator(sentence_token_id=sentence_token_id),
-            config.task.reward.valid_sentence_alpha,
-        )
-    else:
-        raise ValueError(
-            f"Invalid sentence validator: {config.task.reward.sentence_validator}"
-        )
-
-    reward = FrozenModelSentenceGivenPrompt(
-        sentence_token_id=sentence_token_id,
-        min_len=config.task.constraints.min_sentence_len,
-        vocab_alpha=config.task.reward.vocab_alpha,
-        vocab_naughty_mask=illegal_token_mask,
-        sentence_validator=sentence_validator,
-        valid_sentence_alpha=valid_sentence_alpha,
+def get_reward(config: DictConfig, model: AutoModelForCausalLM, tokenizer: AutoTokenizer):
+    model_loading_kwargs_dict = OmegaConf.to_container(
+        config.task.reward.model_loading_kwargs,
+        resolve=True,
+    )
+    reward = NTPReward(
+        model=model,
+        tokenizer=tokenizer,
+        temperature=config.task.reward.temperature,
+        verifier_batch_size=config.task.reward.verifier_batch_size,
+        model_loading_kwargs=model_loading_kwargs_dict,
+        verifier_adapter_name=config.task.reward.verifier_adapter_name,
     )
 
     return reward

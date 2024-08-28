@@ -6,7 +6,14 @@ from proof_flow.src.utils import get_config, repo_root, prepare_environment_for_
 
 prepare_environment_for_lean_dojo()
 from lean_dojo import ( # isort: skip
-    Dojo, LeanGitRepo, Theorem, ProofFinished, TacticState, LeanError, ProofGivenUp
+    Dojo, 
+    LeanGitRepo, 
+    Theorem, 
+    ProofFinished, 
+    TacticState, 
+    LeanError, 
+    ProofGivenUp,
+    DojoTacticTimeoutError,
 )
 
 import re
@@ -80,34 +87,43 @@ def verify_proof_candidates(
             state = init_state
             trace = []
             early_exit = None
-            for tactic in sequence:
-                trace_entry = {
+            try:
+                tactic = sequence[0]
+                for tactic in sequence:
+                    trace_entry = {
+                        "state_before": state.pp,
+                        "tactic": tactic,
+                        "state_after": None,
+                        "message": None,
+                    }
+                    result = dojo.run_tac(state, tactic)
+                    if isinstance(result, LeanError):
+                        trace_entry["message"] = result.error
+                        early_exit = "error"
+                    elif isinstance(result, ProofFinished):
+                        trace_entry["state_after"] = "no goals"
+                        trace_entry["message"] = result.message
+                        early_exit = "no goals"
+                    elif isinstance(result, TimeoutError):
+                        trace_entry["message"] = "timeout"
+                        early_exit = "timeout"
+                    elif isinstance(result, ProofGivenUp):
+                        trace_entry["message"] = "given up"
+                        early_exit = "given up"
+                    else:
+                        # result is a TacticState
+                        state = result
+                        trace_entry["state_after"] = state.pp
+                    trace.append(trace_entry)
+                    if early_exit:
+                        break
+            except DojoTacticTimeoutError:
+                trace.append({
                     "state_before": state.pp,
                     "tactic": tactic,
-                    "state_after": None,
-                    "message": None,
-                }
-                result = dojo.run_tac(state, tactic)
-                if isinstance(result, LeanError):
-                    trace_entry["message"] = result.error
-                    early_exit = "error"
-                elif isinstance(result, ProofFinished):
-                    trace_entry["state_after"] = "no goals"
-                    trace_entry["message"] = result.message
-                    early_exit = "no goals"
-                elif isinstance(result, TimeoutError):
-                    trace_entry["message"] = "timeout"
-                    early_exit = "timeout"
-                elif isinstance(result, ProofGivenUp):
-                    trace_entry["message"] = "given up"
-                    early_exit = "given up"
-                else:
-                    # result is a TacticState
-                    state = result
-                    trace_entry["state_after"] = state.pp
-                trace.append(trace_entry)
-                if early_exit:
-                    break
+                    "state_after": "timeout",
+                    "message": "timeout",
+                })
             valid_proof = (trace[-1]["state_after"] == "no goals")
             results.append((valid_proof, trace))
     return results
@@ -116,7 +132,7 @@ def verify_proof_candidates(
 def verify_batch(
     thm_dicts: dict,
     candidates: list[list[str]],
-) -> list[list[tuple[bool, list[dict]]]]:
+) -> dict[str, list[tuple[bool, list[dict]]]]:
     """
     given: list of theorem info, list of proof candidates, and LeanGitRepo
     goal: for each theorem, for each candidate, whether the proof is correct (bool) and traced tactics (tactic, state_before, state_after)
@@ -147,6 +163,12 @@ if __name__ == "__main__":
     with open(thm_file) as f:
         thm_dicts = json.load(f)
     
+    TESTING_SANITY_CHECK = True
+    if TESTING_SANITY_CHECK:
+        proofs = proofs[:2]
+        thm_dicts = {k: thm_dicts[k] for k in list(thm_dicts.keys())[:2]}
+        
+    
     # test tactic extraction
     # completion00 = proofs[0][0]
     # tactics = extract_tactics_from_completion(completion00)
@@ -169,7 +191,7 @@ if __name__ == "__main__":
     thm_stats = {}
     total_correct_attempts = 0
     total_solved = 0
-    for thm_idx, thm_res in zip(thm_dicts.keys(), results):
+    for thm_idx, thm_res in results.items():
         thm_stats[thm_idx] = {
             "proved": False,
             "correct_attempts": 0

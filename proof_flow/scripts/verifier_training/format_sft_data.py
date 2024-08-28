@@ -5,10 +5,9 @@ from typing import Optional, Union
 from datasets import Dataset, DatasetDict
 from loguru import logger
 from tqdm import tqdm
-from hydra import compose, initialize
 
 from proof_flow.src.utils import get_config, repo_root
-from proof_flow.scripts.verifier_training.prompts import (
+from proof_flow.src.prompts import (
     INSTRUCTION_PROMPT_TEMPLATE, 
     INSTRUCTION_COMPLETION_TEMPLATE_WITH_NEXT_STATE
 )

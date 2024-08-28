@@ -1,23 +1,53 @@
+# file paths --------------------------------------
 input_file: "data/time_filtered_val.json"
 output_file: "data/sampled_proofs.json"
 verification_results_file: "data/verification_results.json"
+rm_data_file: "data/rm_eval_dataset_v2.json"
+rm_eval_results_dir: "data/rm_eval_results"
+rm_eval_result_filename: "dsp1_sts_llprompt.json"
 use_tqdm: true
 input_limit: null
 
+# selecting pairs to evaluate on -------------------
+# eval pairs {first, random, all}
+pair_selection_strategy: first
+max_pairs_per_state: 1
+# pair_selection_strategy: random 
+# max_pairs_per_state: 5
+
+# prompt formatting for RM -------------------------
+use_sts_format: true
+prompts_for_model: llemma
+
+
+# model config  ------------------------------------
+model: deepseek-ai/DeepSeek-Prover-V1
+# deepseek note:
+# - debugging! asked on email & discord
+# - currently trying llama arch (to match math base model)
+
+# model: EleutherAI/llemma_7b
+# model: internlm/internlm2-math-base-7b
+use_peft: false
+
+# trained verifiers
+# model: msho/llemma_sft
+# use_peft: true
+
+
+# generating evaluation data -----------------------
 # values from DeepSeek-Prover-V1.5/configs/sampling.py
 # initialization from DeepSeek-Prover-V1.5/prover/workers/generator.py
 # - except seed which was `seed = int(time.time()) % 1000 + (self.node_rank * 8 + self.local_rank) * 1000`
+data_generation:
+  llm:
+    model: deepseek-ai/DeepSeek-Prover-V1.5-RL
+    max_num_batched_tokens: 8192
+    seed: 42
+    trust_remote_code: true
 
-llm:
-  model: deepseek-ai/DeepSeek-Prover-V1.5-RL
-  max_num_batched_tokens: 8192
-  seed: 42
-  trust_remote_code: true
-
-sampling_params:
-  temperature: 1
-  max_tokens: 2048
-  top_p: 0.95
-  n: 16
-
-
+  sampling_params:
+    temperature: 1
+    max_tokens: 2048
+    top_p: 0.95
+    n: 16
