@@ -11,7 +11,7 @@ from peft import AutoPeftModelForCausalLM
 
 from proof_flow.src.utils import get_config, repo_root
 from proof_flow.src.gfn_tuning.verifier import batch_completion_probabilities
-from proof_flow.src.gfn_tuning.reward import rm_formatting_func
+from proof_flow.src.gfn_tuning.reward import build_reward_inputs
 
 """
 given: 
@@ -46,17 +46,17 @@ current step (STEP 4):
 - or just pick one for each state
 """
 
-SANITY_CHECK = False
+SANITY_CHECK = True
 
 
 def evaluate_reward_model(
     model: AutoModelForCausalLM, 
     tokenizer: AutoTokenizer, 
     pair_data: list[dict],
-    formatting_func: Callable = rm_formatting_func,
     pair_selection_strategy: str = "first", # "first", "random", "all"
     max_pairs_per_state: int = 1,
-    use_next_state: bool = False,
+    use_sts_format: bool = False,
+    prompts_for_model: str = "llemma",
     device: Optional[torch.device] = None,
 ) -> dict:
     # first select pairs from pair_data
@@ -72,10 +72,12 @@ def evaluate_reward_model(
         pos_neg_log_probs = {}
         for key in ["positive", "negative"]:
             prompt_completion_pair = [
-                formatting_func(
+                build_reward_inputs(
                     pair_data["state_before"], 
                     pair_data[key], 
-                    next_state=(pair_data[f"state_after_{key}"] if use_next_state else None),
+                    pair_data[f"state_after_{key}"],
+                    use_sts_format=use_sts_format,
+                    prompts_for_model=prompts_for_model,
                 ),
             ]
 
@@ -194,13 +196,18 @@ if __name__ == "__main__":
         device=device,
         pair_selection_strategy=cfg.pair_selection_strategy,
         max_pairs_per_state=cfg.max_pairs_per_state,
+        use_sts_format=cfg.use_sts_format,
+        prompts_for_model=cfg.prompts_for_model,
     )
     
     model_name = model_id.split("/")[-1]
-    if args.suffix:
+    if cfg.rm_eval_result_filename is not None:
+        filename = cfg.rm_eval_result_filename
+    elif args.suffix:
         filename = f"{model_name}_rm_eval_{args.suffix}.json"
     else:
         filename = f"{model_name}_rm_eval.json"
     with open(repo_root() / cfg.rm_eval_results_dir / filename, "w") as f:
         json.dump(results, f, indent=2)
-    
+
+    print(f"Accuracy: {results['acc']}")

@@ -77,3 +77,97 @@ Resulting state:
 ---
 {next_state}
 """
+
+# reward model prompt and completion templates
+# - reward is computed from the log probability of the completion given the prompt
+
+# llemma model
+LLEMMA_RM_ST_PROMPT_TEMPLATE = """Given the Lean 4 tactic state, suggest a next tactic.
+
+Tactic state:
+---
+{state}
+---
+Next tactic:
+---
+"""
+LLEMMA_RM_ST_COMPLETION_TEMPLATE = "{tactic}"
+LLEMMA_RM_STS_PROMPT_TEMPLATE = """From the Lean 4 tactic state
+
+Tactic state:
+---
+{state}
+--- 
+Does the next tactic and its resulting state make progress towards completing the proof?
+
+Next tactic:
+---
+{tactic}
+---
+Resulting state:
+---
+{next_state}
+---
+Answer: """
+LLEMMA_RM_STS_COMPLETION_TEMPLATE = "yes"
+
+# deepseek model
+# - copied markdown-like code blocks from 
+#   `DeepSeek-Prover-V1.5/prover/utils.py`'s prompts
+DEEPSEEK_RM_ST_PROMPT_TEMPLATE = """Given the following Lean 4 proof state
+```
+{state}
+```
+suggest a next tactic.
+```lean4
+"""
+DEEPSEEK_RM_ST_COMPLETION_TEMPLATE = "{tactic}"
+DEEPSEEK_RM_STS_PROMPT_TEMPLATE = """Given a Lean 4 proof state, tactic, and resulting state, did the tactic make progress towards completing the proof?
+```lean4
+-- proof state
+/-
+{state}
+-/
+-- tactic
+/-
+{tactic}
+-/
+-- resulting state
+/-
+{next_state}
+-/
+```
+Answer: """
+DEEPSEEK_RM_STS_COMPLETION_TEMPLATE = "yes"
+DEEPSEEK_RM_ST_PROMPT_TEMPLATE_V2 = """Suggest a next tactic given the following Lean 4 proof state
+```lean4
+-- proof state
+/-
+{state}
+-/
+-- next tactic
+"""
+
+
+RM_TEMPLATES = {
+    "llemma": {
+        "st": {
+            "prompt": LLEMMA_RM_ST_PROMPT_TEMPLATE,
+            "completion": LLEMMA_RM_ST_COMPLETION_TEMPLATE,
+        },
+        "sts": {
+            "prompt": LLEMMA_RM_STS_PROMPT_TEMPLATE,
+            "completion": LLEMMA_RM_STS_COMPLETION_TEMPLATE,
+        },
+    },
+    "deepseek": {
+        "st": {
+            "prompt": DEEPSEEK_RM_ST_PROMPT_TEMPLATE_V2,
+            "completion": DEEPSEEK_RM_ST_COMPLETION_TEMPLATE,
+        },
+        "sts": {
+            "prompt": DEEPSEEK_RM_STS_PROMPT_TEMPLATE,
+            "completion": DEEPSEEK_RM_STS_COMPLETION_TEMPLATE,
+        },
+    },
+}

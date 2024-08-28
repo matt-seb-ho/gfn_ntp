@@ -30,6 +30,7 @@ from proof_flow.src.prompts import (
     INSTRUCTION_PROMPT_TEMPLATE,
     INSTRUCTION_COMPLETION_TEMPLATE,
     INSTRUCTION_COMPLETION_TEMPLATE_WITH_NEXT_STATE,
+    RM_TEMPLATES,
 )
 
 
@@ -43,12 +44,33 @@ def base_to_lora(model):
     model.train()
 
 
+def build_reward_inputs(
+    state: str,
+    tactic: str,
+    next_state: Optional[str] = None,
+    use_sts_format: bool = False,
+    prompts_for_model: Optional[str] = "llemma",
+) -> tuple[str, str]:
+    st_or_sts = "sts" if use_sts_format else "st"
+    templates = RM_TEMPLATES[prompts_for_model][st_or_sts]
+    return (
+        templates["prompt"].format(
+            state=state, tactic=tactic, next_state=next_state
+        ),
+        templates["completion"].format(
+            state=state, tactic=tactic, next_state=next_state
+        ),
+    )
+
+
 def compute_log_reward(
     states: list[list[str]],
     tactics: list[list[str]],
     model: PeftModel,
     tokenizer: AutoTokenizer,
     batch_size: int = 8,
+    use_sts_format: bool = False,
+    prompts_for_model: Optional[str] = "llemma",
 ) -> torch.Tensor:
     """
     Computes reward for a batch of trajectores (states, tactics) using heuristics and model.
@@ -67,10 +89,20 @@ def compute_log_reward(
     # - model based score
     prompt_completion_pairs = []
     batch_idx_to_pair_idx = defaultdict(list)
-    for i in len(states):
-        for state, tactic in zip(states[i], tactics[i]):
-            batch_idx_to_pair_idx[i].append(len(prompt_completion_pairs))
-            prompt_completion_pairs.append((state, tactic))
+    for batch_i, (_states, _tactics) in enumerate(zip(states, tactics)):
+        # _states: list[str]: represents states for this trajectory
+        # _tactics: list[str]: represents tactics for this trajectory
+        # for state_i, (state, tactic) in enumerate(zip(_states, _tactics), start=1):
+        for idx in range(len(tactics)):
+            batch_idx_to_pair_idx[batch_i].append(len(prompt_completion_pairs))
+            rm_inputs = build_reward_inputs(
+                _states[idx], 
+                _tactics[idx], 
+                _states[idx + 1],
+                use_sts_format=use_sts_format,
+                prompts_for_model=prompts_for_model,
+            )
+            prompt_completion_pairs.append(rm_inputs)
     results = []
     for batch in batch_iterator(prompt_completion_pairs, batch_size):
         results.extend(batch_completion_probabilities(model, tokenizer, batch))
