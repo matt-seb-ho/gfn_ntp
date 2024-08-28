@@ -26,7 +26,7 @@ from proof_flow.src.gfn_tuning.verifier import (
     batch_completion_probabilities,
     batch_iterator
 )
-from proof_flow.scripts.verifier_training.prompts import (
+from proof_flow.src.gfn_tuning.rm_prompts import (
     INSTRUCTION_PROMPT_TEMPLATE,
     INSTRUCTION_COMPLETION_TEMPLATE,
     INSTRUCTION_COMPLETION_TEMPLATE_WITH_NEXT_STATE,
