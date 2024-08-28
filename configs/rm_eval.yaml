@@ -1,19 +1,34 @@
 input_file: "data/time_filtered_val.json"
 output_file: "data/sampled_proofs.json"
 verification_results_file: "data/verification_results.json"
-rm_data_file: "data/rm_eval_dataset.json"
+rm_data_file: "data/rm_eval_dataset_v2.json"
 rm_eval_results_dir: "data/rm_eval_results"
 use_tqdm: true
 input_limit: null
 
+# eval pairs {first, random, all}
+pair_selection_strategy: first
+max_pairs_per_state: 1
+# pair_selection_strategy: random 
+# max_pairs_per_state: 5
+
+# base models
+model: deepseek-ai/DeepSeek-Prover-V1
+# deepseek note:
+# - debugging! asked on email & discord
+# - currently trying llama arch (to match math base model)
+
+# model: EleutherAI/llemma_7b
+# model: internlm/internlm2-math-base-7b
+use_peft: false
+
+# trained verifiers
+# model: msho/llemma_sft
+# use_peft: true
+
 # values from DeepSeek-Prover-V1.5/configs/sampling.py
 # initialization from DeepSeek-Prover-V1.5/prover/workers/generator.py
 # - except seed which was `seed = int(time.time()) % 1000 + (self.node_rank * 8 + self.local_rank) * 1000`
-
-# model: deepseek-ai/DeepSeek-Prover-V1 # FIXING! sent discord message
-model: EleutherAI/llemma_7b
-# model: internlm/internlm2-math-base-7b
-
 data_generation:
   llm:
     model: deepseek-ai/DeepSeek-Prover-V1.5-RL

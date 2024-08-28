@@ -55,11 +55,16 @@ def evaluate_reward_model(
     pair_data: list[dict],
     formatting_func: Callable = rm_formatting_func,
     pair_selection_strategy: str = "first", # "first", "random", "all"
+    max_pairs_per_state: int = 1,
     use_next_state: bool = False,
     device: Optional[torch.device] = None,
 ) -> dict:
     # first select pairs from pair_data
-    selected_pairs = select_pairs(pair_selection_strategy, pair_data)
+    selected_pairs = select_pairs(
+        pair_selection_strategy, 
+        pair_data,
+        max_pairs_per_state=max_pairs_per_state,
+    )
     
     results = {"acc": None, "completion_log_prob": {}, "correct": 0, "total": None}
     # then evaluate the model on these pairs
@@ -104,7 +109,7 @@ def select_pairs(
     strategy: str | int,
     pair_data: list[dict],
     random_seed: int = 42,
-    n: int = 1,
+    max_pairs_per_state: int = 1,
 ) -> list[dict]:
     selected = []
     if strategy == "first":
@@ -113,17 +118,17 @@ def select_pairs(
     elif strategy == "random":
         random.seed(random_seed)
         for entry in pair_data:
-            if n == 1:
+            if max_pairs_per_state == 1:
                 positive_idx = random.randint(0, len(entry["positive"]) - 1)
                 negative_idx = random.randint(0, len(entry["negative"]) - 1)
                 selected.append(_pair_info(entry, positive_idx, negative_idx))
             else:
                 # select n random pairs from cartesian product
                 all_pairs = list(itertools.product(range(len(entry["positive"])), range(len(entry["negative"]))))
-                if len(all_pairs) < n:
+                if len(all_pairs) < max_pairs_per_state:
                     selected_pair_idxs = all_pairs
                 else:
-                    selected_pair_idxs = random.sample(all_pairs, n)
+                    selected_pair_idxs = random.sample(all_pairs, max_pairs_per_state)
                 for positive_idx, negative_idx in selected_pair_idxs:
                     selected.append(_pair_info(entry, positive_idx, negative_idx))
     elif strategy == "all":
@@ -150,6 +155,7 @@ def _pair_info(full_entry, positive_idx, negative_idx):
 if __name__ == "__main__":
     psr = argparse.ArgumentParser()
     psr.add_argument("--model", type=str)
+    psr.add_argument("--suffix", type=str)
     args = psr.parse_args()
     overrides = None
     if args.model:
@@ -162,6 +168,7 @@ if __name__ == "__main__":
     if cfg.use_peft:
         model = AutoPeftModelForCausalLM.from_pretrained(
             model_id, 
+            trust_remote_code=True,
         )
     else:
         model = AutoModelForCausalLM.from_pretrained(
@@ -170,7 +177,7 @@ if __name__ == "__main__":
         )
 
     model.to(device)
-    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
 
@@ -180,10 +187,20 @@ if __name__ == "__main__":
     if SANITY_CHECK:
         pair_data = pair_data[:2]
     
-    results = evaluate_reward_model(model, tokenizer, pair_data, device=device)
+    results = evaluate_reward_model(
+        model, 
+        tokenizer, 
+        pair_data, 
+        device=device,
+        pair_selection_strategy=cfg.pair_selection_strategy,
+        max_pairs_per_state=cfg.max_pairs_per_state,
+    )
     
     model_name = model_id.split("/")[-1]
-    filename = f"{model_name}_rm_eval.json"
+    if args.suffix:
+        filename = f"{model_name}_rm_eval_{args.suffix}.json"
+    else:
+        filename = f"{model_name}_rm_eval.json"
     with open(repo_root() / cfg.rm_eval_results_dir / filename, "w") as f:
         json.dump(results, f, indent=2)
     
