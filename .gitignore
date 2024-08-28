@@ -1,3 +1,5 @@
+models--gpt2-xl/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

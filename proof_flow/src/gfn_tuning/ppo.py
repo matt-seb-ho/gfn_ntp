@@ -16,6 +16,9 @@ import pandas as pd
 from peft import PeftModel
 from transformers import AutoTokenizer
 
+import sys
+print(sys.path)
+
 from proof_flow.src.utils import prepare_environment_for_lean_dojo
 
 from .proof_tree import extract_trajectories

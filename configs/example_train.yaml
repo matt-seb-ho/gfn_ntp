@@ -3,7 +3,7 @@ defaults:
   - task: openwebtext_gpt2
   - device: gpu
   - hydra: default
-  - paths: mb
+  - paths: eddie
 
 seed: 27
 save_dir: "runs/"

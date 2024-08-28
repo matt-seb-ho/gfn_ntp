@@ -3,8 +3,8 @@ from types import MethodType
 import hydra
 import pytorch_lightning as pl
 import torch
-from lightning_data import PromptDataModule
-from lightning_module import NextSentenceGFNTask
+from .lightning_data import PromptDataModule
+from .lightning_module import NextSentenceGFNTask
 from omegaconf import DictConfig, OmegaConf
 from peft import get_peft_model, prepare_model_for_kbit_training
 from transformers import (
@@ -12,17 +12,17 @@ from transformers import (
     AutoTokenizer,
     BitsAndBytesConfig
 )
-from utils import (
+from .utils import (
     FrozenModelSentenceGivenPrompt,
     ModelSentenceValidator,
     ReplayBuffer,
     RuleSentenceValidator
 )
 
-# from ppo import NTP_PPO
+from .ppo import NTP_PPO
 
-@hydra.main(version_base=None, config_path="/Users/vincentwork/Documents/GFN_NTP/gfn_ntp/configs/", config_name="example_train")
-# @hydra.main(version_base=None, config_path="/Users/vincentwork/Documents/GFN_NTP/gfn_ntp/configs/")
+@hydra.main(version_base=None, config_path="/home/vincentzhu/gfn_ntp/configs/", config_name="example_train")
+# @hydra.main(version_base=None, config_path="/Users/vincentwork/Documents/GFN_NTP/gfn_ntp/configs/", config_name="example_train")
 def train(config: DictConfig):
     pl.seed_everything(config.seed, workers=True)
 
@@ -61,54 +61,53 @@ def train(config: DictConfig):
     train_probes = [data.train_data[i][0] for i in range(config.task.eval.n_probes)]
     val_probes = [data.val_data[i][0] for i in range(config.task.eval.n_probes)]
 
-    # if config.task == "NextSentenceGFNTask":
-    task = NextSentenceGFNTask(
-        model=model,
-        tokenizer=tokenizer,
-        reward=reward,
-        reward_buffer=reward_buffer,
-        n_samples=config.task.training.n_samples,
-        lr=config.task.training.lr,
-        subtb_lambda=config.task.training.subtb_lambda,
-        pf_temp_high=config.task.training.pf_temp_high,
-        pf_temp_low=config.task.training.pf_temp_low,
-        pf_temp_prob=config.task.training.pf_temp_prob,
-        use_buffer_prob=config.task.training.use_buffer_prob,
-        min_sentence_len=config.task.constraints.min_sentence_len,
-        max_sentence_len=config.task.constraints.max_sentence_len,
-        reward_temp_start=config.task.reward.temp_start,
-        reward_temp_end=config.task.reward.temp_end,
-        reward_temp_horizon=config.task.reward.temp_horizon,
-        illegal_token_mask=illegal_token_mask,
-        train_probes=train_probes,
-        val_probes=val_probes,
-        diversity_metric=config.task.eval.diversity_metric,
-        use_4bit=config.task.training.use_4bit,
-    )
-    # elif config.task == "NTP_PPO":
-    #     task = NTP_PPO(
-    #         model=model,
-    #         tokenizer=tokenizer,
-    #         reward=reward,
-    #         reward_buffer=reward_buffer,
-    #         n_samples=config.task.training.n_samples,
-    #         lr=config.task.training.lr,
-    #         pf_temp_high=config.task.training.pf_temp_high,
-    #         pf_temp_low=config.task.training.pf_temp_low,
-    #         pf_temp_prob=config.task.training.pf_temp_prob,
-    #         use_buffer_prob=config.task.training.use_buffer_prob,
-    #         reward_temp_start=config.task.reward.temp_start,
-    #         reward_temp_end=config.task.reward.temp_end,
-    #         reward_temp_horizon=config.task.reward.temp_horizon,
-    #         illegal_token_mask=illegal_token_mask,
-    #         train_probes=train_probes,
-    #         val_probes=val_probes,
-    #         save_dir=config.task.training.save_dir,
-    #         wandb_log=config.task.training.wandb_log,
-    #         wandb_entity=config.task.training.wandb_entity,
-    #         wandb_project=config.task.training.wandb_project,
-    #     )
-
+    if config.task.name == "openwebtext":
+        task = NextSentenceGFNTask(
+            model=model,
+            tokenizer=tokenizer,
+            reward=reward,
+            reward_buffer=reward_buffer,
+            n_samples=config.task.training.n_samples,
+            lr=config.task.training.lr,
+            subtb_lambda=config.task.training.subtb_lambda,
+            pf_temp_high=config.task.training.pf_temp_high,
+            pf_temp_low=config.task.training.pf_temp_low,
+            pf_temp_prob=config.task.training.pf_temp_prob,
+            use_buffer_prob=config.task.training.use_buffer_prob,
+            min_sentence_len=config.task.constraints.min_sentence_len,
+            max_sentence_len=config.task.constraints.max_sentence_len,
+            reward_temp_start=config.task.reward.temp_start,
+            reward_temp_end=config.task.reward.temp_end,
+            reward_temp_horizon=config.task.reward.temp_horizon,
+            illegal_token_mask=illegal_token_mask,
+            train_probes=train_probes,
+            val_probes=val_probes,
+            diversity_metric=config.task.eval.diversity_metric,
+            use_4bit=config.task.training.use_4bit,
+        )
+    elif config.task.name == "ntp":
+        task = NTP_PPO(
+            model=model,
+            tokenizer=tokenizer,
+            reward=reward,
+            reward_buffer=reward_buffer,
+            n_samples=config.task.training.n_samples,
+            lr=config.task.training.lr,
+            pf_temp_high=config.task.training.pf_temp_high,
+            pf_temp_low=config.task.training.pf_temp_low,
+            pf_temp_prob=config.task.training.pf_temp_prob,
+            use_buffer_prob=config.task.training.use_buffer_prob,
+            reward_temp_start=config.task.reward.temp_start,
+            reward_temp_end=config.task.reward.temp_end,
+            reward_temp_horizon=config.task.reward.temp_horizon,
+            illegal_token_mask=illegal_token_mask,
+            train_probes=train_probes,
+            val_probes=val_probes,
+            save_dir=config.task.training.save_dir,
+            wandb_log=config.task.training.wandb_log,
+            wandb_entity=config.task.training.wandb_entity,
+            wandb_project=config.task.training.wandb_project,
+        )
 
     trainer = pl.Trainer(
         accelerator=config.device.accelerator,

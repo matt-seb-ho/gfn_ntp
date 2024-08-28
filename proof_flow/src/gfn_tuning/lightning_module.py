@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import torch
 from pytorch_lightning import LightningModule
-from utils import (
+from .utils import (
     SequenceDiversity,
     base_to_lora,
     generate_and_return_termination_logprob,
