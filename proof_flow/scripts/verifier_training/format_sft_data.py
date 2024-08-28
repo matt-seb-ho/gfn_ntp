@@ -7,7 +7,7 @@ from loguru import logger
 from tqdm import tqdm
 
 from proof_flow.src.utils import get_config, repo_root
-from proof_flow.src.gfn_tuning.rm_prompts import (
+from proof_flow.src.prompts import (
     INSTRUCTION_PROMPT_TEMPLATE, 
     INSTRUCTION_COMPLETION_TEMPLATE_WITH_NEXT_STATE
 )

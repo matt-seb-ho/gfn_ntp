@@ -16,7 +16,7 @@ from trl import DPOTrainer
 
 # from prep_sft_data import load_sft_data, sft_subset
 from proof_flow.src.utils import get_hf_access_token, repo_root
-from proof_flow.src.gfn_tuning.rm_prompts import INSTRUCTION_PROMPT_TEMPLATE
+from proof_flow.src.prompts import INSTRUCTION_PROMPT_TEMPLATE
 
 # constants
 DPO_DATA_PATH = repo_root() / "data/paired_random_train.json"
