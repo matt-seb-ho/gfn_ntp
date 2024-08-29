@@ -1,10 +1,20 @@
 # file paths --------------------------------------
-input_file: "data/time_filtered_val.json"
-output_file: "data/sampled_proofs.json"
-verification_results_file: "data/verification_results.json"
-rm_data_file: "data/rm_eval_dataset_v2.json"
-rm_eval_results_dir: "data/rm_eval_results"
-rm_eval_result_filename: "dsp1_sts_llprompt.json"
+# input_file: "data/time_filtered_val.json"
+# output_file: "data/sampled_proofs.json"
+# verification_results_file: "data/verification_results.json"
+# rm_data_file: "data/rm_eval_dataset_v2.json"
+# rm_eval_results_dir: "data/rm_eval_results"
+# rm_eval_result_filename: "dsp1_sts_llprompt.json"
+# use_tqdm: true
+# input_limit: null
+
+# Negative Tactics Data Generation: training split not test split -----------------------
+input_file: "/home/vincentzhu/gfn_ntp/data/time_filtered_v2.json"  # Updated to use training data split
+output_file: "data/sampled_proofs_train.json"  # Updated output file for sampled proofs
+verification_results_file: "data/verification_results_train.json"  # Updated for training verification results
+rm_data_file: "data/negative_tactics_dataset.json"  # Updated RM data output file for training
+rm_eval_results_dir: "data/rm_eval_results_train"  # Updated evaluation results directory
+rm_eval_result_filename: "dsp1_sts_llprompt_train.json"  # Updated result filename for training
 use_tqdm: true
 input_limit: null
 
