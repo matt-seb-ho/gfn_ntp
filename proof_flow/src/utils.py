@@ -8,6 +8,11 @@ from dotenv import load_dotenv
 from omegaconf import OmegaConf
 
 HF_ACCESS_TOKEN_VAR_NAME = "HF_ACCESS_TOKEN"
+DEFAULT_PAD_TOKEN = "<pad>"
+# example of special tokens:
+# - llemma: <s>, </s>
+# - deepseek: <｜begin▁of▁sentence｜>, <｜end▁of▁sentence｜>
+# - internlm math: <s>, </s>
 
 
 @cache
@@ -67,16 +72,46 @@ def get_hf_access_token():
     return os.getenv(HF_ACCESS_TOKEN_VAR_NAME)
 
 
-def add_pad_token(model, tokenizer, pad_token="<pad>", padding_side="right"):
-    # CodeLlama/Llama2 does not have a default mask/pad token
-    # https://github.com/TrelisResearch/llama-2-setup
-    # Check if the pad token is already in the tokenizer vocabulary
-    if '<pad>' not in tokenizer.get_vocab():
-        # Add the pad token
-        tokenizer.add_special_tokens({"pad_token": pad_token})
+def add_pad_token(
+    model, 
+    tokenizer, 
+    pad_token=DEFAULT_PAD_TOKEN,
+    padding_side="left",
+    token_embedding_multiple=None,
+):
+    """
+    configures model and tokenizer for padding (needed for batch processing)
+    
+    based on the following scrip/repo
+    https://github.com/TrelisResearch/llama-2-setup
+    """
+
+    # check if the pad token is already in the tokenizer vocabulary
+    if tokenizer.pad_token is not None:
+        return
+
+    # add the pad token
+    tokenizer.add_special_tokens({"pad_token": pad_token})
 
     # resize the embeddings
-    model.resize_token_embeddings(len(tokenizer))
+    # - only necessary if the new tokenizer size > model's vocab size
+    #    - for deepseek-prover v1, the vocab size was set to 102400 while the tokenizer only hadd 100002 tokens
+    # - for hardware performance reasons, it's useful for the embedding matrix to have certain dimension
+    #   https://docs.nvidia.com/deeplearning/performance/dl-performance-matrix-multiplication/index.html#requirements-tc
+    # - the doc suggests a100 wants multiple of 64 for FP16
+    # - unfortunately it doesn't say anything about bfloat16
+    # - TODO: empirically test the performance of the model with token_embedding_multiple=64 vs. None
+    # vocab size issue described here:
+    # https://github.com/huggingface/transformers/issues/22312#issuecomment-1684141492
+    # https://huggingface.co/docs/transformers/en/main_classes/model#transformers.PreTrainedModel.resize_token_embeddings
+    if model.config.vocab_size < len(tokenizer):
+        if token_embedding_multiple is None:
+            model.resize_token_embeddings(len(tokenizer))
+        else:
+            model.resize_token_embeddings(
+                len(tokenizer),
+                pad_to_multiple_of=token_embedding_multiple,
+            )
 
     # configure the pad token in the model
     model.config.pad_token_id = tokenizer.pad_token_id
@@ -85,9 +120,9 @@ def add_pad_token(model, tokenizer, pad_token="<pad>", padding_side="right"):
     assert model.config.pad_token_id == tokenizer.pad_token_id, "The model's pad token ID does not match the tokenizer's pad token ID!"
 
     # print the pad token ids
-    print('Tokenizer pad token ID:', tokenizer.pad_token_id)
-    print('Model pad token ID:', model.config.pad_token_id)
-    print('Model config pad token ID:', model.config.pad_token_id)
+    print("Tokenizer pad token ID:", tokenizer.pad_token_id)
+    print("Model pad token ID:", model.config.pad_token_id)
     
-    # to prevent warnings
+    # this determines whether padding tokens are added to the left or right side of the input
+    # the common rule of thumb is that for auto-regressive models, padding should be on the left
     tokenizer.padding_side = padding_side
