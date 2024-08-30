@@ -46,7 +46,7 @@ current step (STEP 4):
 - or just pick one for each state
 """
 
-SANITY_CHECK = True
+SANITY_CHECK = False
 
 
 def evaluate_reward_model(
@@ -58,6 +58,7 @@ def evaluate_reward_model(
     use_sts_format: bool = False,
     prompts_for_model: str = "llemma",
     device: Optional[torch.device] = None,
+    normalize_length: bool = False,
 ) -> dict:
     # first select pairs from pair_data
     selected_pairs = select_pairs(
@@ -66,10 +67,23 @@ def evaluate_reward_model(
         max_pairs_per_state=max_pairs_per_state,
     )
     
-    results = {"acc": None, "completion_log_prob": {}, "correct": 0, "total": None}
+    results = {
+        "acc": None, 
+        "correct": 0, 
+        "total": None,
+        "score_method": "log_prob_avg" if normalize_length else "log_prob_sum",
+        "scores": {}, 
+    }
     # then evaluate the model on these pairs
-    for pair_data in tqdm(selected_pairs):
-        pos_neg_log_probs = {}
+    for i, pair_data in tqdm(enumerate(selected_pairs), total=len(selected_pairs)):
+        scores_entry = {
+            "thm_idx": pair_data["thm_idx"],
+            "state": pair_data["state_before"],
+            "positive_tactic": pair_data["positive"],
+            "negative_tactic": pair_data["negative"],
+            "state_after_positive": pair_data["state_after_positive"],
+            "state_after_negative": pair_data["state_after_negative"],
+        }
         for key in ["positive", "negative"]:
             prompt_completion_pair = [
                 build_reward_inputs(
@@ -94,12 +108,16 @@ def evaluate_reward_model(
                 tokenizer, 
                 prompt_completion_pair,
                 device=device,
-            )
-            log_prob = completion_probs[0]["log_prob_sum"]
-            pos_neg_log_probs[key] = log_prob
+            )[0]
 
-        results["completion_log_prob"][pair_data["thm_idx"]] = pos_neg_log_probs
-        if pos_neg_log_probs["positive"] > pos_neg_log_probs["negative"]:
+            if normalize_length:
+                score = completion_probs["log_prob_sum"] / completion_probs["token_count"]
+            else:
+                score = completion_probs["log_prob_sum"]
+            scores_entry[key] = score
+
+        results["scores"][i] = scores_entry
+        if scores_entry["positive"] > scores_entry["negative"]:
             results["correct"] += 1
 
     results["total"] = len(selected_pairs)
@@ -158,11 +176,13 @@ if __name__ == "__main__":
     psr = argparse.ArgumentParser()
     psr.add_argument("--model", type=str)
     psr.add_argument("--suffix", type=str)
+    psr.add_argument("--cfg", type=str)
     args = psr.parse_args()
     overrides = None
     if args.model:
         overrides = f"model={args.model}"
-    cfg = get_config(config_name="rm_eval", overrides=overrides)
+    config_name = args.cfg or "rm_eval"
+    cfg = get_config(config_name=config_name, overrides=overrides)
 
     model_id = cfg.model
     device = torch.device("cuda")
@@ -198,6 +218,7 @@ if __name__ == "__main__":
         max_pairs_per_state=cfg.max_pairs_per_state,
         use_sts_format=cfg.use_sts_format,
         prompts_for_model=cfg.prompts_for_model,
+        normalize_length=cfg.normalize_length,
     )
     
     model_name = model_id.split("/")[-1]
