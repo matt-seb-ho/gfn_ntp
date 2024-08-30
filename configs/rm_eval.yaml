@@ -4,7 +4,7 @@ output_file: "data/sampled_proofs.json"
 verification_results_file: "data/verification_results.json"
 rm_data_file: "data/rm_eval_dataset_v2.json"
 rm_eval_results_dir: "data/rm_eval_results"
-rm_eval_result_filename: "dsp1_st_dsp_lennorm.json"
+rm_eval_result_filename: "lsft_sts_llp.json"
 use_tqdm: true
 input_limit: null
 
@@ -16,24 +16,24 @@ max_pairs_per_state: 1
 # max_pairs_per_state: 5
 
 # RM scoring settings -----------------------------
-use_sts_format: false 
-prompts_for_model: deepseek
-normalize_length: true
+use_sts_format: true
+prompts_for_model: llemma
+normalize_length: false
 
 
 # model config  ------------------------------------
-model: deepseek-ai/DeepSeek-Prover-V1
+# model: deepseek-ai/DeepSeek-Prover-V1
 # deepseek note:
 # - debugging! asked on email & discord
 # - currently trying llama arch (to match math base model)
 
 # model: EleutherAI/llemma_7b
 # model: internlm/internlm2-math-base-7b
-use_peft: false
+# use_peft: false
 
 # trained verifiers
-# model: msho/llemma_sft
-# use_peft: true
+model: msho/llemma_sft
+use_peft: true
 
 
 # generating evaluation data -----------------------
