@@ -1,6 +1,7 @@
 from types import MethodType
 
 import hydra
+from proof_flow.src.utils import set_up_padding
 import pytorch_lightning as pl
 import torch
 # from lightning_module import NextSentenceGFNTask
@@ -10,6 +11,10 @@ from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     BitsAndBytesConfig
+)
+from proof_flow.constants import (
+    GFN_POLICY_ADAPTER_NAME,
+    REWARD_ADAPTER_NAME,
 )
 from proof_flow.src.gfn_tuning.reward import NTPReward
 from proof_flow.src.gfn_tuning.replay_buffer import ReplayBuffer
@@ -22,7 +27,6 @@ def train(config: DictConfig):
     pl.seed_everything(config.seed, workers=True)
 
     model, tokenizer = get_model(config)
-
     reward = get_reward(config, model, tokenizer)
     reward_buffer = ReplayBuffer(
         buffer_size=config.task.replay_buffer.buffer_size,
@@ -99,11 +103,19 @@ def get_model(config: DictConfig):
 
     # Get the model
     tokenizer = AutoTokenizer.from_pretrained(
-        config.task.model.name, add_bos_token=False
+        config.task.model.name, 
+        # from original code, not sure if needed
+        # add_bos_token=False,
     )
     model = AutoModelForCausalLM.from_pretrained(
-        config.task.model.name, device_map="auto", quantization_config=bnb_config
+        config.task.model.name, 
+        device_map="auto", 
+        quantization_config=bnb_config
     )
+
+    # padding is needed for batch processing (e.g. reward computation)
+    # llemma and deepseek models don't have padding tokens by default
+    set_up_padding(model, tokenizer)
 
     # Prepare model for k-bit training
     if config.task.training.use_4bit:
@@ -114,7 +126,15 @@ def get_model(config: DictConfig):
 
     # Wrap using Lora
     model = get_peft_model(
-        model, hydra.utils.instantiate(config.task.model.lora_config)
+        model, 
+        hydra.utils.instantiate(config.task.model.lora_config),
+        adapter_name=GFN_POLICY_ADAPTER_NAME,
+    )
+    
+    # Load in reward adapter
+    model.load_adapter(
+        config.task.reward.adapter_name,
+        adapter_name=REWARD_ADAPTER_NAME,
     )
 
     # Remove dropout

@@ -10,7 +10,10 @@ from peft import PeftModel
 from pytorch_lightning import LightningModule
 from transformers import AutoTokenizer
 
-from proof_flow.src.utils import prepare_environment_for_lean_dojo
+from proof_flow.src.utils import (
+    prepare_environment_for_lean_dojo,
+    set_up_padding
+)
 
 from .proof_tree import ProofTreeNode, extract_trajectories
 from .replay_buffer import ReplayBuffer
@@ -51,6 +54,10 @@ class NeuralTheoremProvingTask(LightningModule):
 
         self.model = model
         self.tokenizer = tokenizer
+
+        # add pad token and set padding side
+        set_up_padding(self.model, self.tokenizer)
+
         self.log_z = torch.nn.Parameter(torch.tensor(0.0, requires_grad=True))
         self.reward = reward
         self.reward_buffer = reward_buffer

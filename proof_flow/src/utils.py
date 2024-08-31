@@ -72,7 +72,7 @@ def get_hf_access_token():
     return os.getenv(HF_ACCESS_TOKEN_VAR_NAME)
 
 
-def add_pad_token(
+def set_up_padding(
     model, 
     tokenizer, 
     pad_token=DEFAULT_PAD_TOKEN,

@@ -2,14 +2,14 @@ import argparse
 import json
 import random
 import itertools
-from typing import Callable, Optional
+from typing import Optional
 # import vllm
 from tqdm import tqdm
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from peft import AutoPeftModelForCausalLM
 
-from proof_flow.src.utils import get_config, repo_root
+from proof_flow.src.utils import get_config, repo_root, set_up_padding
 from proof_flow.src.gfn_tuning.verifier import batch_completion_probabilities
 from proof_flow.src.gfn_tuning.reward import build_reward_inputs
 
@@ -187,6 +187,7 @@ if __name__ == "__main__":
     model_id = cfg.model
     device = torch.device("cuda")
 
+        
     if cfg.use_peft:
         model = AutoPeftModelForCausalLM.from_pretrained(
             model_id, 
@@ -197,11 +198,9 @@ if __name__ == "__main__":
             model_id, 
             trust_remote_code=True,
         )
-
-    model.to(device)
     tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-    if tokenizer.pad_token_id is None:
-        tokenizer.pad_token = tokenizer.eos_token
+    set_up_padding(model, tokenizer)
+    model.to(device)
 
     with open(repo_root() / cfg.rm_data_file) as f:
         pair_data = json.load(f)

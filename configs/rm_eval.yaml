@@ -4,7 +4,7 @@ output_file: "data/sampled_proofs.json"
 verification_results_file: "data/verification_results.json"
 rm_data_file: "data/rm_eval_dataset_v2.json"
 rm_eval_results_dir: "data/rm_eval_results"
-rm_eval_result_filename: "lsft_sts_llp.json"
+rm_eval_result_filename: "peft_sancheck.json"
 use_tqdm: true
 input_limit: null
 
@@ -16,9 +16,9 @@ max_pairs_per_state: 1
 # max_pairs_per_state: 5
 
 # RM scoring settings -----------------------------
-use_sts_format: true
+use_sts_format: false
 prompts_for_model: llemma
-normalize_length: false
+normalize_length: true
 
 
 # model config  ------------------------------------
