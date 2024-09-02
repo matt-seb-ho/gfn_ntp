@@ -72,20 +72,20 @@ class ReplayBuffer:
                     self._buffer[theorem_id]["exists"].add(item["proof"])
                     heapq.heappush(
                         self._buffer[theorem_id]["proofs"],
-                        self._create_buffer_entry(item),
+                        self._create_buffer_tuple(item),
                     )
                     return
         self._buffer[theorem_id]["exists"].add(item["proof"])
         if len(self._buffer[theorem_id]["proofs"]) >= self.buffer_size:
             popped = heapq.heappushpop(
                 self._buffer[theorem_id]["proofs"],
-                self._create_buffer_entry(item),
+                self._create_buffer_tuple(item),
             )
             self._buffer[theorem_id]["exists"].remove(popped[1])
         else:
             heapq.heappush(
                 self._buffer[theorem_id]["proofs"],
-                self._create_buffer_entry(item),
+                self._create_buffer_tuple(item),
             )
 
 
@@ -99,10 +99,15 @@ class ReplayBuffer:
             self.add(item)
 
 
-    def sample(self, theorem_id: str, batch_size: int) -> ProofTreeNode:
+    def sample(
+        self, 
+        theorem_id: str, 
+        batch_size: int,
+        dict_format: bool = True,
+    ) -> list[tuple]:
         """
         uniformly sample a batch of items from the buffer,
-        and return a reconstructed proof tree containing the sampled items
+        and returns a list of n proof trajectories 
         """
         if theorem_id not in self._buffer:
             return None
@@ -112,7 +117,21 @@ class ReplayBuffer:
             batch_size,
             replace=True,
         )
-        return self._build_replay_tree([theorem_buffer[idx] for idx in idxs])
+        selected_items = [theorem_buffer[idx] for idx in idxs]
+        if dict_format:
+            return [self._recover_buffer_dict(item) for item in selected_items]
+        return selected_items
+
+
+    def sample_tree(self, theorem_id: str, batch_size: int) -> ProofTreeNode:
+        """
+        uniformly sample a batch of items from the buffer,
+        and return a reconstructed proof tree containing the sampled items
+        """
+        sampled_items = self.sample(theorem_id, batch_size, dict_format=False)
+        if sampled_items is None:
+            return None
+        return self._build_replay_tree(sampled_items)
 
 
     def print(self):
@@ -187,8 +206,15 @@ class ReplayBuffer:
         return root
 
 
-    def _create_buffer_entry(self, item: dict) -> tuple:
+    def _create_buffer_tuple(self, item: dict) -> tuple:
         return tuple(item[key] for key in BUFFER_ENTRY_KEYS)
+
+
+    def _recover_buffer_dict(self, buffer_tuple: tuple) -> dict:
+        item = {}
+        for key, idx in BUFFER_ENTRY_KEY_IDXS.items():
+            item[key] = buffer_tuple[idx]
+        return item
     
 
     def _buffer_item_get(self, item: tuple, key: str):

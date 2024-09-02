@@ -16,9 +16,12 @@ from proof_flow.src.utils import (
     set_up_padding
 )
 
-from .proof_tree import ProofTreeNode, extract_trajectories
-from .replay_buffer import ReplayBuffer
-from .reward import NTPReward, compute_log_reward
+from proof_flow.src.gfn_tuning.proof_tree import ProofTreeNode, extract_trajectories
+from proof_flow.src.gfn_tuning.replay_buffer import ReplayBuffer
+from proof_flow.src.gfn_tuning.reward import NTPReward, compute_log_reward
+from proof_flow.src.gfn_tuning.verifier import batch_iterator
+
+# get rid of this eventually...
 from .utils import base_to_lora, lora_to_base
 
 prepare_environment_for_lean_dojo()
@@ -48,6 +51,7 @@ class NeuralTheoremProvingTask(LightningModule):
         max_tactics: int = 3,
         min_tactic_tokens: int = 2,
         max_tactic_tokens: int = 30,
+        use_replay_tree: bool = False,
     ):
         super().__init__()
         self.save_hyperparameters(ignore=["model", "tokenizer"])
@@ -160,14 +164,23 @@ class NeuralTheoremProvingTask(LightningModule):
 
 
     def training_step(self, theorem: Theorem, batch_idx):
-        # Should always be (1, prompt_len)
         theorem_id = theorem.uid
-        if (
-            random.random() < self.hparams.use_buffer_prob
-            and (replay_tree := self.reward_buffer.sample(theorem_id, self.hparams.n_samples))
-        ):
-            # Using a sample from the reward buffer
-            t_logpf, log_r, _ = self.forward(theorem, replay_tactics=replay_tree)
+
+        # replay trajectories
+        # _sample... helper function handles the logic of whether to use the buffer or not
+        #   (1) hparams.use_buffer_prob 
+        #   (2) the theorem has trajectories in the buffer
+        replay_ts = self._sample_replay_trajectories(theorem_id)
+        
+        if replay_ts is not None:
+            # using sample from replay buffer
+            if self.hparams.use_replay_tree:
+                t_logpf, log_r, _ = self.forward(theorem, replay_tactics=replay_ts)
+            else:
+                t_logpf, log_r, = self.replay_trajectories(
+                    replay_ts,
+                    model_inf_batch_size=self.hparams.model_inf_batch_size,
+                )
             log_r *= 1 / self.reward.temperature  # redo the effect of reward tempering
         else:
             # Using the forward policy
@@ -548,6 +561,120 @@ class NeuralTheoremProvingTask(LightningModule):
                 if node.children is None:
                     node.children = []
                 node.children.append(child_node)
+    
+
+    def replay_trajectories(
+        self,
+        replay_trajectories: list[dict],
+        model_inf_batch_size: int,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Replay a batch of trajectories, computing new log_pf for tactics.
+        Effectively the replacement for `forward` when replaying trajectories.
+
+        Returns
+            - t_log_pf: (n_samples, max_depth) tensor of log probabilities of each tactic (0-padded).
+            - log_r: (n_samples,) tensor of log rewards for complete trajectories
+        """
+
+        # queue up jobs
+        jobs = []
+        idxs = []
+        for t_idx, trajectory in enumerate(replay_trajectories):
+            for tokens, prompt_length in zip(
+                trajectory["state_tactic_tokens"],
+                trajectory["prompt_lengths"],
+            ):
+                jobs.append((tokens, prompt_length))
+                idxs.append(t_idx)
+        stepwise_log_pfs = []
+        
+        # compute tactic log_pfs in batches
+        for batch in batch_iterator(jobs, batch_size=model_inf_batch_size):
+            batch_input_ids = pad_sequence(
+                [tokens for tokens, _ in batch],
+                batch_first=True,
+                padding_value=self.tokenizer.pad_token_id,
+            )
+            stepwise_log_pfs.append(
+                self._get_completion_log_pfs(
+                    batch_input_ids,
+                    torch.tensor([pl for _, pl in batch]),
+                    self.end_of_step_token_id,
+                    self.tokenizer.pad_token_id,
+                )
+            )
+        # combine by idx (trajectory idx) using scatter_add
+        idxs = torch.tensor(idxs)
+        stepwise_log_pfs = torch.cat(stepwise_log_pfs)
+        log_pf = torch.zeros(len(replay_trajectories), dtype=stepwise_log_pfs.dtype)
+        log_pf = log_pf.scatter_add(0, idxs, stepwise_log_pfs)
+        
+        # collect log_r from replay buffer
+        log_r = torch.tensor([t["log_r"] for t in replay_trajectories])
+        return log_pf, log_r
+    
+
+    def _get_completion_log_pfs(
+        self,
+        input_ids: torch.Tensor,
+        prompt_lengths: torch.Tensor,
+        termination_token_id: int,
+        pad_token_id: int,
+        device: Optional[torch.device] = None,
+    ) -> torch.Tensor:
+        # essentially alternate input version of batch_completion_probabilities
+        # critical assumptions
+        # - model is already in policy mode (policy adapters active)
+        attention_mask = (input_ids != pad_token_id).long()
+        if device is not None:
+            input_ids = input_ids.to(device)
+            attention_mask = attention_mask.to(device)
+        outputs = self.model(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            return_dict=True,
+        )
+        log_prob_distributions = torch.log_softmax(outputs.logits, dim=-1)
+        # distribution after last token can be ignored
+        log_prob_distributions = log_prob_distributions[:, :-1, :]
+        # can't get log probabilities for first token
+        relevant_tokens = input_ids[:, 1:]
+        seq_log_probs = torch.gather(
+            log_prob_distributions, 
+            # dim explanation: shape is (batch, tokens, vocab) -> gather on vocab
+            2, 
+            relevant_tokens[:, :, None]
+        ).squeeze(-1)
+
+        # -1 is because the input_ids were shifted forward by 1
+        start = (prompt_lengths - 1).unsqueeze(1)
+        # exclude the end token
+        stop = (relevant_tokens == termination_token_id).argmax(dim=-1).unsqueeze(1)
+        # create an index tensor for the sequence dimension
+        # [0, 1, 2, ..., seq_len - 1] for every batch element
+        # shape (batch_size, seq_len)
+        idx = (
+            torch.arange(seq_log_probs.shape[1])
+            .unsqueeze(0)
+            .expand(seq_log_probs.shape[0], -1)
+        )
+        # create the mask based on the condition start <= idx < stop
+        # mask is 1 where we want to keep the log probabilities
+        mask = (idx >= start) & (idx < stop)
+        return (seq_log_probs * mask).sum(dim=1)
+    
+
+    def _sample_replay_trajectories(
+        self, 
+        theorem_id: str
+    ) -> Optional[ProofTreeNode | list[dict]]:
+        if (random.random() >= self.hparams.use_buffer_prob):
+            return None
+        if self.hparams.use_replay_tree:
+            return self.reward_buffer.sample_tree(theorem_id, self.hparams.n_samples)
+        else:
+            return self.reward_buffer.sample(theorem_id, self.hparams.n_samples)
 
 
     @staticmethod
