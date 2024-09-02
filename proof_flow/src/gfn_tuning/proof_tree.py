@@ -68,7 +68,7 @@ def extract_trajectories(root: ProofTreeNode, theorem_id: str) -> list:
     states: list[str] = []
     tactics: list[str] = []
     parent_tactic_tokens: list[torch.Tensor] = []
-    state_lengths: list[int] = []
+    prompt_lengths: list[int] = []
 
     # dfs traversal
     while stack:
@@ -78,7 +78,7 @@ def extract_trajectories(root: ProofTreeNode, theorem_id: str) -> list:
             states.pop()
             tactics.pop()
             parent_tactic_tokens.pop()
-            state_lengths.pop()
+            prompt_lengths.pop()
         else:
             stack.append((node, True))
             
@@ -86,7 +86,7 @@ def extract_trajectories(root: ProofTreeNode, theorem_id: str) -> list:
         states.append(convert_tactic_result_to_state_string(node.state))
         tactics.append(node.tactic.strip())
         parent_tactic_tokens.append(node.parent_tactic_tokens)
-        state_lengths.append(node.prompt_length)
+        prompt_lengths.append(node.prompt_length)
 
         if node.children:
             for child in reversed(node.children):
@@ -99,9 +99,8 @@ def extract_trajectories(root: ProofTreeNode, theorem_id: str) -> list:
                 # root node has an empty string tactic, so we skip it
                 "tactics": tactics[1:],
                 "proof": TACTIC_DELIMITER.join(tactics[1:]),
-                # "parent_tactic_tokens": deepcopy(parent_tactic_tokens),
-                "parent_tactic_tokens": parent_tactic_tokens.copy(),
-                "state_lengths": state_lengths.copy(),
+                "state_tactic_tokens": parent_tactic_tokens[1:], # consider deepcopy...
+                "prompt_lengths": prompt_lengths.copy(),
                 "log_r": node.log_r,
             })
     

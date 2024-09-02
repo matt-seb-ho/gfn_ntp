@@ -181,7 +181,7 @@ class NeuralTheoremProvingTask(LightningModule):
                 # Without tempering
                 pf_temp = 1.0
             t_logpf, log_r, extracted_ts = self.forward(theorem, pf_temperature=pf_temp)
-            self.reward_buffer.add_batch(extracted_ts)
+            self.reward_buffer.add_batch(theorem_id, extracted_ts)
 
         # get gfn loss
         # - sub tb requires estimating flow (possible impl: scalar head over RM)
@@ -530,6 +530,7 @@ class NeuralTheoremProvingTask(LightningModule):
             )
             # tactics_token_length = (tokens[:, input_ids.shape[1]:] == self.end_of_sentence_token_id).count_nonzero(dim=-1)
             # among multiple max values, argmax returns the first occurrence
+            # this excludes the end of step token
             pre_pad_length = (tokens == self.end_of_step_token_id).argmax(dim=-1)
 
             # create new children nodes by running the generated tactics through the environment
@@ -537,7 +538,7 @@ class NeuralTheoremProvingTask(LightningModule):
                 next_state = lean_env.run_tac(node.state, tactic.rstrip())
                 child_node = ProofTreeNode(
                     state=next_state,
-                    tactic=generated_tactics[i],
+                    tactic=generated_tactics[i].strip(),
                     depth=node.depth + 1,
                     prompt_length=input_ids.shape[1],
                     tactic_logpf=log_pf_tactic[i].item(),
