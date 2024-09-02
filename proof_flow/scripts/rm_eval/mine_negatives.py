@@ -48,7 +48,7 @@ def extract_rm_data_from_thm(
     for trace in traces:
         for entry in trace:
             dist_reduction = min_dist[entry["state_before"]] - min_dist[entry["state_after"]]
-            entry["dist_reduction"] = dist_reduction
+            entry["dist_reduction"] = str(dist_reduction) if dist_reduction == -1 * math.inf else dist_reduction
             label = get_tactic_label(dist_reduction)
             state_to_tactic[entry["state_before"]][label].append(entry)
 

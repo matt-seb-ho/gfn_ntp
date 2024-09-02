@@ -9,7 +9,7 @@
 # input_limit: null
 
 # Negative Tactics Data Generation: training split not test split -----------------------
-input_file: "/home/vincentzhu/gfn_ntp/data/time_filtered_v2.json"  # Updated to use training data split
+input_file: "/home/vincentzhu/gfn_ntp/data/eval_seed_thms.json"  # Updated to use training data split
 output_file: "data/sampled_proofs_train.json"  # Updated output file for sampled proofs
 verification_results_file: "data/verification_results_train.json"  # Updated for training verification results
 rm_data_file: "data/negative_tactics_dataset.json"  # Updated RM data output file for training
@@ -60,4 +60,4 @@ data_generation:
     temperature: 1
     max_tokens: 2048
     top_p: 0.95
-    n: 16
+    n: 8

@@ -134,7 +134,10 @@ def main():
 
     data, stats = add_formal_statements(data, tgt_data_path, stats_file)
     print(f"failure count: {len(stats['failure'])}")
-
+    
+    with open("data/eval_seed_thms.json", 'w') as json_file:
+        json.dump(data, json_file, indent=4)
+    
 
 if __name__ == '__main__':
     main()

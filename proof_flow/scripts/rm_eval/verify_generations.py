@@ -2,7 +2,9 @@ import json
 import re
 from tqdm import tqdm
 from proof_flow.src.utils import get_config, repo_root, prepare_environment_for_lean_dojo
-
+import pickle
+import sys
+import os
 
 prepare_environment_for_lean_dojo()
 from lean_dojo import ( # isort: skip
@@ -14,6 +16,7 @@ from lean_dojo import ( # isort: skip
     LeanError, 
     ProofGivenUp,
     DojoTacticTimeoutError,
+    DojoCrashError,
 )
 
 import re
@@ -68,6 +71,9 @@ def verify_proof_candidates(
     thm_info: dict,
     candidates: list[str],
     repo: LeanGitRepo,
+    thm_idx: int = None,
+    proof_idx: int = None,
+    failed_extractions: dict = None,
 ) -> list[tuple[bool, list[dict]]]:
     """
     given: thm info and repo to initialize the dojo, list of proof candidates
@@ -83,11 +89,16 @@ def verify_proof_candidates(
     results = []
 
     with Dojo(theorem) as (dojo, init_state):
-        for sequence in candidate_tactics:
+        for i, sequence in enumerate(candidate_tactics):
             state = init_state
             trace = []
             early_exit = None
             try:
+                if len(sequence) == 0:
+                    if thm_idx not in failed_extractions:
+                        failed_extractions[f"proof_{proof_idx} | theorem_{thm_idx}"] = {}  # Initialize nested dictionary for thm_idx if not present
+                    failed_extractions[f"proof_{proof_idx} | theorem_{thm_idx}"][f"generation_{i}"] = candidates[i],  # Add dictionary with "generation_i" key
+                    continue
                 tactic = sequence[0]
                 for tactic in sequence:
                     trace_entry = {
@@ -124,6 +135,15 @@ def verify_proof_candidates(
                     "state_after": "timeout",
                     "message": "timeout",
                 })
+            except DojoCrashError as e:
+                # Handle unexpected EOF error and check if it's an OOM error
+                crash_message = "Out of Memory (OOM)" if e.is_out_of_memory else "Unexpected crash (EOF error)"
+                trace.append({
+                    "state_before": state.pp,
+                    "tactic": tactic,
+                    "state_after": "crashed",
+                    "message": crash_message,
+                })
             valid_proof = (trace[-1]["state_after"] == "no goals")
             results.append((valid_proof, trace))
     return results
@@ -132,6 +152,7 @@ def verify_proof_candidates(
 def verify_batch(
     thm_dicts: dict,
     candidates: list[list[str]],
+    failed_extractions: dict = None,
 ) -> dict[str, list[tuple[bool, list[dict]]]]:
     """
     given: list of theorem info, list of proof candidates, and LeanGitRepo
@@ -144,8 +165,13 @@ def verify_batch(
     repo = LeanGitRepo(thm0["url"], thm0["commit"])
     
     results = {}
-    for (thm_idx, thm_info), candidate in tqdm(zip(thm_dicts.items(), candidates), total=len(thm_dicts)):
-        results[thm_idx] = verify_proof_candidates(thm_info, candidate, repo)
+    for (thm_idx, thm_info), (proof_idx, candidate) in tqdm(zip(thm_dicts.items(), enumerate(candidates)), total=len(thm_dicts)):
+        results[thm_idx] = verify_proof_candidates(thm_info, candidate, repo, thm_idx=thm_idx, proof_idx=proof_idx, failed_extractions=failed_extractions)
+        if proof_idx % 100 == 0:
+            with open("data/2_partially_verified_proof_candidates.pkl", 'wb') as pkl_file:
+                pickle.dump(results, pkl_file)
+            with open("data/2_partial_failed_extractions.json", 'w') as json_file:
+                json.dump(failed_extractions, json_file, indent=4)
     return results
 
     
@@ -163,10 +189,12 @@ if __name__ == "__main__":
     with open(thm_file) as f:
         thm_dicts = json.load(f)
     
-    TESTING_SANITY_CHECK = True
+    TESTING_SANITY_CHECK = False
     if TESTING_SANITY_CHECK:
-        proofs = proofs[:2]
-        thm_dicts = {k: thm_dicts[k] for k in list(thm_dicts.keys())[:2]}
+        # proofs = proofs[1852:1853] # will take FOREVER, on the first candidate tactic 2: "norm_num [bernoulli'_def]"
+        # proofs = proofs[145:146] # will pause the program (probably taking a long time, it it is stalled)
+        proofs = proofs[2332:2333] # 2332 candidate 3 [0 - 7], tactic 1 [0 - 1] crashes the Dojo example
+        thm_dicts = {k: thm_dicts[k] for k in list(thm_dicts.keys())[2332:2333]}
         
     
     # test tactic extraction
@@ -177,8 +205,35 @@ if __name__ == "__main__":
     # print(tactics)
     # test result: good enough
 
-    results = verify_batch(thm_dicts, proofs)
-
+    failed_extractions = {}
+    
+    if os.path.exists("data/run_split/0_partially_verified_proof_candidates.pkl"):
+        with open("data/run_split/0_partially_verified_proof_candidates.pkl", 'rb') as saved_file_0:
+            prior_res_0 = pickle.load(saved_file_0)
+    if os.path.exists("data/run_split/1_partially_verified_proof_candidates.pkl"):
+        with open("data/run_split/1_partially_verified_proof_candidates.pkl", 'rb') as saved_file_1:
+            prior_res_1 = pickle.load(saved_file_1)
+    if os.path.exists("data/run_split/2_partially_verified_proof_candidates.pkl"):
+        with open("data/run_split/2_partially_verified_proof_candidates.pkl", 'rb') as saved_file_2:
+            prior_res_2 = pickle.load(saved_file_2)
+            
+    # if prior_res_0 and prior_res_1:
+    #     proofs = proofs[len(prior_res_0) + len(prior_res_1):]
+    #     thm_dicts = {k: thm_dicts[k] for k in list(thm_dicts.keys())[len(prior_res_0) + len(prior_res_1):]}
+    
+    # results = verify_batch(thm_dicts, proofs, failed_extractions=failed_extractions)
+    
+    # with open("data/partially_verified_proof_candidates.pkl", 'wb') as pkl_file:
+    #     pickle.dump(results, pkl_file)
+    # with open("data/partial_failed_extractions.json", 'w') as json_file:
+    #     json.dump(failed_extractions, json_file, indent=4)
+    
+    results = dict(prior_res_0)
+    results.update(prior_res_1)
+    results.update(prior_res_2)
+    
+    # sys.exit()
+    
     # gather stats
     """
     what steps do I care about?
