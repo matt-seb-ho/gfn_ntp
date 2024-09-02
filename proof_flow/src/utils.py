@@ -115,6 +115,7 @@ def set_up_padding(
 
     # configure the pad token in the model
     model.config.pad_token_id = tokenizer.pad_token_id
+    model.generation_config.pad_token_id = tokenizer.pad_token_id
 
     # check if they are equal
     assert model.config.pad_token_id == tokenizer.pad_token_id, "The model's pad token ID does not match the tokenizer's pad token ID!"

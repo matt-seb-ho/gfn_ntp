@@ -31,32 +31,33 @@ class ProofTreeNode:
     parent: Optional["ProofTreeNode"] = None
     children: Optional[list["ProofTreeNode"]] = None
     
-    # tensor (ndim=1) of previous state and action (for replay buffer)
-    token_tensor: Optional[torch.Tensor] = None
-    # tensor (ndim=2) of sampled tactic token ids
-    next_tactic_token_ids: Optional[torch.Tensor] = None
+    # trajectory replay info
+    # - tensor (ndim=1) of parent (state, tactic) token ids
+    parent_tactic_tokens: Optional[torch.Tensor] = None
+    # - tensor (ndim=2) of (this state, next tactic) token ids
+    children_tactic_tokens: Optional[torch.Tensor] = None
+    prompt_length: Optional[int] = None
+    
     
     # terms for computing loss
     log_r: Optional[float] = None
-    prompt_length: int = -1
+    # parent tactic's log forward probability
     tactic_logpf: Optional[float] = None
-    trajectory_logpf: Optional[torch.Tensor] = None
 
     # log_pf: Optional[Tensor] = None
     # log_pterm: Optional[Tensor] = None
     # log_r: Optional[Tensor] = None
     # log_r_unpenalized: Optional[Tensor] = None
 
+
     def get_trajectory_logpf(self):
-        if self.trajectory_logpf is not None:
-            return self.trajectory_logpf
         q = deque()
         node = self
         while node.tactic_logpf is not None:
             q.appendleft(node.tactic_logpf)
             node = node.parent
-        self.trajectory_logpf = torch.cat(q)
-        return self.trajectory_logpf
+        return torch.tensor(q)
+
 
 
 def extract_trajectories(root: ProofTreeNode, theorem_id: str) -> list:
@@ -66,7 +67,7 @@ def extract_trajectories(root: ProofTreeNode, theorem_id: str) -> list:
     stack = [(root, False)]
     states: list[str] = []
     tactics: list[str] = []
-    state_tactic_tensors: list[torch.Tensor] = []
+    parent_tactic_tokens: list[torch.Tensor] = []
     state_lengths: list[int] = []
 
     # dfs traversal
@@ -76,7 +77,7 @@ def extract_trajectories(root: ProofTreeNode, theorem_id: str) -> list:
             # backtracking
             states.pop()
             tactics.pop()
-            state_tactic_tensors.pop()
+            parent_tactic_tokens.pop()
             state_lengths.pop()
         else:
             stack.append((node, True))
@@ -84,19 +85,22 @@ def extract_trajectories(root: ProofTreeNode, theorem_id: str) -> list:
         # track the current trajectory
         states.append(convert_tactic_result_to_state_string(node.state))
         tactics.append(node.tactic.strip())
-        state_tactic_tensors.append(node.token_tensor)
+        parent_tactic_tokens.append(node.parent_tactic_tokens)
         state_lengths.append(node.prompt_length)
 
         if node.children:
             for child in reversed(node.children):
                 stack.append((child, False))
         else:
+            # we make copies for the trajectories so the backtracking doesn't affect them
             trajectories.append({
                 "theorem_id": theorem_id,
                 "states": states.copy(),
-                "tactics": tactics.copy(),
+                # root node has an empty string tactic, so we skip it
+                "tactics": tactics[1:],
                 "proof": TACTIC_DELIMITER.join(tactics[1:]),
-                "state_tactic_tensors": deepcopy(state_tactic_tensors),
+                # "parent_tactic_tokens": deepcopy(parent_tactic_tokens),
+                "parent_tactic_tokens": parent_tactic_tokens.copy(),
                 "state_lengths": state_lengths.copy(),
                 "log_r": node.log_r,
             })

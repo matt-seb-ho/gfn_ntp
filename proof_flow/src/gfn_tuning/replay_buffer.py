@@ -7,10 +7,10 @@ from typing import Optional
 import editdistance
 import numpy as np
 import torch
+from torch.nn.utils.rnn import pad_sequence
 
 from proof_flow.src.constants import TACTIC_DELIMITER
-
-from .proof_tree import ProofTreeNode
+from proof_flow.src.gfn_tuning.proof_tree import ProofTreeNode
 
 
 class ReplayBuffer:
@@ -18,9 +18,16 @@ class ReplayBuffer:
     A relay buffer that uses a heap to keep the max_size items with the highest reward
     """
 
-    def __init__(self, buffer_size, termination_token_id, sim_tolerance=0.25):
+    def __init__(
+        self, 
+        buffer_size, 
+        termination_token_id, 
+        pad_token_id,
+        sim_tolerance=0.25
+    ):
         self.buffer_size = buffer_size
         self.termination_token_id = termination_token_id
+        self.pad_token_id = pad_token_id
         self.sim_tolerance = sim_tolerance
         self.reset()
 
@@ -90,12 +97,10 @@ class ReplayBuffer:
         for item in items:
             self.add(item)
 
-    def sample(self, theorem_id: str, batch_size: int) -> tuple[torch.Tensor, torch.Tensor]:
+    def sample(self, theorem_id: str, batch_size: int) -> ProofTreeNode:
         """
         uniformly sample a batch of items from the buffer,
-        and return a stacked tensor
-
-        returns (state_tactic_tensor, state_lengths, log_r)
+        and return a reconstructed proof tree containing the sampled items
         """
         if theorem_id not in self._buffer:
             return None
@@ -155,7 +160,7 @@ class ReplayBuffer:
                             tactic=tactic,
                             depth=depth,
                             parent=node,
-                            token_tensor=stt[depth],
+                            parent_tactic_tokens=stt[depth],
                             log_r=log_r,
                             prompt_length=sl[depth],
                         )
@@ -165,8 +170,12 @@ class ReplayBuffer:
                         node.children = []
                     node.children.append(child)
                     queue.append((child, selected_idxs))
-                node.next_tactic_token_ids = torch.stack(
-                    [child.token_tensor for child in node.children]
-                )[:, node.prompt_length:]
+                
+                # token tensors may be of different lengths
+                node.children_tactic_tokens = pad_sequence(
+                    [child.parent_tactic_tokens for child in node.children],
+                    batch_first=True,
+                    padding_value=self.pad_token_id,
+                )
             depth += 1
         return root

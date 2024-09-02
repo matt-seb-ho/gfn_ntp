@@ -31,6 +31,7 @@ def train(config: DictConfig):
     reward_buffer = ReplayBuffer(
         buffer_size=config.task.replay_buffer.buffer_size,
         termination_token_id=tokenizer.eos_token_id,
+        pad_token_id=tokenizer.pad_token_id,
         sim_tolerance=config.task.replay_buffer.sim_tolerance,
     )
     data = NTPDataModule(
@@ -90,6 +91,16 @@ def train(config: DictConfig):
 
 
 def get_model(config: DictConfig):
+    """
+    loads the model and tokenizer and do some setup work
+    - initialize bnb config
+    - set up padding (add pad token, set side)
+    - prepare for k-bit training
+    - add policy adapters
+    - load (but not set as active) reward adapter
+    - remove dropout (from original code, not sure if needed)
+    """
+    
     # Use 4-bit quantization for lower memory use
     if config.task.training.use_4bit:
         bnb_config = BitsAndBytesConfig(
@@ -156,9 +167,8 @@ def get_reward(config: DictConfig, model: AutoModelForCausalLM, tokenizer: AutoT
         temperature=config.task.reward.temperature,
         verifier_batch_size=config.task.reward.verifier_batch_size,
         model_loading_kwargs=model_loading_kwargs_dict,
-        verifier_adapter_name=config.task.reward.verifier_adapter_name,
+        verifier_adapter_name=REWARD_ADAPTER_NAME,
     )
-
     return reward
 
 
