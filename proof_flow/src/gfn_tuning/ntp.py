@@ -1,3 +1,4 @@
+import gc
 import random
 from contextlib import contextmanager
 from functools import partial
@@ -515,15 +516,23 @@ class NeuralTheoremProvingTask(LightningModule):
             # for baseline generation/decoding methods
             tokens, log_pf = generate_func(input_ids)
         else:
-            tokens, log_pf = generate_step(
-                self.model,
-                input_ids,
-                termination_token_id=self.end_of_step_token_id,
-                temperature=pf_temperature,
-                replay=replay,
-                prompt_length=node.prompt_length,
-                max_new_tokens=self.hparams.max_tactic_tokens,
-            )
+            try:
+                tokens, log_pf = generate_step(
+                    self.model,
+                    input_ids,
+                    termination_token_id=self.end_of_step_token_id,
+                    temperature=pf_temperature,
+                    replay=replay,
+                    prompt_length=node.prompt_length,
+                    max_new_tokens=self.hparams.max_tactic_tokens,
+                )
+            except RuntimeError as e:
+                if "out of memory" not in str(e):
+                    raise e
+                # clean up memory and return (cuts trajectory short)
+                torch.cuda.empty_cache()
+                gc.collect()
+                return
 
         # log_pf outputted by generate_step is at token-level granularity
         # NOTE: this assumes that padded tokens have a log_pf of 0
@@ -622,6 +631,7 @@ class NeuralTheoremProvingTask(LightningModule):
         termination_token_id: int,
         pad_token_id: int,
         device: Optional[torch.device] = None,
+        split_and_retry: bool = True,
     ) -> torch.Tensor:
         # essentially alternate input version of batch_completion_probabilities
         # critical assumptions
@@ -630,11 +640,30 @@ class NeuralTheoremProvingTask(LightningModule):
         if device is not None:
             input_ids = input_ids.to(device)
             attention_mask = attention_mask.to(device)
-        outputs = self.model(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            return_dict=True,
-        )
+
+        try:
+            outputs = self.model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                return_dict=True,
+            )
+        except RuntimeError as e:
+            if "out of memory" not in str(e) or not split_and_retry:
+                raise e
+            # split the job in half and retry!
+            sub_results = [
+                self._get_completion_log_pfs(
+                    half,
+                    prompt_lengths,
+                    termination_token_id,
+                    pad_token_id,
+                    device=device,
+                    split_and_retry=False,
+                )
+                for half in input_ids.split(input_ids.shape[0] // 2)
+            ]
+            return torch.cat(sub_results)
+            
         log_prob_distributions = torch.log_softmax(outputs.logits, dim=-1)
         # distribution after last token can be ignored
         log_prob_distributions = log_prob_distributions[:, :-1, :]
@@ -712,11 +741,32 @@ def generate_step(
     """
     if replay:
         # assert prompt_length is not None
-        outputs = model(
-            input_ids=input_ids,
-            eos_token_id=termination_token_id,
-            return_dict=True,
-        )
+        try:
+            outputs = model(
+                input_ids=input_ids,
+                eos_token_id=termination_token_id,
+                return_dict=True,
+            )
+        except RuntimeError as e:
+            if "out of memory" not in str(e):
+                raise e
+            # on replay, we know that we can handle these inputs
+            # so we can split the job in half and retry
+            halves = input_ids.split(input_ids.shape[0] // 2)
+            log_pf_sub_results = [
+                generate_step(
+                    model,
+                    half,
+                    termination_token_id=termination_token_id,
+                    temperature=temperature,
+                    replay=replay,
+                    prompt_length=prompt_length,
+                    max_new_tokens=max_new_tokens,
+                )[1] 
+                for half in halves
+            ]
+            log_pf = torch.cat(log_pf_sub_results)
+            return input_ids, log_pf
 
         # the standard usage of compute_transition_scores is to pass GenerateOutput.scores
         # which is a tuple (length=max_seq_len) of tensors of shape (batch_size, vocab_size).
