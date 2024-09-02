@@ -42,7 +42,7 @@ class ProofTreeNode:
     # terms for computing loss
     log_r: Optional[float] = None
     # parent tactic's log forward probability
-    tactic_logpf: Optional[float] = None
+    tactic_logpf: Optional[torch.Tensor] = None
 
     # log_pf: Optional[Tensor] = None
     # log_pterm: Optional[Tensor] = None
@@ -56,7 +56,7 @@ class ProofTreeNode:
         while node.tactic_logpf is not None:
             q.appendleft(node.tactic_logpf)
             node = node.parent
-        return torch.tensor(q)
+        return torch.cat(q)
 
 
 

@@ -87,16 +87,16 @@ class NeuralTheoremProvingTask(LightningModule):
             - log_r: (n_samples,) tensor of log rewards for complete trajectories
             - extracted_trajectories: list of trajectories for the replay buffer
         """
-        trajectories_logpf = []
-        leaf_nodes = []
-        log_reward = []
+        trajectories_logpf: list[torch.Tensor] = []
+        leaf_nodes: list[ProofTreeNode] = []
+        log_reward: list[float] = []
 
         # n_samples[d] is the number of tactics to sample at depth d
         # if provided as int, we use the same number of samples at each depth
         if not isinstance(n_samples, list):
             n_samples = [n_samples or self.hparams.n_samples] * max_depth
         with lean_context(theorem, replay_tactics) as (dojo, root):
-            trajectory_logpf = []
+            trajectory_logpf: list[torch.Tensor] = []
             stack = [(root, False)]
             while stack:
                 node, visited = stack.pop()
@@ -126,7 +126,7 @@ class NeuralTheoremProvingTask(LightningModule):
                         stack.append(child)
                     else:
                         # terminal
-                        trajectories_logpf.append(torch.tensor(trajectory_logpf + [child.tactic_logpf]))
+                        trajectories_logpf.append(torch.cat(trajectory_logpf + [child.tactic_logpf]))
                         leaf_nodes.append(child)
                         log_reward.append(child.log_r)
         
@@ -531,7 +531,7 @@ class NeuralTheoremProvingTask(LightningModule):
         
         if replay:
             for child, tactic_logpf in zip(node.children, log_pf_tactic):
-                child.tactic_logpf = tactic_logpf.item()
+                child.tactic_logpf = tactic_logpf
         else:
             # SKIPPED: replay uses reconstructed trees ~~save the generated tactics for replay~~
             # node.children_tactic_tokens = tokens
@@ -554,7 +554,7 @@ class NeuralTheoremProvingTask(LightningModule):
                     tactic=generated_tactics[i].strip(),
                     depth=node.depth + 1,
                     prompt_length=input_ids.shape[1],
-                    tactic_logpf=log_pf_tactic[i].item(),
+                    tactic_logpf=log_pf_tactic[i],
                     parent_tactic_tokens=tokens[i, :pre_pad_length[i]],
                     parent=node,
                 )
