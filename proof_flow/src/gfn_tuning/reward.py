@@ -1,10 +1,7 @@
-import gzip
-import heapq
-import pickle
 from collections import defaultdict
 from typing import Optional
+from contextlib import contextmanager
 
-import numpy as np
 import torch
 from peft import PeftModel
 from transformers import (
@@ -13,7 +10,6 @@ from transformers import (
 )
 
 from proof_flow.src.constants import (
-    DEFAULT_VERIFIER_ADAPTER_NAME,
     DEFAULT_VERIFIER_BATCH_SIZE,
     PROOF_COMPLETE_MESSAGE
 )
@@ -141,15 +137,13 @@ class NTPReward:
         tokenizer: Optional[AutoTokenizer] = None,
         temperature: float = 1.0, 
         verifier_batch_size: Optional[int] = None,
-        verifier_adapter_name: str = DEFAULT_VERIFIER_ADAPTER_NAME,
+        verifier_adapter_name: Optional[str] = None,
     ):
+        self.model = model,
+        self.tokenizer = tokenizer
         self.temperature = temperature
         self.verifier_batch_size = verifier_batch_size
         self.verifier_adapter_name = verifier_adapter_name
-
-        assert (model is None) == (tokenizer is None)
-        self.model = model,
-        self.tokenizer = tokenizer
 
     
     def score(
@@ -157,14 +151,14 @@ class NTPReward:
         states: list[list[str]],
         tactics: list[list[str]],
         batch_size: Optional[int] = None
-    ):
-        batch_size = batch_size or self.verifier_batch_size or DEFAULT_VERIFIER_BATCH_SIZE
-        # swap to verification adapters
-        training = self.model.training
-        previous_adapter = self.model.active_adapter
-        self.model.set_adapter(self.verifier_adapter_name)
-        self.model.eval()
-        with torch.no_grad():
+    ) -> torch.Tensor:
+        # prep batch_size
+        batch_size = (
+            batch_size 
+            or self.verifier_batch_size 
+            or DEFAULT_VERIFIER_BATCH_SIZE
+        )
+        with self._compute_reward_ctx():
             log_reward = compute_log_reward(
                 states, 
                 tactics, 
@@ -172,8 +166,38 @@ class NTPReward:
                 self.tokenizer, 
                 batch_size=batch_size
             )
-        # reset model to original state
-        self.model.set_adapter(previous_adapter)
-        if training:
-            self.model.train()
         return log_reward
+    
+    
+    @contextmanager
+    def _compute_reward_ctx(self):
+        """
+        context manager for reward computation
+
+        responsible for ensuring that during reward computation:
+        - verifier adapter is active (or no adapter is active)
+        - model is in eval mode
+        - gradients are not computed
+        and of course, restoring the model to its previous state afterwards
+        """
+        was_training: bool = self.model.training
+        previously_active_adapter: str = self.model.active_adapters[0]
+
+        if self.verifier_adapter_name is None:
+            # verifier/RM does *not* have an adapter
+            # - disable current [policy] adapter
+            self.model.eval()
+            with self.model.disable_adapter(), torch.no_grad():
+                yield
+        else:
+            # verifier/RM has an adapter
+            # - swap to verifier adapter and swap back after
+            self.model.set_adapter(self.verifier_adapter_name)
+            self.model.eval()
+            with torch.no_grad():
+                yield
+            self.model.set_adapter(previously_active_adapter)
+        
+        # restore training mode if necessary
+        if was_training:
+            self.model.train()

@@ -5,7 +5,9 @@ data:
   train_size: 0.95
 
 model:
-  name: "deepseek-ai/DeepSeek-Prover-V1"
+  # test with llemma, run later with dsp
+  name: "EleutherAI/llemma_7b"
+  # name: "deepseek-ai/DeepSeek-Prover-V1"
   lora_config:
     _target_: peft.LoraConfig
     target_modules: "all-linear"
@@ -41,6 +43,9 @@ reward:
   buffer_size: 50
   buffer_sim_tolerance: 0.25
   verifier_batch_size: 16 # TODO: figure out if we can go higher
+  # TODO: get dsp adapters
+  reward_model_hf_id: "msho/llemma_sft" # or null
+  reward_model_adapter_name: "reward"   # or null
 
 callbacks:
   - _target_: pytorch_lightning.callbacks.ModelCheckpoint
