@@ -40,9 +40,6 @@ def train(config: DictConfig):
     )
     data.setup()
 
-    train_probes = [data.train_data[i][0] for i in range(config.task.eval.n_probes)]
-    val_probes = [data.val_data[i][0] for i in range(config.task.eval.n_probes)]
-
     task = NeuralTheoremProvingTask(
         model=model,
         tokenizer=tokenizer,
@@ -57,8 +54,6 @@ def train(config: DictConfig):
         reward_temp_start=config.task.reward.temp_start,
         reward_temp_end=config.task.reward.temp_end,
         reward_temp_horizon=config.task.reward.temp_horizon,
-        train_probes=train_probes,
-        val_probes=val_probes,
         use_4bit=config.task.training.use_4bit,
         max_tactics=config.task.constraints.max_tactics,
         min_tactic_tokens=config.task.constraints.min_tactic_tokens,
