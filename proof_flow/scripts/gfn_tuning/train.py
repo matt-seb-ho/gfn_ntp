@@ -1,11 +1,8 @@
 from types import MethodType
-
 import hydra
-from proof_flow.src.utils import set_up_padding
 import pytorch_lightning as pl
 import torch
-# from lightning_module import NextSentenceGFNTask
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig
 from peft import get_peft_model, prepare_model_for_kbit_training
 from transformers import (
     AutoModelForCausalLM,
@@ -20,6 +17,7 @@ from proof_flow.src.gfn_tuning.reward import NTPReward
 from proof_flow.src.gfn_tuning.replay_buffer import ReplayBuffer
 from proof_flow.src.gfn_tuning.lean_data_module import NTPDataModule
 from proof_flow.src.gfn_tuning.ntp import NeuralTheoremProvingTask
+from proof_flow.src.utils import set_up_padding
 
 
 @hydra.main(version_base=None, config_path="./configs/", config_name="train")
