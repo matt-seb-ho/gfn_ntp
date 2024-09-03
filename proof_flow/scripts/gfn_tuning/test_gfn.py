@@ -11,7 +11,6 @@ from transformers import (
 )
 from proof_flow.src.constants import (
     GFN_POLICY_ADAPTER_NAME,
-    REWARD_ADAPTER_NAME,
 )
 from proof_flow.src.gfn_tuning.reward import NTPReward
 from proof_flow.src.gfn_tuning.replay_buffer import ReplayBuffer
@@ -85,7 +84,7 @@ def train(config: DictConfig):
         task.to = MethodType(lambda s, _: s, task)
         task.cuda = MethodType(lambda s: s, task)
 
-    print("YIPEE FINISHED INIT")
+    print("YAY")
     # trainer.fit(model=task, datamodule=data)
 
 
@@ -142,10 +141,11 @@ def get_model(config: DictConfig):
     )
     
     # Load in reward adapter
-    model.load_adapter(
-        config.task.reward.adapter_name,
-        adapter_name=REWARD_ADAPTER_NAME,
-    )
+    if config.task.reward.reward_model_hf_id is not None:
+        model.load_adapter(
+            config.task.reward.reward_model_hf_id,
+            adapter_name=config.task.reward.reward_model_adapter_name,
+        )
 
     # Remove dropout
     for mod in model.modules():
@@ -162,7 +162,7 @@ def get_reward(config: DictConfig, model: AutoModelForCausalLM, tokenizer: AutoT
         # temperature is set dynamically
         # temperature=config.task.reward.temperature, 
         verifier_batch_size=config.task.reward.verifier_batch_size,
-        verifier_adapter_name=REWARD_ADAPTER_NAME,
+        verifier_adapter_name=config.task.reward.reward_model_adapter_name,
     )
     return reward
 

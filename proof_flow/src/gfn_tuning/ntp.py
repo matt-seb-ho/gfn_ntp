@@ -303,6 +303,7 @@ class NeuralTheoremProvingTask(LightningModule):
             samples_table = self.sample_probes(self.hparams.val_probes)
             self.logger.log_table("samples/val_probes", dataframe=samples_table)
 
+
     def on_train_start(self):
         # log baseline metrics
         if self.logger is None:

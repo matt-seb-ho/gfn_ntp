@@ -34,10 +34,10 @@ class NTPDataModule(LightningDataModule):
         with open(repo_root() / self.hparams.data_path) as f:
             thm_dicts = json.load(f)
         # create a LeanGitRepo object and a list of Theorem objects
-        thm0 = next(iter(thm_dicts))
+        thm0 = next(iter(thm_dicts.values()))
         repo = LeanGitRepo(thm0["url"], thm0["commit"])
         theorems: list[Theorem] = []
-        for thm_dict in thm_dicts:
+        for thm_dict in thm_dicts.values():
             thm = Theorem(repo, thm_dict["file_path"], thm_dict["full_name"])
             theorems.append(thm)
         # split theorems into train and val
