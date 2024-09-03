@@ -12,7 +12,7 @@ from transformers import (
     AutoTokenizer,
     BitsAndBytesConfig
 )
-from proof_flow.constants import (
+from proof_flow.src.constants import (
     GFN_POLICY_ADAPTER_NAME,
     REWARD_ADAPTER_NAME,
 )
@@ -29,19 +29,17 @@ def train(config: DictConfig):
     model, tokenizer = get_model(config)
     reward = get_reward(config, model, tokenizer)
     reward_buffer = ReplayBuffer(
-        buffer_size=config.task.replay_buffer.buffer_size,
+        buffer_size=config.task.reward.buffer_size,
         termination_token_id=tokenizer.eos_token_id,
         pad_token_id=tokenizer.pad_token_id,
-        sim_tolerance=config.task.replay_buffer.sim_tolerance,
+        sim_tolerance=config.task.reward.buffer_sim_tolerance,
     )
     data = NTPDataModule(
         data_path=config.task.data.path,
-        tokenizer=tokenizer,
         train_size=config.task.data.train_size,
-        # limit_theorems=config.task.data.limit_theorems,
     )
+    data.setup()
 
-    data.setup("fit")
     train_probes = [data.train_data[i][0] for i in range(config.task.eval.n_probes)]
     val_probes = [data.val_data[i][0] for i in range(config.task.eval.n_probes)]
 
@@ -157,16 +155,12 @@ def get_model(config: DictConfig):
 
 
 def get_reward(config: DictConfig, model: AutoModelForCausalLM, tokenizer: AutoTokenizer):
-    model_loading_kwargs_dict = OmegaConf.to_container(
-        config.task.reward.model_loading_kwargs,
-        resolve=True,
-    )
     reward = NTPReward(
         model=model,
         tokenizer=tokenizer,
-        temperature=config.task.reward.temperature,
+        # temperature is set dynamically
+        # temperature=config.task.reward.temperature, 
         verifier_batch_size=config.task.reward.verifier_batch_size,
-        model_loading_kwargs=model_loading_kwargs_dict,
         verifier_adapter_name=REWARD_ADAPTER_NAME,
     )
     return reward

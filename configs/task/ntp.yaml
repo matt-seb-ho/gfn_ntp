@@ -9,7 +9,7 @@ model:
   name: "deepseek-ai/DeepSeek-Prover-V1"
   lora_config:
     _target_: peft.LoraConfig
-    target_modules: ["c_attn", "c_proj", "c_fc"]
+    target_modules: "all-linear"
     r: 64
     lora_alpha: 16
     lora_dropout: 0.1
@@ -39,6 +39,8 @@ reward:
   vocab_alpha: -50
   sentence_validator: null
   buffer_size: 50
+  buffer_sim_tolerance: 0.25
+  verifier_batch_size: 16 # TODO: figure out if we can go higher
 
 callbacks:
   - _target_: pytorch_lightning.callbacks.ModelCheckpoint
