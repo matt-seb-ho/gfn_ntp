@@ -50,7 +50,6 @@ def train(config: DictConfig):
         reward_buffer=reward_buffer,
         n_samples=config.task.training.n_samples,
         lr=config.task.training.lr,
-        subtb_lambda=config.task.training.subtb_lambda,
         pf_temp_high=config.task.training.pf_temp_high,
         pf_temp_low=config.task.training.pf_temp_low,
         pf_temp_prob=config.task.training.pf_temp_prob,
@@ -61,10 +60,10 @@ def train(config: DictConfig):
         train_probes=train_probes,
         val_probes=val_probes,
         use_4bit=config.task.training.use_4bit,
-        max_tactics=config.task.max_tactics,
-        min_tactic_tokens=config.task.min_tactic_tokens,
-        max_tactic_tokens=config.task.max_tactic_tokens,
-        use_hf_generate=config.task.use_hf_generate,
+        max_tactics=config.task.constraints.max_tactics,
+        min_tactic_tokens=config.task.constraints.min_tactic_tokens,
+        max_tactic_tokens=config.task.constraints.max_tactic_tokens,
+        use_replay_tree=config.task.training.use_replay_tree,
     )
 
     trainer = pl.Trainer(
