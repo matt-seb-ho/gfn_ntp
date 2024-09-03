@@ -12,7 +12,7 @@ from transformers import (
     AutoTokenizer,
     BitsAndBytesConfig
 )
-from proof_flow.constants import (
+from proof_flow.src.constants import (
     GFN_POLICY_ADAPTER_NAME,
     REWARD_ADAPTER_NAME,
 )
