@@ -43,7 +43,6 @@ class NeuralTheoremProvingTask(LightningModule):
         reward_temp_start: float,
         reward_temp_end: float,
         reward_temp_horizon: int,
-        illegal_token_mask: np.ndarray,
         use_4bit: bool = False,
         max_tactics: int = 3,
         min_tactic_tokens: int = 2,
@@ -51,7 +50,12 @@ class NeuralTheoremProvingTask(LightningModule):
         use_replay_tree: bool = False,
     ):
         super().__init__()
-        self.save_hyperparameters(ignore=["model", "tokenizer"])
+        self.save_hyperparameters(ignore=[
+            "model", 
+            "tokenizer", 
+            "reward", 
+            "reward_buffer"
+        ])
 
         self.model = model
         self.tokenizer = tokenizer
