@@ -20,6 +20,7 @@ packaging
 hydra-core
 lean-dojo
 vllm
+editdistance
 # flash-attn instructions: 
 # - apparently you need to install everything and then flash-attn
 # - make sure to have flash-attn commented on the first pass

@@ -7,25 +7,37 @@ from typing import Optional
 import editdistance
 import numpy as np
 import torch
+from torch.nn.utils.rnn import pad_sequence
 
 from proof_flow.src.constants import TACTIC_DELIMITER
+from proof_flow.src.gfn_tuning.proof_tree import ProofTreeNode
 
-from .proof_tree import ProofTreeNode
+
+BUFFER_ENTRY_KEYS = ["log_r", "proof", "state_tactic_tokens", "prompt_lengths", "states"]
+BUFFER_ENTRY_KEY_IDXS = {key: idx for idx, key in enumerate(BUFFER_ENTRY_KEYS)}
 
 
 class ReplayBuffer:
     """
     A relay buffer that uses a heap to keep the max_size items with the highest reward
     """
-
-    def __init__(self, buffer_size, termination_token_id, sim_tolerance=0.25):
+    def __init__(
+        self, 
+        buffer_size, 
+        termination_token_id, 
+        pad_token_id,
+        sim_tolerance=0.25
+    ):
         self.buffer_size = buffer_size
         self.termination_token_id = termination_token_id
+        self.pad_token_id = pad_token_id
         self.sim_tolerance = sim_tolerance
         self.reset()
 
+
     def reset(self) -> None:
         self._buffer = {}
+
 
     def add(self, item: dict) -> None:
         """
@@ -38,64 +50,64 @@ class ReplayBuffer:
         # if the edit distance between item and any item in the buffer is small, skip it
         proof_tokens = self._get_tactic_tokens_list(item=item)
         for buffer_item in self._buffer[theorem_id]["proofs"]:
-            existing_proof_tokens = self._get_tactic_tokens_list(stt=buffer_item[2], sl=buffer_item[3])
+            existing_proof_tokens = self._get_tactic_tokens_list(
+                stt=self._buffer_item_get(buffer_item, "state_tactic_tokens"),
+                pl=self._buffer_item_get(buffer_item, "prompt_lengths"),
+            )
             if (
                 editdistance.eval(proof_tokens, existing_proof_tokens)
-                < (len(proof_tokens) + len(existing_proof_tokens)) * self.sim_tolerance
+                < (
+                    (len(proof_tokens) + len(existing_proof_tokens)) 
+                    * self.sim_tolerance
+                )
             ):
-                if buffer_item[0] >= item["log_r"]:
+                if self._buffer_item_get(buffer_item, "log_r") >= item["log_r"]:
                     return
                 else:
-                    self._buffer[theorem_id]["exists"].remove(buffer_item[1])
+                    self._buffer[theorem_id]["exists"].remove(
+                        self._buffer_item_get(buffer_item, "proof")
+                    )
                     self._buffer[theorem_id]["proofs"].remove(buffer_item)
                     heapq.heapify(self._buffer[theorem_id]["proofs"])
-                    self._buffer[theorem_id]["exists"].add(item["str_tactics"])
+                    self._buffer[theorem_id]["exists"].add(item["proof"])
                     heapq.heappush(
                         self._buffer[theorem_id]["proofs"],
-                        (
-                            item["log_r"],
-                            item["proof"],
-                            item["state_tactic_tensors"],
-                            item["state_lengths"],
-                            item["states"],
-                        ),
+                        self._create_buffer_tuple(item),
                     )
                     return
         self._buffer[theorem_id]["exists"].add(item["proof"])
         if len(self._buffer[theorem_id]["proofs"]) >= self.buffer_size:
             popped = heapq.heappushpop(
                 self._buffer[theorem_id]["proofs"],
-                (
-                    item["log_r"],
-                    item["proof"],
-                    item["state_tactic_tensors"],
-                    item["state_lengths"],
-                    item["states"],
-                ),
+                self._create_buffer_tuple(item),
             )
             self._buffer[theorem_id]["exists"].remove(popped[1])
         else:
             heapq.heappush(
-                self._buffer[theorem_id]["sentences"],
-                (
-                    item["log_r"],
-                    item["proof"],
-                    item["state_tactic_tensors"],
-                    item["state_lengths"],
-                    item["states"],
-                ),
+                self._buffer[theorem_id]["proofs"],
+                self._create_buffer_tuple(item),
             )
 
-    def add_batch(self, items: list[dict]) -> None:
+
+    def add_batch(self, theorem_id: str, items: list[dict]) -> None:
+        if theorem_id not in self._buffer:
+            self._buffer[theorem_id] = {
+                "proofs": [],
+                "exists": set(),
+            }
         for item in items:
             self.add(item)
 
-    def sample(self, theorem_id: str, batch_size: int) -> tuple[torch.Tensor, torch.Tensor]:
+
+    def sample(
+        self, 
+        theorem_id: str, 
+        batch_size: int,
+        dict_format: bool = True,
+    ) -> list[tuple]:
         """
         uniformly sample a batch of items from the buffer,
-        and return a stacked tensor
-
-        returns (state_tactic_tensor, state_lengths, log_r)
+        and returns a list of n proof trajectories 
         """
         if theorem_id not in self._buffer:
             return None
@@ -105,7 +117,22 @@ class ReplayBuffer:
             batch_size,
             replace=True,
         )
-        return self._build_replay_tree([theorem_buffer[idx] for idx in idxs])
+        selected_items = [theorem_buffer[idx] for idx in idxs]
+        if dict_format:
+            return [self._recover_buffer_dict(item) for item in selected_items]
+        return selected_items
+
+
+    def sample_tree(self, theorem_id: str, batch_size: int) -> ProofTreeNode:
+        """
+        uniformly sample a batch of items from the buffer,
+        and return a reconstructed proof tree containing the sampled items
+        """
+        sampled_items = self.sample(theorem_id, batch_size, dict_format=False)
+        if sampled_items is None:
+            return None
+        return self._build_replay_tree(sampled_items)
+
 
     def print(self):
         for key in self._buffer:
@@ -114,24 +141,27 @@ class ReplayBuffer:
                 print(item[1])
             print("")
 
+
     def save(self, path):
         with gzip.open(path, "wb") as f:
             pickle.dump(self._buffer, f)
     
-    def _get_tactic_tokens_list(self, item=None, stt=None, sl=None) -> list[int]:
+
+    def _get_tactic_tokens_list(self, item=None, stt=None, pl=None) -> list[int]:
         token_list = []
         iterator = zip(
-            stt or item["state_tactic_tensors"], 
-            sl or item["state_lengths"]
+            stt or item["state_tactic_tokens"], 
+            pl or item["prompt_lengths"]
         ) 
         for state_tactic_tensor, state_length in iterator:
             token_list.extend([
                 token_id
                 for token_id in state_tactic_tensor[state_length:].tolist()
-                if token_id != self.termination_token_id
+                if token_id != self.pad_token_id
             ])
         return token_list
     
+
     def _build_replay_tree(self, buffer_selection: list) -> ProofTreeNode:
         # build ProofTreeNode from buffer_selection
         # level order traversal
@@ -145,7 +175,7 @@ class ReplayBuffer:
                 node, selected_idxs = queue.popleft()
                 seen_tactics = {}
                 for idx in selected_idxs:
-                    (log_r, _, stt, sl, s) = buffer_selection[idx]
+                    (log_r, _, stt, pl, s) = buffer_selection[idx]
                     tactic = tactics[idx][depth]
                     if tactic in seen_tactics:
                         seen_tactics[tactic][1].append(idx)
@@ -155,9 +185,9 @@ class ReplayBuffer:
                             tactic=tactic,
                             depth=depth,
                             parent=node,
-                            token_tensor=stt[depth],
+                            parent_tactic_tokens=stt[depth],
                             log_r=log_r,
-                            prompt_length=sl[depth],
+                            prompt_length=pl[depth],
                         )
                         seen_tactics[tactic] = (child, [idx])
                 for tactic, (child, selected_idxs) in seen_tactics.items():
@@ -165,8 +195,27 @@ class ReplayBuffer:
                         node.children = []
                     node.children.append(child)
                     queue.append((child, selected_idxs))
-                node.next_tactic_token_ids = torch.stack(
-                    [child.token_tensor for child in node.children]
-                )[:, node.prompt_length:]
+                
+                # token tensors may be of different lengths
+                node.children_tactic_tokens = pad_sequence(
+                    [child.parent_tactic_tokens for child in node.children],
+                    batch_first=True,
+                    padding_value=self.pad_token_id,
+                )
             depth += 1
         return root
+
+
+    def _create_buffer_tuple(self, item: dict) -> tuple:
+        return tuple(item[key] for key in BUFFER_ENTRY_KEYS)
+
+
+    def _recover_buffer_dict(self, buffer_tuple: tuple) -> dict:
+        item = {}
+        for key, idx in BUFFER_ENTRY_KEY_IDXS.items():
+            item[key] = buffer_tuple[idx]
+        return item
+    
+
+    def _buffer_item_get(self, item: tuple, key: str):
+        return item[BUFFER_ENTRY_KEY_IDXS[key]]

@@ -104,7 +104,7 @@ Next tactic:
 ---
 {tactic}
 ---
-Resulting state:
+Resulting state (None means the tactic failed):
 ---
 {next_state}
 ---
@@ -132,7 +132,7 @@ DEEPSEEK_RM_STS_PROMPT_TEMPLATE = """Given a Lean 4 proof state, tactic, and res
 /-
 {tactic}
 -/
--- resulting state
+-- resulting state (None means the tactic failed)
 /-
 {next_state}
 -/

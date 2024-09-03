@@ -10,7 +10,7 @@ from tqdm import tqdm
 from transformers import AutoModelForCausalLM  # BitsAndBytesConfig,
 from transformers import AutoTokenizer
 
-from proof_flow.src.utils import add_pad_token, repo_root
+from proof_flow.src.utils import set_up_padding, repo_root
 
 DPO_EVAL_DATA_PATH = repo_root() / "data/paired_random_val.json"
 # PAIR_DATA_KEYS = ("prompt", "chosen", "rejected")
@@ -378,7 +378,7 @@ def main():
         # torch_dtype=torch.bfloat16,
         # quantization_config=bnb_config
     )
-    add_pad_token(model, tokenizer)
+    set_up_padding(model, tokenizer)
     stats, details = evaluate_verifier(
         model, 
         tokenizer, 

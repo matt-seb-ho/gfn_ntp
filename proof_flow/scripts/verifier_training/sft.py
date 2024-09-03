@@ -12,7 +12,7 @@ from transformers import (
 from trl import SFTTrainer
 
 from proof_flow.src.utils import (
-    add_pad_token, 
+    set_up_padding, 
     get_config, 
     get_hf_access_token,
     repo_root,
@@ -67,7 +67,7 @@ def main():
         quantization_config=bnb_config
     )
     tokenizer = AutoTokenizer.from_pretrained(model_id)
-    add_pad_token(model, tokenizer)
+    set_up_padding(model, tokenizer)
 
     # LoRA config based on QLoRA paper & Sebastian Raschka experiment
     peft_config = LoraConfig(**config.sft.model.lora)

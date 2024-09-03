@@ -33,6 +33,7 @@ def token_probabilities(model, tokenizer, input_texts):
         batch.append(text_sequence)
     return batch
 
+
 def batch_completion_probabilities(
     model,
     tokenizer,
@@ -41,9 +42,8 @@ def batch_completion_probabilities(
     device=None,
 ):
     input_texts = []
-    # idx of first completion char + last completion char
-    start_char_idxs = []
-    end_char_idxs = []
+    start_char_idxs = [] # index of the first completion token
+    end_char_idxs = []   # index of the last completion token
     for prompt, completion in prompt_completion_pairs:
         text = prompt + sep + completion
         input_texts.append(text)
@@ -51,28 +51,44 @@ def batch_completion_probabilities(
         end_char_idxs.append(len(text) - 1)
     
     batch_enc = tokenizer(input_texts, padding=True, return_tensors="pt")
-    input_ids = batch_enc.input_ids
     if device:
-        input_ids = input_ids.to(device)
-    outputs = model(input_ids)
-    probs = torch.log_softmax(outputs.logits, dim=-1).detach()
+        batch_enc = batch_enc.to(device)
+    input_ids = batch_enc.input_ids
+    outputs = model(**batch_enc) # ensure attention mask is passed
+    log_prob_distributions = torch.log_softmax(outputs.logits, dim=-1).detach()
 
-    start_token_idxs = [batch_enc.char_to_token(i, char_idx) for i, char_idx in enumerate(start_char_idxs)]
-    end_token_idxs = [batch_enc.char_to_token(i, char_idx) for i, char_idx in enumerate(end_char_idxs)]
-
-    # collect the probability of the generated token -- probability at index 0 corresponds to the token at index 1
-    probs = probs[:, :-1, :]
+    # collect the probability of the generated token
+    # - softmax(logits[b, i, :]) is the probability distribution for the token AFTER input_ids[b, i]
+    # - (consequence 1): we don't care about the distribution after the last token in the input_ids
+    log_prob_distributions = log_prob_distributions[:, :-1, :]
+    # - while we have the distribution over the vocab after every token i,
+    #   we only actually care about the probability of the actual next token
+    # - i.e., we want softmax(logits[b, i, :])[input_ids[b, i+1]]
+    # - notice the idx used for input_ids is i+1 while the idx used for log_probs is i
+    # - for the gather operation, we need them aligned
+    # - (consequence 2): we shift the input_ids forwards/leftwards by 1
     input_ids = input_ids[:, 1:]
-    gen_probs = torch.gather(probs, 2, input_ids[:, :, None]).squeeze(-1)
+    # - while logits has shape (batch_size, seq_len, vocab_size),
+    #   and prob_distributions has shape (batch_size, seq_len - 1, vocab_size),
+    #   the gather result has shape (batch_size, seq_len - 1)
+    # - it's a batch of log probabilities of the actual sequence's tokens
+    seq_log_probs = torch.gather(log_prob_distributions, 2, input_ids[:, :, None]).squeeze(-1)
 
-    batch = []
-    for input_probs, start_idx, end_idx in zip(gen_probs, start_token_idxs, end_token_idxs):
-        completion_log_prob = input_probs[start_idx:end_idx+1].sum().item()
-        batch.append({
+    completion_log_probs = []
+    for i in range(len(input_texts)):
+        # start: token index of the first completion token
+        # - the -1 is because the input_ids were shifted forward by 1
+        # stop: token index of the token after the last completion token
+        # - we use it as the end slice index, so we don't need to do -1
+        start = batch_enc.char_to_token(i, start_char_idxs[i]) - 1
+        stop = batch_enc.char_to_token(i, end_char_idxs[i])
+        completion_log_prob = seq_log_probs[i, start:stop].sum().item()
+        completion_log_probs.append({
             "log_prob_sum": completion_log_prob,
-            "token_count": end_idx - start_idx + 1,
+            "token_count": stop - start,
         })
-    return batch
+    return completion_log_probs
+
 
 def batch_sequence_probabilities(
     model: AutoModelForCausalLM,
@@ -96,6 +112,7 @@ def batch_sequence_probabilities(
     gen_lengths = (input_ids == termination_token_id).byte().argmax(dim=-1).unsqueeze(-1)
     seq_probs = torch.gather(gen_probs.cumsum(dim=-1), -1, gen_lengths).squeeze(-1)
     return seq_probs
+
 
 def batch_iterator(iterable, batch_size):
     """

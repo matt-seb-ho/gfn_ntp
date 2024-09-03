@@ -1,6 +1,7 @@
 from types import MethodType
 
 import hydra
+from proof_flow.src.utils import set_up_padding
 import pytorch_lightning as pl
 import torch
 # from lightning_module import NextSentenceGFNTask
@@ -10,6 +11,10 @@ from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     BitsAndBytesConfig
+)
+from proof_flow.constants import (
+    GFN_POLICY_ADAPTER_NAME,
+    REWARD_ADAPTER_NAME,
 )
 from proof_flow.src.gfn_tuning.reward import NTPReward
 from proof_flow.src.gfn_tuning.replay_buffer import ReplayBuffer
@@ -24,11 +29,11 @@ def train(config: DictConfig):
     pl.seed_everything(config.seed, workers=True)
 
     model, tokenizer = get_model(config)
-
     reward = get_reward(config, model, tokenizer)
     reward_buffer = ReplayBuffer(
         buffer_size=config.task.replay_buffer.buffer_size,
         termination_token_id=tokenizer.eos_token_id,
+        pad_token_id=tokenizer.pad_token_id,
         sim_tolerance=config.task.replay_buffer.sim_tolerance,
     )
     data = NTPDataModule(
@@ -110,6 +115,16 @@ def train(config: DictConfig):
 
 
 def get_model(config: DictConfig):
+    """
+    loads the model and tokenizer and do some setup work
+    - initialize bnb config
+    - set up padding (add pad token, set side)
+    - prepare for k-bit training
+    - add policy adapters
+    - load (but not set as active) reward adapter
+    - remove dropout (from original code, not sure if needed)
+    """
+    
     # Use 4-bit quantization for lower memory use
     if config.task.training.use_4bit:
         bnb_config = BitsAndBytesConfig(
@@ -123,11 +138,19 @@ def get_model(config: DictConfig):
 
     # Get the model
     tokenizer = AutoTokenizer.from_pretrained(
-        config.task.model.name, add_bos_token=False
+        config.task.model.name, 
+        # from original code, not sure if needed
+        # add_bos_token=False,
     )
     model = AutoModelForCausalLM.from_pretrained(
-        config.task.model.name, device_map="auto", quantization_config=bnb_config, cache_dir=""
+        config.task.model.name, 
+        device_map="auto", 
+        quantization_config=bnb_config
     )
+
+    # padding is needed for batch processing (e.g. reward computation)
+    # llemma and deepseek models don't have padding tokens by default
+    set_up_padding(model, tokenizer)
 
     # Prepare model for k-bit training
     if config.task.training.use_4bit:
@@ -138,7 +161,15 @@ def get_model(config: DictConfig):
 
     # Wrap using Lora
     model = get_peft_model(
-        model, hydra.utils.instantiate(config.task.model.lora_config)
+        model, 
+        hydra.utils.instantiate(config.task.model.lora_config),
+        adapter_name=GFN_POLICY_ADAPTER_NAME,
+    )
+    
+    # Load in reward adapter
+    model.load_adapter(
+        config.task.reward.adapter_name,
+        adapter_name=REWARD_ADAPTER_NAME,
     )
 
     # Remove dropout
@@ -160,9 +191,8 @@ def get_reward(config: DictConfig, model: AutoModelForCausalLM, tokenizer: AutoT
         temperature=config.task.reward.temperature,
         verifier_batch_size=config.task.reward.verifier_batch_size,
         model_loading_kwargs=model_loading_kwargs_dict,
-        verifier_adapter_name=config.task.reward.verifier_adapter_name,
+        verifier_adapter_name=REWARD_ADAPTER_NAME,
     )
-
     return reward
 
 

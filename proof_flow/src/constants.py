@@ -1,4 +1,6 @@
 # GFN tuning
+GFN_POLICY_ADAPTER_NAME = "gfn_policy"
+REWARD_ADAPTER_NAME = "reward"
 TACTIC_DELIMITER = "\n" 
 PROOF_COMPLETE_MESSAGE = "no goals"
 LEAN_DOJO_RANDOM_DATA_PATH = "data/leandojo_benchmark_4/random/"

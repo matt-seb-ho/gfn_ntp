@@ -25,24 +25,25 @@ max_pairs_per_state: 1
 # pair_selection_strategy: random 
 # max_pairs_per_state: 5
 
-# prompt formatting for RM -------------------------
-use_sts_format: true
+# RM scoring settings -----------------------------
+use_sts_format: false
 prompts_for_model: llemma
+normalize_length: true
 
 
 # model config  ------------------------------------
-model: deepseek-ai/DeepSeek-Prover-V1
+# model: deepseek-ai/DeepSeek-Prover-V1
 # deepseek note:
 # - debugging! asked on email & discord
 # - currently trying llama arch (to match math base model)
 
 # model: EleutherAI/llemma_7b
 # model: internlm/internlm2-math-base-7b
-use_peft: false
+# use_peft: false
 
 # trained verifiers
-# model: msho/llemma_sft
-# use_peft: true
+model: msho/llemma_sft
+use_peft: true
 
 
 # generating evaluation data -----------------------

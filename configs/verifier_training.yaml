@@ -39,6 +39,7 @@ sft:
       bnb_4bit_compute_dtype: bfloat16
 
     lora:
+      _target_: peft.LoraConfig
       lora_alpha: 128
       lora_dropout: 0.05
       r: 256
