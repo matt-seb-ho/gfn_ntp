@@ -127,3 +127,13 @@ def set_up_padding(
     # this determines whether padding tokens are added to the left or right side of the input
     # the common rule of thumb is that for auto-regressive models, padding should be on the left
     tokenizer.padding_side = padding_side
+
+
+def lora_to_base(model):
+    model.base_model.disable_adapter_layers()
+    model.eval()
+
+
+def base_to_lora(model):
+    model.base_model.enable_adapter_layers()
+    model.train()

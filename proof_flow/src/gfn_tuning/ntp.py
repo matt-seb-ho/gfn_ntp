@@ -12,18 +12,16 @@ from pytorch_lightning import LightningModule
 from transformers import AutoTokenizer
 from torch.nn.utils.rnn import pad_sequence
 
-from proof_flow.src.utils import (
-    prepare_environment_for_lean_dojo,
-    set_up_padding
-)
-
 from proof_flow.src.gfn_tuning.proof_tree import ProofTreeNode, extract_trajectories
 from proof_flow.src.gfn_tuning.replay_buffer import ReplayBuffer
 from proof_flow.src.gfn_tuning.reward import NTPReward, compute_log_reward
 from proof_flow.src.gfn_tuning.verifier import batch_iterator
+from proof_flow.src.utils import (
+    base_to_lora, 
+    lora_to_base,
+    prepare_environment_for_lean_dojo,
+)
 
-# get rid of this eventually...
-from .utils import base_to_lora, lora_to_base
 
 prepare_environment_for_lean_dojo()
 from lean_dojo import Dojo, TacticState, Theorem  # isort: skip

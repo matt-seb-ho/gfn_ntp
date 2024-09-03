@@ -1,12 +1,9 @@
-import hashlib
 import json
-import os
 import warnings
 from typing import Optional
 
 from pytorch_lightning import LightningDataModule
-from torch.utils.data import DataLoader
-from torchdata.datapipes.map import MapDataPipe
+from torch.utils.data import Dataset, DataLoader
 
 from proof_flow.src.utils import (
     prepare_environment_for_lean_dojo,
@@ -24,8 +21,8 @@ from lean_dojo import LeanGitRepo, Pos, Theorem, is_available_in_cache # isort: 
 class NTPDataModule(LightningDataModule):
     def __init__(
         self,
-        data_path,
-        train_size=0.95,
+        data_path: str,
+        train_size: float = 0.95,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -45,8 +42,8 @@ class NTPDataModule(LightningDataModule):
             theorems.append(thm)
         # split theorems into train and val
         num_train = int(len(theorems) * self.hparams.train_size)
-        self.train_data = TheoremDataPipe(theorems[:num_train])
-        self.val_data = TheoremDataPipe(theorems[num_train:])
+        self.train_data = TheoremDataset(theorems[:num_train])
+        self.val_data = TheoremDataset(theorems[num_train:])
 
     def train_dataloader(self):
         # data loader init args are copied from original code base
@@ -57,8 +54,7 @@ class NTPDataModule(LightningDataModule):
         return DataLoader(self.val_data, batch_size=None, num_workers=0)
 
 
-class TheoremDataPipe(MapDataPipe):
-    # def __init__(self, theorems) -> None:
+class TheoremDataset(Dataset):
     def __init__(self, theorems) -> None:
         super().__init__()
         self.theorems = theorems 

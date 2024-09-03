@@ -19,8 +19,11 @@ from proof_flow.src.gfn_tuning.lean_data_module import NTPDataModule
 from proof_flow.src.gfn_tuning.ntp import NeuralTheoremProvingTask
 from proof_flow.src.utils import set_up_padding
 
+# relative to this file (proof_flow/scripts/gfn_tuning/train.py)
+CONFIG_DIR = "../../../configs/"
 
-@hydra.main(version_base=None, config_path="./configs/", config_name="train")
+
+@hydra.main(version_base=None, config_path=CONFIG_DIR, config_name="train")
 def train(config: DictConfig):
     pl.seed_everything(config.seed, workers=True)
 
@@ -82,7 +85,7 @@ def train(config: DictConfig):
         task.to = MethodType(lambda s, _: s, task)
         task.cuda = MethodType(lambda s: s, task)
 
-    print("YIPEE GOT PAST INIT")
+    print("YIPEE FINISHED INIT")
     # trainer.fit(model=task, datamodule=data)
 
 
