@@ -158,13 +158,13 @@ def format_prompt(initial_state: str, tactic: Optional[str], resulting_state: Op
 class NTPReward:
     def __init__(
         self, 
-        model: Optional[PeftModel] = None,
-        tokenizer: Optional[AutoTokenizer] = None,
+        model: PeftModel,
+        tokenizer: AutoTokenizer,
         temperature: float = 1.0, 
         verifier_batch_size: Optional[int] = None,
         verifier_adapter_name: Optional[str] = None,
     ):
-        self.model = model,
+        self.model = model
         self.tokenizer = tokenizer
         self.temperature = temperature
         self.verifier_batch_size = verifier_batch_size

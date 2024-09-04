@@ -72,7 +72,7 @@ def extract_trajectories(root: ProofTreeNode, theorem_id: str) -> list:
 
     # dfs traversal
     while stack:
-        node, visited = stack.popleft()
+        node, visited = stack.pop()
         if visited:
             # backtracking
             states.pop()

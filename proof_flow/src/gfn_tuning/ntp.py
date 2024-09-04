@@ -11,6 +11,7 @@ from peft import PeftModel
 from pytorch_lightning import LightningModule
 from transformers import AutoTokenizer
 from torch.nn.utils.rnn import pad_sequence
+from icecream import ic
 
 from proof_flow.src.gfn_tuning.proof_tree import ProofTreeNode, extract_trajectories
 from proof_flow.src.gfn_tuning.replay_buffer import ReplayBuffer
@@ -62,9 +63,9 @@ class NeuralTheoremProvingTask(LightningModule):
         self.tokenizer = tokenizer
         self.reward = reward
         self.reward_buffer = reward_buffer
-        self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model_device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.log_z = torch.nn.Parameter(
-            torch.tensor(0.0, requires_grad=True, device=self.device)
+            torch.tensor(0.0, requires_grad=True, device=self.model_device)
         )
 
         self.get_lr_at_step = lambda step: min(step / 20 * lr, lr)
@@ -125,7 +126,7 @@ class NeuralTheoremProvingTask(LightningModule):
                     lean_env=dojo,
                     replay=(replay_tactics is not None),
                     generate_func=generate_func,
-                    device=self.device,
+                    device=self.model_device,
                 )
                 for child in reversed(node.children):
                     if node.depth + 1 < max_depth and isinstance(child.state, TacticState):
@@ -150,7 +151,7 @@ class NeuralTheoremProvingTask(LightningModule):
             trajectories = extract_trajectories(root, theorem.uid)
             states = [t["states"] for t in trajectories]
             tactics = [t["tactics"] for t in trajectories]
-            log_reward = self.reward.score(states, tactics, device=self.device)
+            log_reward = self.reward.score(states, tactics, device=self.model_device)
             for leaf_node, log_r in zip(leaf_nodes, log_reward):
                 leaf_node.log_r = log_r.item()
         return trajectories_logpf, log_reward, trajectories
@@ -343,7 +344,7 @@ class NeuralTheoremProvingTask(LightningModule):
             # tactics_token_length = (tokens[:, input_ids.shape[1]:] == self.end_of_sentence_token_id).count_nonzero(dim=-1)
             # among multiple max values, argmax returns the first occurrence
             # this excludes the end of step token
-            pre_pad_length = (tokens == self.end_of_step_token_id).argmax(dim=-1)
+            pre_pad_length = (tokens == self.end_of_step_token_id).float().argmax(dim=-1)
 
             # create new children nodes by running the generated tactics through the environment
             for i, tactic in enumerate(generated_tactics):
@@ -353,7 +354,7 @@ class NeuralTheoremProvingTask(LightningModule):
                     tactic=generated_tactics[i].strip(),
                     depth=node.depth + 1,
                     prompt_length=input_ids.shape[1],
-                    tactic_logpf=log_pf_tactic[i],
+                    tactic_logpf=log_pf_tactic[i:i+1],
                     parent_tactic_tokens=tokens[i, :pre_pad_length[i]].cpu(),
                     parent=node,
                 )
@@ -401,21 +402,21 @@ class NeuralTheoremProvingTask(LightningModule):
                     torch.tensor([pl for _, pl in batch]),
                     self.end_of_step_token_id,
                     self.tokenizer.pad_token_id,
-                    device=self.device,
+                    device=self.model_device,
                 )
             )
         # combine by idx (trajectory idx) using scatter_add
-        idxs = torch.tensor(idxs, device=self.device)
+        idxs = torch.tensor(idxs, device=self.model_device)
         stepwise_log_pfs = torch.cat(stepwise_log_pfs)
         log_pf = torch.zeros(
             len(replay_trajectories), 
             dtype=stepwise_log_pfs.dtype,
-            device=self.device,
+            device=self.model_device,
         )
         log_pf = log_pf.scatter_add(0, idxs, stepwise_log_pfs)
         
         # collect log_r from replay buffer
-        log_r = torch.tensor([t["log_r"] for t in replay_trajectories], device=self.device)
+        log_r = torch.tensor([t["log_r"] for t in replay_trajectories], device=self.model_device)
         return log_pf, log_r
     
 
@@ -494,7 +495,8 @@ class NeuralTheoremProvingTask(LightningModule):
         self, 
         theorem_id: str
     ) -> Optional[ProofTreeNode | list[dict]]:
-        if (random.random() >= self.hparams.use_buffer_prob):
+        force_replay = getattr(self, "force_replay", False)
+        if (not force_replay and random.random() >= self.hparams.use_buffer_prob):
             return None
         if self.hparams.use_replay_tree:
             return self.reward_buffer.sample_tree(theorem_id, self.hparams.n_samples)
@@ -567,17 +569,17 @@ def generate_step(
         # the standard usage of compute_transition_scores is to pass GenerateOutput.scores
         # which is a tuple (length=max_seq_len) of tensors of shape (batch_size, vocab_size).
         # - we need to rearrange the model.__call__ logits to match this shape
-        scores = tuple(outputs.logits.transpose(0, 1)[prompt_length-1:-1])
-        scores = model.compute_transition_scores(
+        input_scores = tuple(outputs.logits.transpose(0, 1)[prompt_length-1:-1])
+        transition_scores = model.compute_transition_scores(
             input_ids,
-            scores,
+            input_scores,
             normalize_logits=True,
         )
         # post processing
         # - mask out pad tokens 
         pad_mask = (input_ids[:, prompt_length:] == model.config.pad_token_id)
-        scores[pad_mask] = 0
-        return input_ids, scores
+        transition_scores[pad_mask] = 0
+        return input_ids, transition_scores
         
     outputs = model.generate(
         input_ids=input_ids,
@@ -599,7 +601,11 @@ def generate_step(
     # the original generate_and_return_termination_logprob returned (state, log_pf, ...)
     # where state includes the prompt and the generated tokens, 
     # while log_pf included only the generated tokens' log probabilities.
-    pad_mask = outputs.sequences == model.config.pad_token_id
+    prompt_length = prompt_length or input_ids.shape[1]
+    ic(scores.shape)
+    ic(outputs.sequences.shape)
+    ic(prompt_length)
+    pad_mask = outputs.sequences[:, prompt_length:] == model.config.pad_token_id
     scores[pad_mask] = 0
     return outputs.sequences, scores
 

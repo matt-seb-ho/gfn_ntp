@@ -151,8 +151,8 @@ def get_model(config: DictConfig):
 
 def get_reward(config: DictConfig, model: AutoModelForCausalLM, tokenizer: AutoTokenizer):
     reward = NTPReward(
-        model=model,
-        tokenizer=tokenizer,
+        model,
+        tokenizer,
         # temperature is set dynamically
         # temperature=config.task.reward.temperature, 
         verifier_batch_size=config.task.reward.verifier_batch_size,

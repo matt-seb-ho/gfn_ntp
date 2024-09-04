@@ -1,4 +1,5 @@
 from types import MethodType
+import json
 import hydra
 import pytorch_lightning as pl
 import torch
@@ -16,7 +17,7 @@ from proof_flow.src.gfn_tuning.reward import NTPReward
 from proof_flow.src.gfn_tuning.replay_buffer import ReplayBuffer
 from proof_flow.src.gfn_tuning.lean_data_module import NTPDataModule
 from proof_flow.src.gfn_tuning.ntp import NeuralTheoremProvingTask
-from proof_flow.src.utils import set_up_padding
+from proof_flow.src.utils import set_up_padding, repo_root
 
 # relative to this file (proof_flow/scripts/gfn_tuning/train.py)
 CONFIG_DIR = "../../../configs/"
@@ -79,8 +80,16 @@ def train(config: DictConfig):
         task.to = MethodType(lambda s, _: s, task)
         task.cuda = MethodType(lambda s: s, task)
 
-    print("YAY")
-    # trainer.fit(model=task, datamodule=data)
+    print("FINISHED INIT")
+    thm0 = data.train_data[0]
+    # run a training step
+    task.training_step(thm0, 0)
+    # check results
+    thm0_proofs = reward_buffer._buffer[thm0.uid]["proofs"]
+    filename = repo_root() / "outputs/train_step0_rb_proofs.json"
+    with open(filename, 'w') as f:
+        json.dump(thm0_proofs, f, indent=4)
+    print(f"Saved proof buffer to {filename}")
 
 
 def get_model(config: DictConfig):
