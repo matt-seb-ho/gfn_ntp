@@ -1,11 +1,8 @@
 import gc
 import random
 from contextlib import contextmanager
-from functools import partial
 from typing import Optional
 
-import numpy as np
-import pandas as pd
 import torch
 from peft import PeftModel
 from pytorch_lightning import LightningModule
@@ -15,11 +12,12 @@ from icecream import ic
 
 from proof_flow.src.gfn_tuning.proof_tree import ProofTreeNode, extract_trajectories
 from proof_flow.src.gfn_tuning.replay_buffer import ReplayBuffer
-from proof_flow.src.gfn_tuning.reward import NTPReward, compute_log_reward
+from proof_flow.src.gfn_tuning.reward import NTPReward
 from proof_flow.src.gfn_tuning.verifier import batch_iterator
+from proof_flow.src.prompts import (
+    INSTRUCTION_PROMPT_TEMPLATE,
+)
 from proof_flow.src.utils import (
-    base_to_lora, 
-    lora_to_base,
     prepare_environment_for_lean_dojo,
 )
 
@@ -510,11 +508,12 @@ class NeuralTheoremProvingTask(LightningModule):
         # prepending "-- " to every line to match the evaluation setup in Llemma-7B paper
         # - see figure 4
         # appending a newline to the end of the prompt if it doesn't exist
-        lines = state.split("\n")
-        lines[-1] = lines[-1].rstrip() + "\n"
-        # TODO: check if we want line.lstrip() 
-        commented_lines = ["-- INPUT:"] + ["-- " + line for line in lines]
-        return "\n".join(commented_lines)
+        # lines = state.split("\n")
+        # lines[-1] = lines[-1].rstrip() + "\n"
+        # # TODO: check if we want line.lstrip() 
+        # commented_lines = ["-- INPUT:"] + ["-- " + line for line in lines]
+        # return "\n".join(commented_lines)
+        return INSTRUCTION_PROMPT_TEMPLATE.format(state=state)
 
 
 def generate_step(
@@ -602,9 +601,6 @@ def generate_step(
     # where state includes the prompt and the generated tokens, 
     # while log_pf included only the generated tokens' log probabilities.
     prompt_length = prompt_length or input_ids.shape[1]
-    ic(scores.shape)
-    ic(outputs.sequences.shape)
-    ic(prompt_length)
     pad_mask = outputs.sequences[:, prompt_length:] == model.config.pad_token_id
     scores[pad_mask] = 0
     return outputs.sequences, scores

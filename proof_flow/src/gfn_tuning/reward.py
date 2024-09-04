@@ -122,12 +122,7 @@ def compute_log_reward(
     )
     model_scores = model_scores.scatter_add(0, idxs, stepwise_scores)
 
-    return torch.log(
-        torch.max(
-            torch.stack(is_correct - 1, model_scores, dim=-1), 
-            dim=-1,
-        )
-    )
+    return torch.maximum((is_correct - 1), model_scores)
 
 
 def rm_formatting_func(

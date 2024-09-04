@@ -79,6 +79,7 @@ def extract_trajectories(root: ProofTreeNode, theorem_id: str) -> list:
             tactics.pop()
             parent_tactic_tokens.pop()
             prompt_lengths.pop()
+            continue
         else:
             stack.append((node, True))
             
