@@ -124,9 +124,11 @@ def batch_completion_probabilities(
         # - the -1 is because the input_ids were shifted forward by 1
         # stop: token index of the token after the last completion token
         # - we use it as the end slice index, so we don't need to do -1
+        # NOTE: char_to_token returns None if char_idx is out of bounds
+        # - this only happens when completion is empty
         start.append(batch_enc.char_to_token(i, start_char_idxs[i]) - 1)
         stop.append(batch_enc.char_to_token(i, end_char_idxs[i]))
-    start = torch.tensor(start, device=device).unsqueeze(1)
+    start = torch.tensor(start, device=device).unsqueeze(1e
     stop = torch.tensor(stop, device=device).unsqueeze(1)
     idx = (
         torch.arange(seq_log_probs.shape[1], device=seq_log_probs.device)

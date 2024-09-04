@@ -1,3 +1,4 @@
+import json
 import gc
 import random
 from contextlib import contextmanager
@@ -8,7 +9,6 @@ from peft import PeftModel
 from pytorch_lightning import LightningModule
 from transformers import AutoTokenizer
 from torch.nn.utils.rnn import pad_sequence
-from icecream import ic
 
 from proof_flow.src.gfn_tuning.proof_tree import ProofTreeNode, extract_trajectories
 from proof_flow.src.gfn_tuning.replay_buffer import ReplayBuffer
@@ -292,11 +292,14 @@ class NeuralTheoremProvingTask(LightningModule):
         else:
             # generate n new tactics
             prompt_text = self.format_prompt(node.state.pp if node.state else node.state_str) 
-            input_ids = self.tokenizer(prompt_text, return_tensors="pt")["input_ids"]
+            input_ids = self.tokenizer(prompt_text, return_tensors="pt").input_ids
             if input_ids.ndim == 1:
                 input_ids = input_ids.unsqueeze(0)
             n_samples = n_samples or self.hparams.n_samples
             input_ids = input_ids.expand(n_samples, -1)
+            prompt_length = input_ids.shape[1]
+            if device:
+                input_ids = input_ids.to(device)
 
         # sample tactics (if not provided by action_seq) and compute terms needed for loss
         if generate_func and not replay:
@@ -304,15 +307,13 @@ class NeuralTheoremProvingTask(LightningModule):
             tokens, log_pf = generate_func(input_ids)
         else:
             try:
-                if device:
-                    input_ids = input_ids.to(device)
                 tokens, log_pf = generate_step(
                     self.model,
                     input_ids,
                     termination_token_id=self.end_of_step_token_id,
                     temperature=pf_temperature,
                     replay=replay,
-                    prompt_length=node.prompt_length,
+                    prompt_length=prompt_length,
                     max_new_tokens=self.hparams.max_tactic_tokens,
                 )
             except RuntimeError as e:
@@ -340,9 +341,11 @@ class NeuralTheoremProvingTask(LightningModule):
                 clean_up_tokenization_spaces=True,
             )
             # tactics_token_length = (tokens[:, input_ids.shape[1]:] == self.end_of_sentence_token_id).count_nonzero(dim=-1)
-            # among multiple max values, argmax returns the first occurrence
-            # this excludes the end of step token
-            pre_pad_length = (tokens == self.end_of_step_token_id).float().argmax(dim=-1)
+            # looking for first occurence of end_of_step_token_id after the prompt
+            # - among multiple max values, argmax returns the first occurrence
+            # - this excludes the end of step token
+            is_end_of_step = (tokens[:, prompt_length:]).eq(self.end_of_step_token_id)
+            pre_pad_length = is_end_of_step.float().argmax(dim=-1) + prompt_length
 
             # create new children nodes by running the generated tactics through the environment
             for i, tactic in enumerate(generated_tactics):
@@ -580,11 +583,17 @@ def generate_step(
         transition_scores[pad_mask] = 0
         return input_ids, transition_scores
         
+    # model.generate notes
+    # - begin_suppress_tokens: prevents the first token from being the termination token
+    #   - this prevents empty tactics from being generated (reward current cannot handle empty tactics)
+    # - passing in a different eos_token_id acts as a stopping criteria 
+    #   - (attention computations are not affected)
     outputs = model.generate(
         input_ids=input_ids,
         max_new_tokens=max_new_tokens,
         eos_token_id=termination_token_id,
         forced_eos_token_id=termination_token_id,
+        begin_suppress_tokens=[termination_token_id],
         return_dict_in_generate=True,
         output_scores=True,
         temperature=temperature,

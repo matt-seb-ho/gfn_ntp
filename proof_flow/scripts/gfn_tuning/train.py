@@ -128,11 +128,19 @@ def get_model(config: DictConfig):
         )
 
     # Wrap using Lora
-    model = get_peft_model(
-        model, 
-        hydra.utils.instantiate(config.task.model.lora_config),
-        adapter_name=GFN_POLICY_ADAPTER_NAME,
-    )
+    if config.task.model.initialize_policy_adapter_from_pretrained is None:
+        # if no initialization is specified, create a new adapter from config
+        model = get_peft_model(
+            model, 
+            hydra.utils.instantiate(config.task.model.lora_config),
+            adapter_name=GFN_POLICY_ADAPTER_NAME,
+        )
+    else:
+        # otherwise, load the specified adapter
+        model.load_adapter(
+            config.task.model.initialize_policy_adapter_from_pretrained,
+            adapter_name=GFN_POLICY_ADAPTER_NAME,
+        )
     
     # Load in reward adapter
     if config.task.reward.reward_model_hf_id is not None:
