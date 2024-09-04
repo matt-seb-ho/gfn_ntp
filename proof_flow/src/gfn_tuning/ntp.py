@@ -3,6 +3,7 @@ import gc
 import random
 from contextlib import contextmanager
 from typing import Optional
+from icecream import ic
 
 import torch
 from peft import PeftModel
@@ -92,7 +93,6 @@ class NeuralTheoremProvingTask(LightningModule):
             - extracted_trajectories: list of trajectories for the replay buffer
         """
         trajectories_logpf: list[torch.Tensor] = []
-        leaf_nodes: list[ProofTreeNode] = []
         log_reward: list[float] = []
 
         # n_samples[d] is the number of tactics to sample at depth d
@@ -132,7 +132,6 @@ class NeuralTheoremProvingTask(LightningModule):
                     else:
                         # terminal
                         trajectories_logpf.append(torch.cat(trajectory_logpf + [child.tactic_logpf]))
-                        leaf_nodes.append(child)
                         log_reward.append(child.log_r)
         
         # trajectories can have different lengths (may be jagged) and need to be padded
@@ -150,8 +149,12 @@ class NeuralTheoremProvingTask(LightningModule):
             states = [t["states"] for t in trajectories]
             tactics = [t["tactics"] for t in trajectories]
             log_reward = self.reward.score(states, tactics, device=self.model_device)
-            for leaf_node, log_r in zip(leaf_nodes, log_reward):
-                leaf_node.log_r = log_r.item()
+
+            # trajectories were extracted from the tree before log_r was computed
+            # - ensure we have the log_r for each trajectory for the replay buffer
+            for trajectory, log_r in zip(trajectories, log_reward):
+                trajectory["log_r"] = log_r.item()
+
         return trajectories_logpf, log_reward, trajectories
 
 
@@ -173,7 +176,8 @@ class NeuralTheoremProvingTask(LightningModule):
 
         # replay trajectories
         # _sample... helper function handles the logic of whether to use the buffer or not
-        #   (1) hparams.use_buffer_prob 
+        # uses buffer if:
+        #   (1) random() < hparams.use_buffer_prob 
         #   (2) the theorem has trajectories in the buffer
         replay_ts = self._sample_replay_trajectories(theorem_id)
         
@@ -198,6 +202,7 @@ class NeuralTheoremProvingTask(LightningModule):
             else:
                 # Without tempering
                 pf_temp = 1.0
+
             t_logpf, log_r, extracted_ts = self.forward(theorem, pf_temperature=pf_temp)
             self.reward_buffer.add_batch(theorem_id, extracted_ts)
 
@@ -584,6 +589,7 @@ def generate_step(
         return input_ids, transition_scores
         
     # model.generate notes
+    # - do_sample=True turns off greedy decoding
     # - begin_suppress_tokens: prevents the first token from being the termination token
     #   - this prevents empty tactics from being generated (reward current cannot handle empty tactics)
     # - passing in a different eos_token_id acts as a stopping criteria 
@@ -599,6 +605,7 @@ def generate_step(
         temperature=temperature,
         top_k=top_k,
         top_p=top_p,
+        do_sample=True,
         **generation_kwargs
     )
     scores = model.compute_transition_scores(

@@ -101,7 +101,7 @@ def extract_trajectories(root: ProofTreeNode, theorem_id: str) -> list:
                 "tactics": tactics[1:],
                 "proof": TACTIC_DELIMITER.join(tactics[1:]),
                 "state_tactic_tokens": parent_tactic_tokens[1:], # consider deepcopy...
-                "prompt_lengths": prompt_lengths.copy(),
+                "prompt_lengths": prompt_lengths[1:],
                 "log_r": node.log_r,
             })
     

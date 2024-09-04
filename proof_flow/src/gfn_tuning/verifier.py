@@ -128,7 +128,7 @@ def batch_completion_probabilities(
         # - this only happens when completion is empty
         start.append(batch_enc.char_to_token(i, start_char_idxs[i]) - 1)
         stop.append(batch_enc.char_to_token(i, end_char_idxs[i]))
-    start = torch.tensor(start, device=device).unsqueeze(1e
+    start = torch.tensor(start, device=device).unsqueeze(1)
     stop = torch.tensor(stop, device=device).unsqueeze(1)
     idx = (
         torch.arange(seq_log_probs.shape[1], device=seq_log_probs.device)
