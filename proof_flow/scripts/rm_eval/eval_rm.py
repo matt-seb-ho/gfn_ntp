@@ -103,17 +103,16 @@ def evaluate_reward_model(
                     sep="(<-prompt)(completion->)",
                 )
 
-            completion_probs = batch_completion_probabilities(
+            log_ps, completion_lengths = batch_completion_probabilities(
                 model, 
                 tokenizer, 
                 prompt_completion_pair,
                 device=device,
-            )[0]
+            )
 
+            score = log_ps[0].item()
             if normalize_length:
-                score = completion_probs["log_prob_sum"] / completion_probs["token_count"]
-            else:
-                score = completion_probs["log_prob_sum"]
+                score = score / completion_lengths[0].item()
             scores_entry[key] = score
 
         results["scores"][i] = scores_entry

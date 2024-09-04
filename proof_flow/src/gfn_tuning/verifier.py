@@ -39,9 +39,9 @@ def batch_completion_probabilities(
     tokenizer: AutoTokenizer,
     prompt_completion_pairs: list[tuple[str, str]],
     sep: str = "",
-    device: Optional[torch.device] = None,
+    device: Optional[str | torch.device] = None,
     split_and_retry: bool = True,
-) -> list[dict]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     input_texts = []
     start_char_idxs = [] # index of the first completion token
     end_char_idxs = []   # index of the last completion token
@@ -100,20 +100,42 @@ def batch_completion_probabilities(
     # - it's a batch of log probabilities of the actual sequence's tokens
     seq_log_probs = torch.gather(log_prob_distributions, 2, input_ids[:, :, None]).squeeze(-1)
 
-    completion_log_probs = []
+    # version 1
+    # completion_log_probs = []
+    # for i in range(len(input_texts)):
+    #     # start: token index of the first completion token
+    #     # - the -1 is because the input_ids were shifted forward by 1
+    #     # stop: token index of the token after the last completion token
+    #     # - we use it as the end slice index, so we don't need to do -1
+    #     start = batch_enc.char_to_token(i, start_char_idxs[i]) - 1
+    #     stop = batch_enc.char_to_token(i, end_char_idxs[i])
+    #     completion_log_prob = seq_log_probs[i, start:stop].sum().item()
+    #     completion_log_probs.append({
+    #         "log_prob_sum": completion_log_prob,
+    #         "token_count": stop - start,
+    #     })
+    # return completion_log_probs
+
+    # version 2
+    start = []
+    stop = []
     for i in range(len(input_texts)):
         # start: token index of the first completion token
         # - the -1 is because the input_ids were shifted forward by 1
         # stop: token index of the token after the last completion token
         # - we use it as the end slice index, so we don't need to do -1
-        start = batch_enc.char_to_token(i, start_char_idxs[i]) - 1
-        stop = batch_enc.char_to_token(i, end_char_idxs[i])
-        completion_log_prob = seq_log_probs[i, start:stop].sum().item()
-        completion_log_probs.append({
-            "log_prob_sum": completion_log_prob,
-            "token_count": stop - start,
-        })
-    return completion_log_probs
+        start.append(batch_enc.char_to_token(i, start_char_idxs[i]) - 1)
+        stop.append(batch_enc.char_to_token(i, end_char_idxs[i]))
+    start = torch.tensor(start, device=device).unsqueeze(1)
+    stop = torch.tensor(stop, device=device).unsqueeze(1)
+    idx = (
+        torch.arange(seq_log_probs.shape[1], device=seq_log_probs.device)
+        .unsqueeze(0)
+        .expand(seq_log_probs.shape[0], -1)
+    )
+    mask = (idx >= start) & (idx < stop)
+    completion_log_probs = (seq_log_probs * mask).sum(dim=1)
+    return completion_log_probs, (stop - start).squeeze(-1)
 
 
 def batch_sequence_probabilities(

@@ -48,6 +48,7 @@ class NeuralTheoremProvingTask(LightningModule):
         min_tactic_tokens: int = 2,
         max_tactic_tokens: int = 30,
         use_replay_tree: bool = False,
+        device: Optional[str | torch.device] = None,
     ):
         super().__init__()
         self.save_hyperparameters(ignore=[
@@ -59,9 +60,12 @@ class NeuralTheoremProvingTask(LightningModule):
 
         self.model = model
         self.tokenizer = tokenizer
-        self.log_z = torch.nn.Parameter(torch.tensor(0.0, requires_grad=True))
         self.reward = reward
         self.reward_buffer = reward_buffer
+        self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.log_z = torch.nn.Parameter(
+            torch.tensor(0.0, requires_grad=True, device=self.device)
+        )
 
         self.get_lr_at_step = lambda step: min(step / 20 * lr, lr)
         self.get_reward_temp_at_step = lambda step: reward_temp_start + (
@@ -121,6 +125,7 @@ class NeuralTheoremProvingTask(LightningModule):
                     lean_env=dojo,
                     replay=(replay_tactics is not None),
                     generate_func=generate_func,
+                    device=self.device,
                 )
                 for child in reversed(node.children):
                     if node.depth + 1 < max_depth and isinstance(child.state, TacticState):
@@ -145,7 +150,7 @@ class NeuralTheoremProvingTask(LightningModule):
             trajectories = extract_trajectories(root, theorem.uid)
             states = [t["states"] for t in trajectories]
             tactics = [t["tactics"] for t in trajectories]
-            log_reward = self.reward.score(states, tactics)
+            log_reward = self.reward.score(states, tactics, device=self.device)
             for leaf_node, log_r in zip(leaf_nodes, log_reward):
                 leaf_node.log_r = log_r.item()
         return trajectories_logpf, log_reward, trajectories
@@ -273,6 +278,7 @@ class NeuralTheoremProvingTask(LightningModule):
         lean_env: Optional[Dojo] = None,
         replay: bool = False,
         generate_func: Optional[callable] = None,
+        device: Optional[str | torch.device] = None,
     ) -> None:
         """
         Expands a node in the proof tree by generating tactics.
@@ -299,6 +305,8 @@ class NeuralTheoremProvingTask(LightningModule):
             tokens, log_pf = generate_func(input_ids)
         else:
             try:
+                if device:
+                    input_ids = input_ids.to(device)
                 tokens, log_pf = generate_step(
                     self.model,
                     input_ids,
@@ -346,7 +354,7 @@ class NeuralTheoremProvingTask(LightningModule):
                     depth=node.depth + 1,
                     prompt_length=input_ids.shape[1],
                     tactic_logpf=log_pf_tactic[i],
-                    parent_tactic_tokens=tokens[i, :pre_pad_length[i]],
+                    parent_tactic_tokens=tokens[i, :pre_pad_length[i]].cpu(),
                     parent=node,
                 )
                 if node.children is None:
@@ -378,9 +386,9 @@ class NeuralTheoremProvingTask(LightningModule):
             ):
                 jobs.append((tokens, prompt_length))
                 idxs.append(t_idx)
-        stepwise_log_pfs = []
         
         # compute tactic log_pfs in batches
+        stepwise_log_pfs = []
         for batch in batch_iterator(jobs, batch_size=model_inf_batch_size):
             batch_input_ids = pad_sequence(
                 [tokens for tokens, _ in batch],
@@ -393,16 +401,21 @@ class NeuralTheoremProvingTask(LightningModule):
                     torch.tensor([pl for _, pl in batch]),
                     self.end_of_step_token_id,
                     self.tokenizer.pad_token_id,
+                    device=self.device,
                 )
             )
         # combine by idx (trajectory idx) using scatter_add
-        idxs = torch.tensor(idxs)
+        idxs = torch.tensor(idxs, device=self.device)
         stepwise_log_pfs = torch.cat(stepwise_log_pfs)
-        log_pf = torch.zeros(len(replay_trajectories), dtype=stepwise_log_pfs.dtype)
+        log_pf = torch.zeros(
+            len(replay_trajectories), 
+            dtype=stepwise_log_pfs.dtype,
+            device=self.device,
+        )
         log_pf = log_pf.scatter_add(0, idxs, stepwise_log_pfs)
         
         # collect log_r from replay buffer
-        log_r = torch.tensor([t["log_r"] for t in replay_trajectories])
+        log_r = torch.tensor([t["log_r"] for t in replay_trajectories], device=self.device)
         return log_pf, log_r
     
 
@@ -412,7 +425,7 @@ class NeuralTheoremProvingTask(LightningModule):
         prompt_lengths: torch.Tensor,
         termination_token_id: int,
         pad_token_id: int,
-        device: Optional[torch.device] = None,
+        device: Optional[str | torch.device] = None,
         split_and_retry: bool = True,
     ) -> torch.Tensor:
         # essentially alternate input version of batch_completion_probabilities
@@ -422,6 +435,7 @@ class NeuralTheoremProvingTask(LightningModule):
         if device is not None:
             input_ids = input_ids.to(device)
             attention_mask = attention_mask.to(device)
+            prompt_lengths = prompt_lengths.to(device)
 
         try:
             outputs = self.model(
@@ -466,7 +480,7 @@ class NeuralTheoremProvingTask(LightningModule):
         # [0, 1, 2, ..., seq_len - 1] for every batch element
         # shape (batch_size, seq_len)
         idx = (
-            torch.arange(seq_log_probs.shape[1])
+            torch.arange(seq_log_probs.shape[1], device=seq_log_probs.device)
             .unsqueeze(0)
             .expand(seq_log_probs.shape[0], -1)
         )

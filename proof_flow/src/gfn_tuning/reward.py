@@ -62,6 +62,8 @@ def compute_log_reward(
     batch_size: int = 8,
     use_sts_format: bool = False,
     prompts_for_model: Optional[str] = "llemma",
+    device: Optional[str | torch.device] = None,
+    length_penalty: bool = True,
 ) -> torch.Tensor:
     """
     Computes reward for a batch of trajectores (states, tactics) using heuristics and model.
@@ -75,17 +77,19 @@ def compute_log_reward(
     assert len(states) == len(tactics)
     # r = max(is_correct - 1, model_score)
     # - heuristic score
-    is_correct = torch.tensor([[1 if state[-1] == PROOF_COMPLETE_MESSAGE else 0 for state in states]])
+    is_correct = torch.tensor(
+        [1 if t_states[-1] == PROOF_COMPLETE_MESSAGE else 0 for t_states in states],
+        device=device,
+    )
     
     # - model based score
+    idxs = []
     prompt_completion_pairs = []
-    batch_idx_to_pair_idx = defaultdict(list)
-    for batch_i, (_states, _tactics) in enumerate(zip(states, tactics)):
+    for trajectory_idx, (_states, _tactics) in enumerate(zip(states, tactics)):
         # _states: list[str]: represents states for this trajectory
         # _tactics: list[str]: represents tactics for this trajectory
         # for state_i, (state, tactic) in enumerate(zip(_states, _tactics), start=1):
         for idx in range(len(_tactics)):
-            batch_idx_to_pair_idx[batch_i].append(len(prompt_completion_pairs))
             rm_inputs = build_reward_inputs(
                 _states[idx], 
                 _tactics[idx], 
@@ -93,16 +97,37 @@ def compute_log_reward(
                 use_sts_format=use_sts_format,
                 prompts_for_model=prompts_for_model,
             )
+            idxs.append(trajectory_idx)
             prompt_completion_pairs.append(rm_inputs)
-    results = []
-    for batch in batch_iterator(prompt_completion_pairs, batch_size):
-        results.extend(batch_completion_probabilities(model, tokenizer, batch))
-    model_scores = torch.tensor([
-        sum(results[j]["log_prob_sum"] for j in batch_idx_to_pair_idx[i])
-        for i in range(len(states))
-    ])
 
-    return torch.log(torch.max(torch.stack(is_correct - 1, model_scores, dim=-1), dim=-1))
+    stepwise_scores = []
+    for batch in batch_iterator(prompt_completion_pairs, batch_size):
+        log_ps, lengths = batch_completion_probabilities(
+            model, 
+            tokenizer, 
+            batch,
+            device=device,
+        )
+        if length_penalty:
+            stepwise_scores.append(log_ps / lengths)
+        else:
+            stepwise_scores.append(log_ps)
+        
+    idxs = torch.tensor(idxs, device=device)
+    stepwise_scores = torch.cat(stepwise_scores)
+    model_scores = torch.zeros(
+        len(prompt_completion_pairs), 
+        dtype=stepwise_scores.dtype,
+        device=device
+    )
+    model_scores = model_scores.scatter_add(0, idxs, stepwise_scores)
+
+    return torch.log(
+        torch.max(
+            torch.stack(is_correct - 1, model_scores, dim=-1), 
+            dim=-1,
+        )
+    )
 
 
 def rm_formatting_func(
@@ -150,7 +175,8 @@ class NTPReward:
         self,
         states: list[list[str]],
         tactics: list[list[str]],
-        batch_size: Optional[int] = None
+        batch_size: Optional[int] = None,
+        device: Optional[str | torch.device] = None,
     ) -> torch.Tensor:
         # prep batch_size
         batch_size = (
@@ -164,7 +190,8 @@ class NTPReward:
                 tactics, 
                 self.model, 
                 self.tokenizer, 
-                batch_size=batch_size
+                batch_size=batch_size,
+                device=device,
             )
         return log_reward
     
