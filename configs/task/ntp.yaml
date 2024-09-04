@@ -32,6 +32,9 @@ model:
   # e.g. "msho/llemma_sft"
   initialize_policy_adapter_from_pretrained: null
 
+  # currently just used for replay
+  inf_batch_size: 1
+
 training:
   # subtb_lambda: 1.0
   pf_temp_high: 2.0

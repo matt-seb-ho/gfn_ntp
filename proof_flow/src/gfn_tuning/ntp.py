@@ -48,6 +48,7 @@ class NeuralTheoremProvingTask(LightningModule):
         min_tactic_tokens: int = 2,
         max_tactic_tokens: int = 30,
         use_replay_tree: bool = False,
+        model_inference_batch_size: int = 4,
         device: Optional[str | torch.device] = None,
     ):
         super().__init__()
@@ -171,7 +172,12 @@ class NeuralTheoremProvingTask(LightningModule):
         return batch_loss
 
 
-    def training_step(self, theorem: Theorem, batch_idx):
+    def training_step(
+        self, 
+        theorem: Theorem, 
+        batch_idx: int,              # required by PyTorch Lightning(?)
+        force_replay: bool = False,  # for testing purposes
+    ):
         theorem_id = theorem.uid
 
         # replay trajectories
@@ -179,7 +185,7 @@ class NeuralTheoremProvingTask(LightningModule):
         # uses buffer if:
         #   (1) random() < hparams.use_buffer_prob 
         #   (2) the theorem has trajectories in the buffer
-        replay_ts = self._sample_replay_trajectories(theorem_id)
+        replay_ts = self._sample_replay_trajectories(theorem_id, force_replay=force_replay)
         
         if replay_ts is not None:
             # using sample from replay buffer
@@ -188,7 +194,7 @@ class NeuralTheoremProvingTask(LightningModule):
             else:
                 t_logpf, log_r, = self.replay_trajectories(
                     replay_ts,
-                    model_inf_batch_size=self.hparams.model_inf_batch_size,
+                    model_inf_batch_size=self.hparams.model_inference_batch_size,
                 )
             log_r *= 1 / self.reward.temperature  # redo the effect of reward tempering
         else:
@@ -371,8 +377,9 @@ class NeuralTheoremProvingTask(LightningModule):
 
     def replay_trajectories(
         self,
-        replay_trajectories: list[dict],
+        trajectories: list[dict],
         model_inf_batch_size: int,
+        split_and_retry: bool = True,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Replay a batch of trajectories, computing new log_pf for tactics.
@@ -386,7 +393,7 @@ class NeuralTheoremProvingTask(LightningModule):
         # queue up jobs
         jobs = []
         idxs = []
-        for t_idx, trajectory in enumerate(replay_trajectories):
+        for t_idx, trajectory in enumerate(trajectories):
             for tokens, prompt_length in zip(
                 trajectory["state_tactic_tokens"],
                 trajectory["prompt_lengths"],
@@ -396,6 +403,7 @@ class NeuralTheoremProvingTask(LightningModule):
         
         # compute tactic log_pfs in batches
         stepwise_log_pfs = []
+        ic(model_inf_batch_size)
         for batch in batch_iterator(jobs, batch_size=model_inf_batch_size):
             batch_input_ids = pad_sequence(
                 [tokens for tokens, _ in batch],
@@ -409,20 +417,23 @@ class NeuralTheoremProvingTask(LightningModule):
                     self.end_of_step_token_id,
                     self.tokenizer.pad_token_id,
                     device=self.model_device,
-                )
+                    split_and_retry=split_and_retry,
+                ).cpu()
             )
+            torch.cuda.empty_cache()
+            gc.collect()
         # combine by idx (trajectory idx) using scatter_add
         idxs = torch.tensor(idxs, device=self.model_device)
-        stepwise_log_pfs = torch.cat(stepwise_log_pfs)
+        stepwise_log_pfs = torch.cat(stepwise_log_pfs).to(self.model_device)
         log_pf = torch.zeros(
-            len(replay_trajectories), 
+            len(trajectories), 
             dtype=stepwise_log_pfs.dtype,
             device=self.model_device,
         )
         log_pf = log_pf.scatter_add(0, idxs, stepwise_log_pfs)
         
         # collect log_r from replay buffer
-        log_r = torch.tensor([t["log_r"] for t in replay_trajectories], device=self.model_device)
+        log_r = torch.tensor([t["log_r"] for t in trajectories], device=self.model_device)
         return log_pf, log_r
     
 
@@ -445,6 +456,7 @@ class NeuralTheoremProvingTask(LightningModule):
             prompt_lengths = prompt_lengths.to(device)
 
         try:
+            ic("trying one inference", input_ids.shape)
             outputs = self.model(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
@@ -454,6 +466,8 @@ class NeuralTheoremProvingTask(LightningModule):
             if "out of memory" not in str(e) or not split_and_retry:
                 raise e
             # split the job in half and retry!
+            torch.cuda.empty_cache()
+            gc.collect()
             sub_results = [
                 self._get_completion_log_pfs(
                     half,
@@ -479,10 +493,21 @@ class NeuralTheoremProvingTask(LightningModule):
             relevant_tokens[:, :, None]
         ).squeeze(-1)
 
-        # -1 is because the input_ids were shifted forward by 1
+        # start: -1 because the input_ids were shifted forward by 1
         start = (prompt_lengths - 1).unsqueeze(1)
-        # exclude the end token
-        stop = (relevant_tokens == termination_token_id).argmax(dim=-1).unsqueeze(1)
+
+        # this old impl doesn't work because termination_token can appear in the prompt
+        # stop = (relevant_tokens == termination_token_id).float().argmax(dim=-1).unsqueeze(1)
+        # - in this case, it's easier to find first occurrence of the pad tokens (not in prompt)
+        pad_occurrences = (relevant_tokens == pad_token_id)
+        first_pad_idx = torch.where(
+            pad_occurrences.any(dim=1), 
+            pad_occurrences.float().argmax(dim=1), 
+            relevant_tokens.shape[1]
+        )
+        # -1 to exclude the end token
+        stop = (first_pad_idx - 1).unsqueeze(1)
+
         # create an index tensor for the sequence dimension
         # [0, 1, 2, ..., seq_len - 1] for every batch element
         # shape (batch_size, seq_len)
@@ -499,9 +524,10 @@ class NeuralTheoremProvingTask(LightningModule):
 
     def _sample_replay_trajectories(
         self, 
-        theorem_id: str
+        theorem_id: str,
+        force_replay: bool = False,
     ) -> Optional[ProofTreeNode | list[dict]]:
-        force_replay = getattr(self, "force_replay", False)
+        # if force replay is True, this random check is skipped
         if (not force_replay and random.random() >= self.hparams.use_buffer_prob):
             return None
         if self.hparams.use_replay_tree:
@@ -557,6 +583,8 @@ def generate_step(
                 raise e
             # on replay, we know that we can handle these inputs
             # so we can split the job in half and retry
+            torch.cuda.empty_cache()
+            gc.collect()
             halves = input_ids.split(input_ids.shape[0] // 2)
             log_pf_sub_results = [
                 generate_step(

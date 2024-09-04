@@ -20,6 +20,8 @@ from proof_flow.src.gfn_tuning.lean_data_module import NTPDataModule
 from proof_flow.src.gfn_tuning.ntp import NeuralTheoremProvingTask
 from proof_flow.src.utils import set_up_padding, repo_root
 
+TEST_TRAINING_STEP = False
+TEST_REPLAY_STEP = True
 # relative to this file (proof_flow/scripts/gfn_tuning/train.py)
 CONFIG_DIR = "../../../configs/"
 
@@ -61,6 +63,7 @@ def train(config: DictConfig):
         min_tactic_tokens=config.task.constraints.min_tactic_tokens,
         max_tactic_tokens=config.task.constraints.max_tactic_tokens,
         use_replay_tree=config.task.training.use_replay_tree,
+        model_inference_batch_size=config.task.model.inf_batch_size,
     )
 
     trainer = pl.Trainer(
@@ -83,26 +86,37 @@ def train(config: DictConfig):
 
     print("FINISHED INIT")
     thm0 = data.train_data[0]
-    # run a training step
-    task.training_step(thm0, 0)
-    # check results
-    # pickle reward_buffer._buffer
-    with open(repo_root() / "outputs/train_step0_rb.pkl", "wb") as f:
-        pickle.dump(reward_buffer._buffer, f)
-    # json dump proofs sans tensors
-    sans_tensors = []
-    skip_keys = {"state_tactic_tokens"}
-    for trajectory in reward_buffer._buffer[thm0.uid]["proofs"]:
-        entry = {
-            k: trajectory[i]
-            for i, k in enumerate(BUFFER_ENTRY_KEYS)
-            if k not in skip_keys
-        }
-        sans_tensors.append(entry)
-    filename = repo_root() / "outputs/train_step0_trajectories.json"
-    with open(filename, 'w') as f:
-        json.dump(sans_tensors, f, indent=4)
-    print(f"Saved proof buffer to {filename}")
+    
+    if TEST_TRAINING_STEP:
+        # run a training step
+        task.training_step(thm0, 0)
+        # check results
+        # pickle reward_buffer._buffer
+        with open(repo_root() / "outputs/train_step0_rb.pkl", "wb") as f:
+            pickle.dump(reward_buffer._buffer, f)
+        # json dump proofs sans tensors
+        sans_tensors = []
+        skip_keys = {"state_tactic_tokens"}
+        for trajectory in reward_buffer._buffer[thm0.uid]["proofs"]:
+            entry = {
+                k: trajectory[i]
+                for i, k in enumerate(BUFFER_ENTRY_KEYS)
+                if k not in skip_keys
+            }
+            sans_tensors.append(entry)
+        filename = repo_root() / "outputs/train_step0_trajectories.json"
+        with open(filename, 'w') as f:
+            json.dump(sans_tensors, f, indent=4)
+        print(f"Saved proof buffer to {filename}")
+
+    elif TEST_REPLAY_STEP:
+        # first populate the buffer with prior trajectories
+        with open(repo_root() / "outputs/train_step0_rb.pkl", "rb") as f:
+            reward_buffer._buffer = pickle.load(f)
+
+        # run a training step with forced replay
+        task.training_step(thm0, 0, force_replay=True)
+    
 
 
 def get_model(config: DictConfig):

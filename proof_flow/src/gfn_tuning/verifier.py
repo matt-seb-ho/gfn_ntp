@@ -1,4 +1,5 @@
 import argparse
+import gc
 import json
 import random
 from itertools import islice
@@ -65,6 +66,8 @@ def batch_completion_probabilities(
         ):
             raise e
         # split the batch in half and retry
+        torch.cuda.empty_cache()
+        gc.collect()
         halfway_idx = len(prompt_completion_pairs) // 2
         half1 = prompt_completion_pairs[:halfway_idx]
         half2 = prompt_completion_pairs[halfway_idx:]
