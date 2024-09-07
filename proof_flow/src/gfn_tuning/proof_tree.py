@@ -6,11 +6,23 @@ from typing import Optional
 
 import torch
 
-from proof_flow.src.constants import PROOF_COMPLETE_MESSAGE, TACTIC_DELIMITER
+from proof_flow.src.constants import (
+    PROOF_COMPLETE_MESSAGE, 
+    TACTIC_DELIMITER,
+    LEAN_ERROR_STRING,
+    TIMEOUT_ERROR_STRING,
+    PROOF_GIVEN_UP_STRING,
+)
 from proof_flow.src.utils import prepare_environment_for_lean_dojo
 
 prepare_environment_for_lean_dojo()
-from lean_dojo import ProofFinished, TacticResult, TacticState # isort: skip
+from lean_dojo import ( # isort: skip
+    ProofFinished, 
+    TacticResult, 
+    TacticState,
+    LeanError,
+    TimeoutError,
+)
 
 
 @dataclass
@@ -113,7 +125,10 @@ def convert_tactic_result_to_state_string(res: TacticResult) -> str:
         return res.pp
     elif isinstance(res, ProofFinished):
         return PROOF_COMPLETE_MESSAGE
+    elif isinstance(res, LeanError):
+        return f"{LEAN_ERROR_STRING}: {res.error}"
+    elif isinstance(res, TimeoutError):
+        return TIMEOUT_ERROR_STRING
     else:
-        # remaining TacticResult classes: LeanError, TimeoutError, ProofGivenUp
-        # LeanError and ProofGivenUp have a `error` attribute
-        return getattr(res, "error", "Timeout")
+        # assert isinstance(res, ProofGivenUp):
+        return PROOF_GIVEN_UP_STRING

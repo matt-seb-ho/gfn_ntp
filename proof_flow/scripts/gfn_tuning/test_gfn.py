@@ -164,10 +164,12 @@ def get_model(config: DictConfig):
             use_gradient_checkpointing=False,  # Doesn't save memory when generating autoregressively compared to caching
         )
 
+    lora_config = hydra.utils.instantiate(config.task.model.lora_config)
+    print(lora_config)
     # Wrap using Lora
     model = get_peft_model(
         model, 
-        hydra.utils.instantiate(config.task.model.lora_config),
+        lora_config,
         adapter_name=GFN_POLICY_ADAPTER_NAME,
     )
     

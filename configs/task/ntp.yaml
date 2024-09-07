@@ -11,14 +11,23 @@ model:
   lora_config:
     _target_: peft.LoraConfig
 
-    # settings from SFT RM config
-    # - https://www.philschmid.de/fine-tune-llms-in-2024-with-trl
+    # adjusted settings for OOM issues
     target_modules: "all-linear"
-    r: 256
-    lora_alpha: 128
+    r: 16
+    lora_alpha: 32
     lora_dropout: 0.05
     bias: "none"
     task_type: "CAUSAL_LM"
+    use_rslora: true
+
+    # settings from SFT RM config
+    # - https://www.philschmid.de/fine-tune-llms-in-2024-with-trl
+    # target_modules: "all-linear"
+    # r: 256
+    # lora_alpha: 128
+    # lora_dropout: 0.05
+    # bias: "none"
+    # task_type: "CAUSAL_LM"
 
     # next_sentence settings (gpt-2xl)
     # target_modules: ["c_attn", "c_proj", "c_fc"]
@@ -33,7 +42,7 @@ model:
   initialize_policy_adapter_from_pretrained: null
 
   # currently just used for replay
-  inf_batch_size: 1
+  inf_batch_size: 8
 
 training:
   # subtb_lambda: 1.0
