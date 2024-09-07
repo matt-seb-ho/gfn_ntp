@@ -14,7 +14,10 @@ from torch.nn.utils.rnn import pad_sequence
 from proof_flow.src.gfn_tuning.proof_tree import ProofTreeNode, extract_trajectories
 from proof_flow.src.gfn_tuning.replay_buffer import ReplayBuffer
 from proof_flow.src.gfn_tuning.reward import NTPReward
-from proof_flow.src.gfn_tuning.verifier import batch_iterator
+from proof_flow.src.gfn_tuning.verifier import (
+    batch_iterator, 
+    batch_iterator_zip,
+)
 from proof_flow.src.prompts import (
     INSTRUCTION_PROMPT_TEMPLATE,
 )
@@ -167,7 +170,10 @@ class NeuralTheoremProvingTask(LightningModule):
             - log_pf: Tensor of shape (batch_size, max_depth)
             - log_r: Tensor of shape (batch_size,)
         """
-        loss = (log_pf.sum(dim=-1) + self.log_z - log_r) ** 2
+        if len(log_pf.shape) == 2:
+            log_pf = log_pf.sum(dim=-1)
+        # loss = (log_pf.sum(dim=-1) + self.log_z - log_r) ** 2
+        loss = (log_pf + self.log_z - log_r) ** 2
         batch_loss = loss.sum()
         return batch_loss
 
@@ -177,7 +183,7 @@ class NeuralTheoremProvingTask(LightningModule):
         theorem: Theorem, 
         batch_idx: int,              # required by PyTorch Lightning(?)
         force_replay: bool = False,  # for testing purposes
-    ):
+):
         theorem_id = theorem.uid
 
         # replay trajectories
@@ -389,52 +395,66 @@ class NeuralTheoremProvingTask(LightningModule):
             - t_log_pf: (n_samples, max_depth) tensor of log probabilities of each tactic (0-padded).
             - log_r: (n_samples,) tensor of log rewards for complete trajectories
         """
+        # with the current tb loss formulation, we can actually get away with
+        # preemptively summing the tactic log_pfs to get the trajectory's log_pf
+        # but for now, we'll keep the trajectory log_pf separate
+        # step_logpfs = torch.zeros(
+        #     (len(trajectories), self.hparams.max_tactics), 
+        #     device=self.model_device
+        # )
+        t_logpfs = torch.zeros(len(trajectories), device=self.model_device)
 
         # queue up jobs
-        jobs = []
-        idxs = []
-        for t_idx, trajectory in enumerate(trajectories):
-            for tokens, prompt_length in zip(
+        input_ids = []
+        prompt_lengths = []
+        batch_idxs = []
+        step_idxs = []
+        for b_idx, trajectory in enumerate(trajectories):
+            for s_idx, (tokens, prompt_length) in enumerate(zip(
                 trajectory["state_tactic_tokens"],
                 trajectory["prompt_lengths"],
-            ):
-                jobs.append((tokens, prompt_length))
-                idxs.append(t_idx)
+            )):
+                input_ids.append(tokens)
+                prompt_lengths.append(prompt_length)
+                batch_idxs.append(b_idx)
+                step_idxs.append(s_idx)
         
         # compute tactic log_pfs in batches
-        stepwise_log_pfs = []
-        ic(model_inf_batch_size)
-        for batch in batch_iterator(jobs, batch_size=model_inf_batch_size):
+        for tokens, prefix_lengths, b_idxs, s_idxs in batch_iterator_zip(
+            (input_ids, prompt_lengths, batch_idxs, step_idxs), 
+            batch_size=model_inf_batch_size
+        ):
             batch_input_ids = pad_sequence(
-                [tokens for tokens, _ in batch],
+                tokens,
                 batch_first=True,
                 padding_value=self.tokenizer.pad_token_id,
             )
-            stepwise_log_pfs.append(
-                self._get_completion_log_pfs(
-                    batch_input_ids,
-                    torch.tensor([pl for _, pl in batch]),
-                    self.end_of_step_token_id,
-                    self.tokenizer.pad_token_id,
-                    device=self.model_device,
-                    split_and_retry=split_and_retry,
-                ).cpu()
+            # step_logpfs[b_idxs, s_idxs] = self._get_completion_log_pfs(
+            #     batch_input_ids,
+            #     torch.tensor(prefix_lengths),
+            #     self.end_of_step_token_id,
+            #     self.tokenizer.pad_token_id,
+            #     device=self.model_device,
+            #     split_and_retry=split_and_retry,
+            # )
+            batch_res = self._get_completion_log_pfs(
+                batch_input_ids,
+                torch.tensor(prefix_lengths),
+                self.end_of_step_token_id,
+                self.tokenizer.pad_token_id,
+                device=self.model_device,
+                split_and_retry=split_and_retry,
             )
-            torch.cuda.empty_cache()
-            gc.collect()
-        # combine by idx (trajectory idx) using scatter_add
-        idxs = torch.tensor(idxs, device=self.model_device)
-        stepwise_log_pfs = torch.cat(stepwise_log_pfs).to(self.model_device)
-        log_pf = torch.zeros(
-            len(trajectories), 
-            dtype=stepwise_log_pfs.dtype,
-            device=self.model_device,
-        )
-        log_pf = log_pf.scatter_add(0, idxs, stepwise_log_pfs)
+            idx = torch.tensor(b_idxs, device=self.model_device)
+            t_logpfs = t_logpfs.scatter_add(0, idx, batch_res)
         
         # collect log_r from replay buffer
-        log_r = torch.tensor([t["log_r"] for t in trajectories], device=self.model_device)
-        return log_pf, log_r
+        log_r = torch.tensor(
+            [t["log_r"] for t in trajectories], 
+            device=self.model_device
+        )
+        # return step_logpfs, log_r
+        return t_logpfs, log_r
     
 
     def _get_completion_log_pfs(
@@ -456,7 +476,6 @@ class NeuralTheoremProvingTask(LightningModule):
             prompt_lengths = prompt_lengths.to(device)
 
         try:
-            ic("trying one inference", input_ids.shape)
             outputs = self.model(
                 input_ids=input_ids,
                 attention_mask=attention_mask,

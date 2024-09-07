@@ -77,7 +77,7 @@ def compute_log_reward(
     
     # for each trajectory
     # - either assign heuristic score or queue prompt-completion job
-    log_r = torch.zeros(len(states))
+    log_r = torch.zeros(len(states), device=device)
     trajectory_groups = []
     prompt_completion_pairs = []
     for i, (_states, _tactics) in enumerate(zip(states, tactics)):
@@ -101,27 +101,28 @@ def compute_log_reward(
                 trajectory_groups.append(i)
                 prompt_completion_pairs.append(rm_inputs)
             
-            
     # run queued prompt-completion jobs
-    stepwise_scores = []
-    for batch in batch_iterator(prompt_completion_pairs, batch_size):
-        log_ps, lengths = batch_completion_probabilities(
-            model, 
-            tokenizer, 
-            batch,
-            device=device,
+    if prompt_completion_pairs:
+        stepwise_scores = []
+        for batch in batch_iterator(prompt_completion_pairs, batch_size):
+            log_ps, lengths = batch_completion_probabilities(
+                model, 
+                tokenizer, 
+                batch,
+                device=device,
+            )
+            if length_penalty:
+                stepwise_scores.append(log_ps / lengths)
+            else:
+                stepwise_scores.append(log_ps)
+            
+        stepwise_scores = torch.cat(stepwise_scores)
+        log_r = log_r.scatter_add(
+            0,                  # dim
+            trajectory_groups,  # indices
+            stepwise_scores     # values
         )
-        if length_penalty:
-            stepwise_scores.append(log_ps / lengths)
-        else:
-            stepwise_scores.append(log_ps)
-        
-    stepwise_scores = torch.cat(stepwise_scores)
-    log_r = log_r.scatter_add(
-        0,                  # dim
-        trajectory_groups,  # indices
-        stepwise_scores     # values
-    )
+
     # clip reward to -100
     log_r = torch.clamp(log_r, min=-100)
     return log_r

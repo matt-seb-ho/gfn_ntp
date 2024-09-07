@@ -184,3 +184,27 @@ def batch_iterator(iterable, batch_size):
         if not batch:
             break
         yield batch
+
+
+def batch_iterator_zip(iterables, batch_size):
+    """
+    Generator that yields fixed-size batches from the input iterables.
+    
+    Parameters:
+    - iterables: A list of iterables from which to yield batches.
+    - batch_size: The size of each batch as an integer.
+    
+    Yields:
+    - Batches of the input iterables, each batch is of size batch_size.
+    - If batch_size = n and we had m iterables, batches have shape 
+    [[iter1_item1, ..., iter1_itemn], ..., [iterm_item1, ..., iterm_itemn]]
+
+    Note:
+    - if any of the iterables is exhausted, the generator stops.
+    """
+    iterators = [iter(it) for it in iterables]
+    while True:
+        batch = [list(islice(it, batch_size)) for it in iterators]
+        if not all(batch):
+            break
+        yield batch

@@ -92,7 +92,7 @@ def train(config: DictConfig):
         task.training_step(thm0, 0)
         # check results
         # pickle reward_buffer._buffer
-        with open(repo_root() / "outputs/train_step0_rb.pkl", "wb") as f:
+        with open(repo_root() / "outputs/train_step0_rb_v2.pkl", "wb") as f:
             pickle.dump(reward_buffer._buffer, f)
         # json dump proofs sans tensors
         sans_tensors = []
@@ -104,7 +104,7 @@ def train(config: DictConfig):
                 if k not in skip_keys
             }
             sans_tensors.append(entry)
-        filename = repo_root() / "outputs/train_step0_trajectories.json"
+        filename = repo_root() / "outputs/train_step0_trajectories_v2.json"
         with open(filename, 'w') as f:
             json.dump(sans_tensors, f, indent=4)
         print(f"Saved proof buffer to {filename}")

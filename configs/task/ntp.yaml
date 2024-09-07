@@ -42,7 +42,7 @@ model:
   initialize_policy_adapter_from_pretrained: null
 
   # currently just used for replay
-  inf_batch_size: 8
+  inf_batch_size: 4
 
 training:
   # subtb_lambda: 1.0
@@ -71,8 +71,10 @@ reward:
   buffer_sim_tolerance: 0.25
   verifier_batch_size: 16 # TODO: figure out if we can go higher
   # TODO: get dsp adapters
-  reward_model_hf_id: "msho/llemma_sft" # or null
-  reward_model_adapter_name: "reward"   # or null
+  # reward_model_hf_id: "msho/llemma_sft"
+  # reward_model_adapter_name: "reward"
+  reward_model_hf_id: null
+  reward_model_adapter_name: null
 
 callbacks:
   - _target_: pytorch_lightning.callbacks.ModelCheckpoint
