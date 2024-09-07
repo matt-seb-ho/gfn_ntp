@@ -11,7 +11,8 @@ from transformers import (
 
 from proof_flow.src.constants import (
     DEFAULT_VERIFIER_BATCH_SIZE,
-    PROOF_COMPLETE_MESSAGE
+    PROOF_COMPLETE_MESSAGE,
+    TACTIC_ERROR_STRINGS
 )
 from proof_flow.src.gfn_tuning.verifier import (
     batch_completion_probabilities,
@@ -23,16 +24,6 @@ from proof_flow.src.prompts import (
     INSTRUCTION_COMPLETION_TEMPLATE_WITH_NEXT_STATE,
     RM_TEMPLATES,
 )
-
-
-def lora_to_base(model):
-    model.base_model.disable_adapter_layers()
-    model.eval()
-
-
-def base_to_lora(model):
-    model.base_model.enable_adapter_layers()
-    model.train()
 
 
 def build_reward_inputs(
@@ -67,6 +58,14 @@ def compute_log_reward(
 ) -> torch.Tensor:
     """
     Computes reward for a batch of trajectores (states, tactics) using heuristics and model.
+
+    New Formulation (Pseudo-code):
+    if trajectory_correct:
+        return 0
+    elif trajectory has bad tactic:
+        return -100
+    else:
+        return max(reward_model_scores, -100)
     
     Arguments
         states: 2D list of shape (batch_size, trajectory_length) containing states
@@ -74,32 +73,36 @@ def compute_log_reward(
         model: verifier for scoring the generated text
         tokenizer: AutoTokenizer for encoding the input
     """
-    assert len(states) == len(tactics)
-    # r = max(is_correct - 1, model_score)
-    # - heuristic score
-    is_correct = torch.tensor(
-        [1 if t_states[-1] == PROOF_COMPLETE_MESSAGE else 0 for t_states in states],
-        device=device,
-    )
+    assert len(states) == len(tactics) # batch_size
     
-    # - model based score
-    idxs = []
+    # for each trajectory
+    # - either assign heuristic score or queue prompt-completion job
+    log_r = torch.zeros(len(states))
+    trajectory_groups = []
     prompt_completion_pairs = []
-    for trajectory_idx, (_states, _tactics) in enumerate(zip(states, tactics)):
+    for i, (_states, _tactics) in enumerate(zip(states, tactics)):
         # _states: list[str]: represents states for this trajectory
         # _tactics: list[str]: represents tactics for this trajectory
-        # for state_i, (state, tactic) in enumerate(zip(_states, _tactics), start=1):
-        for idx in range(len(_tactics)):
-            rm_inputs = build_reward_inputs(
-                _states[idx], 
-                _tactics[idx], 
-                _states[idx + 1],
-                use_sts_format=use_sts_format,
-                prompts_for_model=prompts_for_model,
-            )
-            idxs.append(trajectory_idx)
-            prompt_completion_pairs.append(rm_inputs)
-
+        if _states[-1] == PROOF_COMPLETE_MESSAGE:
+            # log_r[i] = 0
+            continue
+        elif _is_tactic_result_an_error(_states[-1]):
+            log_r[i] = -100
+        else:
+            # queue prompt-completion logp jobs
+            for step_idx in range(len(_tactics)):
+                rm_inputs = build_reward_inputs(
+                    _states[step_idx], 
+                    _tactics[step_idx], 
+                    _states[step_idx + 1],
+                    use_sts_format=use_sts_format,
+                    prompts_for_model=prompts_for_model,
+                )
+                trajectory_groups.append(i)
+                prompt_completion_pairs.append(rm_inputs)
+            
+            
+    # run queued prompt-completion jobs
     stepwise_scores = []
     for batch in batch_iterator(prompt_completion_pairs, batch_size):
         log_ps, lengths = batch_completion_probabilities(
@@ -113,16 +116,15 @@ def compute_log_reward(
         else:
             stepwise_scores.append(log_ps)
         
-    idxs = torch.tensor(idxs, device=device)
     stepwise_scores = torch.cat(stepwise_scores)
-    model_scores = torch.zeros(
-        len(prompt_completion_pairs), 
-        dtype=stepwise_scores.dtype,
-        device=device
+    log_r = log_r.scatter_add(
+        0,                  # dim
+        trajectory_groups,  # indices
+        stepwise_scores     # values
     )
-    model_scores = model_scores.scatter_add(0, idxs, stepwise_scores)
-
-    return torch.maximum((is_correct - 1), model_scores)
+    # clip reward to -100
+    log_r = torch.clamp(log_r, min=-100)
+    return log_r
 
 
 def rm_formatting_func(
@@ -148,6 +150,13 @@ def format_prompt(initial_state: str, tactic: Optional[str], resulting_state: Op
             return f"{initial_state}\n###\n{tactic}\n###\n{resulting_state}"
         return f"{initial_state}\n###\n{tactic}"
     return f"{initial_state}\n###\n"
+
+
+def _is_tactic_result_an_error(tactic_result: str) -> bool:
+    for error_string in TACTIC_ERROR_STRINGS:
+        if error_string in tactic_result:
+            return True
+    return False
 
 
 class NTPReward:
