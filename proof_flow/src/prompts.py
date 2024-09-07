@@ -139,9 +139,9 @@ DEEPSEEK_RM_STS_PROMPT_TEMPLATE = """Given a Lean 4 proof state, tactic, and res
 ```
 Answer: """
 DEEPSEEK_RM_STS_COMPLETION_TEMPLATE = "yes"
-DEEPSEEK_RM_ST_PROMPT_TEMPLATE_V2 = """Suggest a next tactic given the following Lean 4 proof state
+DEEPSEEK_RM_ST_PROMPT_TEMPLATE_V2 = """Suggest a next tactic given the following Lean 4 tactic state
 ```lean4
--- proof state
+-- tactic state
 /-
 {state}
 -/

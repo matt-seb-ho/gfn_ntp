@@ -1,3 +1,4 @@
+import hydra
 import torch
 from datasets import load_from_disk
 from huggingface_hub import login
@@ -70,7 +71,8 @@ def main():
     set_up_padding(model, tokenizer)
 
     # LoRA config based on QLoRA paper & Sebastian Raschka experiment
-    peft_config = LoraConfig(**config.sft.model.lora)
+    # peft_config = LoraConfig(**config.sft.model.lora)
+    peft_config = hydra.utils.instantiate(config.sft.model.lora)
 
     training_args = TrainingArguments(
         **config.sft.model.training_args
