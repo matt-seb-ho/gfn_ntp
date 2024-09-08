@@ -130,13 +130,19 @@ class NeuralTheoremProvingTask(LightningModule):
                     generate_func=generate_func,
                     device=self.model_device,
                 )
-                for child in reversed(node.children):
+                new_stack_items = []
+                for child in node.children:
                     if node.depth + 1 < max_depth and isinstance(child.state, TacticState):
-                        stack.append(child)
+                        new_stack_items.append((child, False))
                     else:
                         # terminal
                         trajectories_logpf.append(torch.cat(trajectory_logpf + [child.tactic_logpf]))
                         log_reward.append(child.log_r)
+                # add new stack items in reverse order for depth-first traversal
+                # - why not iterate reversed(node.children)?
+                #   we want to handle the terminal outputs in the correct order
+                stack.extend(reversed(new_stack_items))
+                
         
         # trajectories can have different lengths (may be jagged) and need to be padded
         trajectories_logpf = pad_sequence(
@@ -398,11 +404,14 @@ class NeuralTheoremProvingTask(LightningModule):
         # with the current tb loss formulation, we can actually get away with
         # preemptively summing the tactic log_pfs to get the trajectory's log_pf
         # but for now, we'll keep the trajectory log_pf separate
-        # step_logpfs = torch.zeros(
-        #     (len(trajectories), self.hparams.max_tactics), 
-        #     device=self.model_device
-        # )
-        t_logpfs = torch.zeros(len(trajectories), device=self.model_device)
+        max_depth = max(len(t["state_tactic_tokens"]) for t in trajectories)
+        step_logpfs = torch.zeros(
+            # (len(trajectories), self.hparams.max_tactics), 
+            (len(trajectories), max_depth),
+            device=self.model_device
+        )
+        # eager sum version
+        # t_logpfs = torch.zeros(len(trajectories), device=self.model_device)
 
         # queue up jobs
         input_ids = []
@@ -429,15 +438,7 @@ class NeuralTheoremProvingTask(LightningModule):
                 batch_first=True,
                 padding_value=self.tokenizer.pad_token_id,
             )
-            # step_logpfs[b_idxs, s_idxs] = self._get_completion_log_pfs(
-            #     batch_input_ids,
-            #     torch.tensor(prefix_lengths),
-            #     self.end_of_step_token_id,
-            #     self.tokenizer.pad_token_id,
-            #     device=self.model_device,
-            #     split_and_retry=split_and_retry,
-            # )
-            batch_res = self._get_completion_log_pfs(
+            step_logpfs[b_idxs, s_idxs] = self._get_completion_log_pfs(
                 batch_input_ids,
                 torch.tensor(prefix_lengths),
                 self.end_of_step_token_id,
@@ -445,16 +446,26 @@ class NeuralTheoremProvingTask(LightningModule):
                 device=self.model_device,
                 split_and_retry=split_and_retry,
             )
-            idx = torch.tensor(b_idxs, device=self.model_device)
-            t_logpfs = t_logpfs.scatter_add(0, idx, batch_res)
+            # eager sum version
+            # batch_res = self._get_completion_log_pfs(
+            #     batch_input_ids,
+            #     torch.tensor(prefix_lengths),
+            #     self.end_of_step_token_id,
+            #     self.tokenizer.pad_token_id,
+            #     device=self.model_device,
+            #     split_and_retry=split_and_retry,
+            # )
+            # idx = torch.tensor(b_idxs, device=self.model_device)
+            # t_logpfs = t_logpfs.scatter_add(0, idx, batch_res)
         
         # collect log_r from replay buffer
         log_r = torch.tensor(
             [t["log_r"] for t in trajectories], 
             device=self.model_device
         )
-        # return step_logpfs, log_r
-        return t_logpfs, log_r
+        return step_logpfs, log_r
+        # eager sum version
+        # return t_logpfs, log_r
     
 
     def _get_completion_log_pfs(
@@ -525,7 +536,9 @@ class NeuralTheoremProvingTask(LightningModule):
             relevant_tokens.shape[1]
         )
         # -1 to exclude the end token
-        stop = (first_pad_idx - 1).unsqueeze(1)
+        # stop = (first_pad_idx - 1).unsqueeze(1)
+        # TODO: understand why this is correct (why don't we need -1?)
+        stop = (first_pad_idx).unsqueeze(1)
 
         # create an index tensor for the sequence dimension
         # [0, 1, 2, ..., seq_len - 1] for every batch element
@@ -538,7 +551,8 @@ class NeuralTheoremProvingTask(LightningModule):
         # create the mask based on the condition start <= idx < stop
         # mask is 1 where we want to keep the log probabilities
         mask = (idx >= start) & (idx < stop)
-        return (seq_log_probs * mask).sum(dim=1)
+        res = (seq_log_probs * mask).sum(dim=1)
+        return res
     
 
     def _sample_replay_trajectories(
@@ -648,7 +662,7 @@ def generate_step(
         forced_eos_token_id=termination_token_id,
         begin_suppress_tokens=[termination_token_id],
         return_dict_in_generate=True,
-        output_scores=True,
+        output_logits=True,
         temperature=temperature,
         top_k=top_k,
         top_p=top_p,
@@ -657,14 +671,19 @@ def generate_step(
     )
     scores = model.compute_transition_scores(
         outputs.sequences,
-        outputs.scores,
+        outputs.logits,
         normalize_logits=True,
     )
     # the original generate_and_return_termination_logprob returned (state, log_pf, ...)
     # where state includes the prompt and the generated tokens, 
     # while log_pf included only the generated tokens' log probabilities.
     prompt_length = prompt_length or input_ids.shape[1]
-    pad_mask = outputs.sequences[:, prompt_length:] == model.config.pad_token_id
+    old_pad_mask = outputs.sequences[:, prompt_length:] == model.config.pad_token_id
+    # fix padding:
+    # - pad out scores from term token onwards (first term token after prompt)
+    pad_mask = (
+        outputs.sequences[:, prompt_length:] == termination_token_id
+    ).cumsum(dim=1) > 0
     scores[pad_mask] = 0
     return outputs.sequences, scores
 
