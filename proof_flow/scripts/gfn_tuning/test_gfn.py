@@ -19,6 +19,7 @@ from proof_flow.src.gfn_tuning.replay_buffer import ReplayBuffer, BUFFER_ENTRY_K
 from proof_flow.src.gfn_tuning.lean_data_module import NTPDataModule
 from proof_flow.src.gfn_tuning.ntp import NeuralTheoremProvingTask
 from proof_flow.src.utils import set_up_padding, repo_root
+from proof_flow.scripts.gfn_tuning.train import get_model, get_reward
 
 TEST_TRAINING_STEP = False
 TEST_REPLAY_STEP = True
@@ -117,88 +118,6 @@ def train(config: DictConfig):
         # run a training step with forced replay
         task.training_step(thm0, 0, force_replay=True)
     
-
-
-def get_model(config: DictConfig):
-    """
-    loads the model and tokenizer and do some setup work
-    - initialize bnb config
-    - set up padding (add pad token, set side)
-    - prepare for k-bit training
-    - add policy adapters
-    - load (but not set as active) reward adapter
-    - remove dropout (from original code, not sure if needed)
-    """
-    
-    # Use 4-bit quantization for lower memory use
-    if config.task.training.use_4bit:
-        bnb_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype="float16",
-            bnb_4bit_use_double_quant=True,
-        )
-    else:
-        bnb_config = None
-
-    # Get the model
-    tokenizer = AutoTokenizer.from_pretrained(
-        config.task.model.name, 
-        # from original code, not sure if needed
-        # add_bos_token=False,
-    )
-    model = AutoModelForCausalLM.from_pretrained(
-        config.task.model.name, 
-        device_map="auto", 
-        quantization_config=bnb_config
-    )
-
-    # padding is needed for batch processing (e.g. reward computation)
-    # llemma and deepseek models don't have padding tokens by default
-    set_up_padding(model, tokenizer)
-
-    # Prepare model for k-bit training
-    if config.task.training.use_4bit:
-        model = prepare_model_for_kbit_training(
-            model,
-            use_gradient_checkpointing=False,  # Doesn't save memory when generating autoregressively compared to caching
-        )
-
-    lora_config = hydra.utils.instantiate(config.task.model.lora_config)
-    print(lora_config)
-    # Wrap using Lora
-    model = get_peft_model(
-        model, 
-        lora_config,
-        adapter_name=GFN_POLICY_ADAPTER_NAME,
-    )
-    
-    # Load in reward adapter
-    if config.task.reward.reward_model_hf_id is not None:
-        model.load_adapter(
-            config.task.reward.reward_model_hf_id,
-            adapter_name=config.task.reward.reward_model_adapter_name,
-        )
-
-    # Remove dropout
-    for mod in model.modules():
-        if isinstance(mod, torch.nn.Dropout):
-            mod.p = 0.0
-
-    return model, tokenizer
-
-
-def get_reward(config: DictConfig, model: AutoModelForCausalLM, tokenizer: AutoTokenizer):
-    reward = NTPReward(
-        model=model,
-        tokenizer=tokenizer,
-        # temperature is set dynamically
-        # temperature=config.task.reward.temperature, 
-        verifier_batch_size=config.task.reward.verifier_batch_size,
-        verifier_adapter_name=config.task.reward.reward_model_adapter_name,
-    )
-    return reward
-
 
 if __name__ == "__main__":
     train()

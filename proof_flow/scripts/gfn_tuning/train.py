@@ -113,8 +113,9 @@ def get_model(config: DictConfig):
     )
     model = AutoModelForCausalLM.from_pretrained(
         config.task.model.name, 
+        torch_dtype="auto", # defer to torch_dtype from model config.json
         device_map="auto", 
-        quantization_config=bnb_config
+        quantization_config=bnb_config,
     )
 
     # padding is needed for batch processing (e.g. reward computation)
