@@ -125,7 +125,6 @@ def batch_completion_probabilities(
     prompt_completion_pairs: list[tuple[str, str]],
     sep: str = "",
     device: Optional[str | torch.device] = None,
-    split_and_retry: bool = True,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     input_texts = []
     start_char_idxs = [] # index of the first completion token
@@ -140,34 +139,7 @@ def batch_completion_probabilities(
     if device:
         batch_enc = batch_enc.to(device)
     input_ids = batch_enc.input_ids
-    try:
-        outputs = model(**batch_enc) # ensure attention mask is passed
-    except RuntimeError as e:
-        if (
-            not split_and_retry 
-            or "out of memory" not in str(e)
-            or len(prompt_completion_pairs) == 1
-        ):
-            raise e
-        # split the batch in half and retry
-        torch.cuda.empty_cache()
-        gc.collect()
-        halfway_idx = len(prompt_completion_pairs) // 2
-        half1 = prompt_completion_pairs[:halfway_idx]
-        half2 = prompt_completion_pairs[halfway_idx:]
-        sub_results = [
-            batch_completion_probabilities(
-                model, 
-                tokenizer, 
-                half_pairs,
-                sep=sep, 
-                device=device, 
-                split_and_retry=True,
-            )
-            for half_pairs in (half1, half2)
-        ]
-        return sub_results[0] + sub_results[1]
-
+    outputs = model(**batch_enc) # ensure attention mask is passed
     log_prob_distributions = torch.log_softmax(outputs.logits, dim=-1).detach()
 
     # collect the probability of the generated token
