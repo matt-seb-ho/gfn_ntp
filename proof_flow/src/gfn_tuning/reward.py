@@ -162,7 +162,7 @@ class NTPReward:
         return log_r
 
 
-    def _is_tactic_result_an_error(tactic_result: str) -> bool:
+    def _is_tactic_result_an_error(self, tactic_result: str) -> bool:
         for error_string in TACTIC_ERROR_STRINGS:
             if error_string in tactic_result:
                 return True
