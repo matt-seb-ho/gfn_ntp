@@ -93,6 +93,32 @@ def filter_dataset_for_init_time(
     
     return filtered_theorems
         
+        
+def filter_out_top5_percent_tokens(iput_data_path: str, output_data_path: str, tokenizer_id: str="EleutherAI/llemma_7b"):
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_id)
+
+    with open(iput_data_path) as f:
+        data = json.load(f)
+
+    data_k_v = data.items()
+    num_entries_to_remove = int(len(data) * 0.05)
+
+    def count_tokens(text):
+        return len(tokenizer.tokenize(text))
+
+    sorted_data = sorted(
+        data_k_v, 
+        key=lambda x: count_tokens(x[1]["traced_tactics"][0]["state_before"]), 
+        reverse=True
+    )
+
+    keys_to_remove = [key for key, _ in sorted_data[:num_entries_to_remove]]
+    for key in keys_to_remove:
+        del data[key]
+        
+    with open(output_data_path, "w") as f:
+        data = json.dump(data, f, indent=4)
+
 
 def filter_dataset_for_length(
     data_file_path: Optional[str] = None,
@@ -282,6 +308,11 @@ def main():
             args.time_threshold,
             [repo_root() / f for f in args.data_file],
             repo_root() / args.output_file
+        )
+        filter_out_top5_percent_tokens(
+            repo_root() / args.output_file,
+            repo_root() / args.output_file,
+            tokenizer_id=args.tokenizer,
         )
 
 if __name__ == "__main__":

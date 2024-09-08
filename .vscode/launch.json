@@ -8,17 +8,25 @@
         //     "name": "Python Debugger: Current File with Arguments",
         //     "type": "debugpy",
         //     "request": "launch",
-        //     "program": "-m proof_flow.src.gfn_tuning.mine_negatives",
+        //     "program": "-m proof_flow.scripts.data_preprocessing.formal_statements",
         //     "console": "integratedTerminal",
-        //     "args": "device=gpu",
+        //     "args": "--src /home/vincentzhu/gfn_ntp/data/time_filtered_v3.json",
         // },
         {
             "name": "Python Debugger: Current File with Arguments",
             "type": "debugpy",
             "request": "launch",
-            "program": "-m proof_flow.src.gfn_tuning.train",
+            "program": "-m proof_flow.scripts.rm_eval.sample_proofs",
             "console": "integratedTerminal",
-            "args": "device=gpu",
-        }
+            "args": "",
+        },
+        // {
+        //     "name": "Python Debugger: Current File with Arguments",
+        //     "type": "debugpy",
+        //     "request": "launch",
+        //     "program": "-m proof_flow.src.gfn_tuning.train",
+        //     "console": "integratedTerminal",
+        //     "args": "device=gpu",
+        // }
     ]
 }
