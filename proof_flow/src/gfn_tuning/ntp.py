@@ -366,7 +366,7 @@ class NeuralTheoremProvingTask(LightningModule):
             # tactics_token_length = (tokens[:, input_ids.shape[1]:] == self.end_of_sentence_token_id).count_nonzero(dim=-1)
             # looking for first occurence of end_of_step_token_id after the prompt
             # - among multiple max values, argmax returns the first occurrence
-            # - this excludes the end of step token
+            # - this excludes the end of step token (eos token omitted in replay buffer!!)
             is_end_of_step = (tokens[:, prompt_length:]).eq(self.end_of_step_token_id)
             pre_pad_length = is_end_of_step.float().argmax(dim=-1) + prompt_length
 
@@ -526,18 +526,19 @@ class NeuralTheoremProvingTask(LightningModule):
         # start: -1 because the input_ids were shifted forward by 1
         start = (prompt_lengths - 1).unsqueeze(1)
 
-        # this old impl doesn't work because termination_token can appear in the prompt
         # stop = (relevant_tokens == termination_token_id).float().argmax(dim=-1).unsqueeze(1)
-        # - in this case, it's easier to find first occurrence of the pad tokens (not in prompt)
+        # this old implementation doesn't work for two reasons
+        # 1. term token can appear in the prompt and prompt length is variable
+        #    making the search a little difficult
+        # 2. preprocessing state tactic tokens before adding to the
+        #    replay buffer INCLUDES REMOVING END OF STEP TOKEN IN ADDITION TO PADDING
+        # fixed implementation depends only on pad tokens
         pad_occurrences = (relevant_tokens == pad_token_id)
         first_pad_idx = torch.where(
             pad_occurrences.any(dim=1), 
             pad_occurrences.float().argmax(dim=1), 
             relevant_tokens.shape[1]
         )
-        # -1 to exclude the end token
-        # stop = (first_pad_idx - 1).unsqueeze(1)
-        # TODO: understand why this is correct (why don't we need -1?)
         stop = (first_pad_idx).unsqueeze(1)
 
         # create an index tensor for the sequence dimension
@@ -551,8 +552,7 @@ class NeuralTheoremProvingTask(LightningModule):
         # create the mask based on the condition start <= idx < stop
         # mask is 1 where we want to keep the log probabilities
         mask = (idx >= start) & (idx < stop)
-        res = (seq_log_probs * mask).sum(dim=1)
-        return res
+        return (seq_log_probs * mask).sum(dim=1)
     
 
     def _sample_replay_trajectories(
