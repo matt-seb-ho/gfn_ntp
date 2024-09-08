@@ -9,8 +9,12 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from peft import AutoPeftModelForCausalLM
 
-from proof_flow.src.utils import get_config, repo_root, set_up_padding
-from proof_flow.src.gfn_tuning.verifier import batch_completion_probabilities
+from proof_flow.src.utils import (
+    batch_completion_probabilities,
+    get_config, 
+    repo_root, 
+    set_up_padding,
+)
 from proof_flow.src.gfn_tuning.reward import build_reward_inputs
 
 """

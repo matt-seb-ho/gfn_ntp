@@ -4,26 +4,18 @@ from contextlib import contextmanager
 
 import torch
 from peft import PeftModel
-from transformers import (
-    AutoModel,
-    AutoTokenizer
-)
+from transformers import AutoTokenizer
 
 from proof_flow.src.constants import (
     DEFAULT_VERIFIER_BATCH_SIZE,
     PROOF_COMPLETE_MESSAGE,
     TACTIC_ERROR_STRINGS
 )
-from proof_flow.src.gfn_tuning.verifier import (
+from proof_flow.src.utils import (
     batch_completion_probabilities,
     batch_iterator
 )
-from proof_flow.src.prompts import (
-    INSTRUCTION_PROMPT_TEMPLATE,
-    INSTRUCTION_COMPLETION_TEMPLATE,
-    INSTRUCTION_COMPLETION_TEMPLATE_WITH_NEXT_STATE,
-    RM_TEMPLATES,
-)
+from proof_flow.src.prompts import RM_TEMPLATES
 
 
 def build_reward_inputs(
@@ -43,121 +35,6 @@ def build_reward_inputs(
             state=state, tactic=tactic, next_state=next_state
         ),
     )
-
-
-def compute_log_reward(
-    states: list[list[str]],
-    tactics: list[list[str]],
-    model: PeftModel,
-    tokenizer: AutoTokenizer,
-    batch_size: int = 8,
-    use_sts_format: bool = False,
-    prompts_for_model: Optional[str] = "llemma",
-    device: Optional[str | torch.device] = None,
-    length_penalty: bool = True,
-) -> torch.Tensor:
-    """
-    Computes reward for a batch of trajectores (states, tactics) using heuristics and model.
-
-    New Formulation (Pseudo-code):
-    if trajectory_correct:
-        return 0
-    elif trajectory has bad tactic:
-        return -100
-    else:
-        return max(reward_model_scores, -100)
-    
-    Arguments
-        states: 2D list of shape (batch_size, trajectory_length) containing states
-        tactics: 2D list of shape (batch_size, trajectory_length - 1) containing tactics
-        model: verifier for scoring the generated text
-        tokenizer: AutoTokenizer for encoding the input
-    """
-    assert len(states) == len(tactics) # batch_size
-    
-    # for each trajectory
-    # - either assign heuristic score or queue prompt-completion job
-    log_r = torch.zeros(len(states), device=device)
-    trajectory_groups = []
-    prompt_completion_pairs = []
-    for i, (_states, _tactics) in enumerate(zip(states, tactics)):
-        # _states: list[str]: represents states for this trajectory
-        # _tactics: list[str]: represents tactics for this trajectory
-        if _states[-1] == PROOF_COMPLETE_MESSAGE:
-            # log_r[i] = 0
-            continue
-        elif _is_tactic_result_an_error(_states[-1]):
-            log_r[i] = -100
-        else:
-            # queue prompt-completion logp jobs
-            for step_idx in range(len(_tactics)):
-                rm_inputs = build_reward_inputs(
-                    _states[step_idx], 
-                    _tactics[step_idx], 
-                    _states[step_idx + 1],
-                    use_sts_format=use_sts_format,
-                    prompts_for_model=prompts_for_model,
-                )
-                trajectory_groups.append(i)
-                prompt_completion_pairs.append(rm_inputs)
-            
-    # run queued prompt-completion jobs
-    if prompt_completion_pairs:
-        stepwise_scores = []
-        for batch in batch_iterator(prompt_completion_pairs, batch_size):
-            log_ps, lengths = batch_completion_probabilities(
-                model, 
-                tokenizer, 
-                batch,
-                device=device,
-            )
-            if length_penalty:
-                stepwise_scores.append(log_ps / lengths)
-            else:
-                stepwise_scores.append(log_ps)
-            
-        stepwise_scores = torch.cat(stepwise_scores)
-        log_r = log_r.scatter_add(
-            0,                  # dim
-            trajectory_groups,  # indices
-            stepwise_scores     # values
-        )
-
-    # clip reward to -100
-    log_r = torch.clamp(log_r, min=-100)
-    return log_r
-
-
-def rm_formatting_func(
-    state: str, 
-    tactic: str, 
-    next_state: Optional[str]
-) -> tuple[str, str]:
-    prompt = INSTRUCTION_PROMPT_TEMPLATE.format(state=state)
-    if next_state is None:
-        completion = INSTRUCTION_COMPLETION_TEMPLATE.format(tactic=tactic)
-    else:
-        completion = INSTRUCTION_COMPLETION_TEMPLATE_WITH_NEXT_STATE.format(
-            tactic=tactic, 
-            next_state=next_state
-        )
-    return prompt, completion
-
-        
-def format_prompt(initial_state: str, tactic: Optional[str], resulting_state: Optional[str]) -> str:
-    # TODO: finalize this to match the verifier's training
-    if tactic is not None:
-        if resulting_state is None:
-            return f"{initial_state}\n###\n{tactic}\n###\n{resulting_state}"
-        return f"{initial_state}\n###\n{tactic}"
-    return f"{initial_state}\n###\n"
-
-
-def _is_tactic_result_an_error(tactic_result: str) -> bool:
-    for error_string in TACTIC_ERROR_STRINGS:
-        if error_string in tactic_result:
-            return True
-    return False
 
 
 class NTPReward:
@@ -190,7 +67,7 @@ class NTPReward:
             or DEFAULT_VERIFIER_BATCH_SIZE
         )
         with self._compute_reward_ctx():
-            log_reward = compute_log_reward(
+            log_reward = self.compute_log_reward(
                 states, 
                 tactics, 
                 self.model, 
@@ -201,6 +78,97 @@ class NTPReward:
         return log_reward
     
     
+    def compute_log_reward(
+        self,
+        states: list[list[str]],
+        tactics: list[list[str]],
+        model: PeftModel,
+        tokenizer: AutoTokenizer,
+        batch_size: int = 8,
+        use_sts_format: bool = False,
+        prompts_for_model: Optional[str] = "llemma",
+        device: Optional[str | torch.device] = None,
+        length_penalty: bool = True,
+    ) -> torch.Tensor:
+        """
+        Computes reward for a batch of trajectores (states, tactics) using heuristics and model.
+
+        New Formulation (Pseudo-code):
+        if trajectory_correct:
+            return 0
+        elif trajectory has bad tactic:
+            return -100
+        else:
+            return max(reward_model_scores, -100)
+        
+        Arguments
+            states: 2D list of shape (batch_size, trajectory_length) containing states
+            tactics: 2D list of shape (batch_size, trajectory_length - 1) containing tactics
+            model: verifier for scoring the generated text
+            tokenizer: AutoTokenizer for encoding the input
+        """
+        assert len(states) == len(tactics) # batch_size
+        
+        # for each trajectory
+        # - either assign heuristic score or queue prompt-completion job
+        log_r = torch.zeros(len(states), device=device)
+        trajectory_groups = []
+        prompt_completion_pairs = []
+        for i, (_states, _tactics) in enumerate(zip(states, tactics)):
+            # _states: list[str]: represents states for this trajectory
+            # _tactics: list[str]: represents tactics for this trajectory
+            if _states[-1] == PROOF_COMPLETE_MESSAGE:
+                # log_r[i] = 0
+                continue
+            elif self._is_tactic_result_an_error(_states[-1]):
+                log_r[i] = -100
+            else:
+                # queue prompt-completion logp jobs
+                for step_idx in range(len(_tactics)):
+                    rm_inputs = build_reward_inputs(
+                        _states[step_idx], 
+                        _tactics[step_idx], 
+                        _states[step_idx + 1],
+                        use_sts_format=use_sts_format,
+                        prompts_for_model=prompts_for_model,
+                    )
+                    trajectory_groups.append(i)
+                    prompt_completion_pairs.append(rm_inputs)
+                
+        # run queued prompt-completion jobs
+        if prompt_completion_pairs:
+            stepwise_scores = []
+            for batch in batch_iterator(prompt_completion_pairs, batch_size):
+                log_ps, lengths = batch_completion_probabilities(
+                    model, 
+                    tokenizer, 
+                    batch,
+                    device=device,
+                )
+                if length_penalty:
+                    stepwise_scores.append(log_ps / lengths)
+                else:
+                    stepwise_scores.append(log_ps)
+                
+            stepwise_scores = torch.cat(stepwise_scores)
+            log_r = log_r.scatter_add(
+                0,                  # dim
+                trajectory_groups,  # indices
+                stepwise_scores     # values
+            )
+
+        # clip reward to -100
+        log_r = torch.clamp(log_r, min=-100)
+        return log_r
+
+
+    def _is_tactic_result_an_error(tactic_result: str) -> bool:
+        for error_string in TACTIC_ERROR_STRINGS:
+            if error_string in tactic_result:
+                return True
+        return False
+
+
     @contextmanager
     def _compute_reward_ctx(self):
         """

@@ -11,18 +11,17 @@ from pytorch_lightning import LightningModule
 from transformers import AutoTokenizer
 from torch.nn.utils.rnn import pad_sequence
 
-from proof_flow.src.gfn_tuning.proof_tree import ProofTreeNode, extract_trajectories
+from proof_flow.src.gfn_tuning.proof_tree import (
+    ProofTreeNode, extract_trajectories
+)
 from proof_flow.src.gfn_tuning.replay_buffer import ReplayBuffer
 from proof_flow.src.gfn_tuning.reward import NTPReward
-from proof_flow.src.gfn_tuning.verifier import (
-    batch_iterator, 
-    batch_iterator_zip,
-)
 from proof_flow.src.prompts import (
     INSTRUCTION_PROMPT_TEMPLATE,
 )
 from proof_flow.src.utils import (
     prepare_environment_for_lean_dojo,
+    batch_iterator_zip,
 )
 
 
@@ -438,7 +437,7 @@ class NeuralTheoremProvingTask(LightningModule):
                 batch_first=True,
                 padding_value=self.tokenizer.pad_token_id,
             )
-            step_logpfs[b_idxs, s_idxs] = self._get_completion_log_pfs(
+            step_logpfs[b_idxs, s_idxs] = self._compute_replay_log_pfs(
                 batch_input_ids,
                 torch.tensor(prefix_lengths),
                 self.end_of_step_token_id,
@@ -468,7 +467,7 @@ class NeuralTheoremProvingTask(LightningModule):
         # return t_logpfs, log_r
     
 
-    def _get_completion_log_pfs(
+    def _compute_replay_log_pfs(
         self,
         input_ids: torch.Tensor,
         prompt_lengths: torch.Tensor,
@@ -499,7 +498,7 @@ class NeuralTheoremProvingTask(LightningModule):
             torch.cuda.empty_cache()
             gc.collect()
             sub_results = [
-                self._get_completion_log_pfs(
+                self._compute_replay_log_pfs(
                     half,
                     prompt_lengths,
                     termination_token_id,
@@ -655,6 +654,8 @@ def generate_step(
     #   - this prevents empty tactics from being generated (reward current cannot handle empty tactics)
     # - passing in a different eos_token_id acts as a stopping criteria 
     #   - (attention computations are not affected)
+    # - choosing to output logits instead of scores to get behaviour more similar
+    #   to the replay computation (scores are different because of suppress)
     outputs = model.generate(
         input_ids=input_ids,
         max_new_tokens=max_new_tokens,
@@ -678,7 +679,6 @@ def generate_step(
     # where state includes the prompt and the generated tokens, 
     # while log_pf included only the generated tokens' log probabilities.
     prompt_length = prompt_length or input_ids.shape[1]
-    old_pad_mask = outputs.sequences[:, prompt_length:] == model.config.pad_token_id
     # fix padding:
     # - pad out scores from term token onwards (first term token after prompt)
     pad_mask = (

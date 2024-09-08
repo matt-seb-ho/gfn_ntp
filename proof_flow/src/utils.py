@@ -1,11 +1,17 @@
+import gc
+import torch
 import os
-from functools import cache, lru_cache
+from functools import cache
+from itertools import islice
 from pathlib import Path
 from typing import Optional
 
 import hydra
 from dotenv import load_dotenv
 from omegaconf import OmegaConf
+from transformers import AutoModelForCausalLM
+from transformers import AutoTokenizer
+
 
 HF_ACCESS_TOKEN_VAR_NAME = "HF_ACCESS_TOKEN"
 DEFAULT_PAD_TOKEN = "<pad>"
@@ -45,25 +51,6 @@ def prepare_environment_for_lean_dojo():
         config_cache_path = get_config().paths.lean_dojo_cache_path
         if config_cache_path is not None:
             os.environ[cache_path_key] = config_cache_path
-
-
-# cache individual attribute imports
-@lru_cache(maxsize=None)
-def import_attr_from_lean_dojo(attr_name):
-    prepare_environment_for_lean_dojo()
-    import lean_dojo
-    return getattr(lean_dojo, attr_name)
-
-
-# wrapper for multiple attributes
-def import_from_lean_dojo(*args):
-    if len(args) == 0:
-        prepare_environment_for_lean_dojo()
-        import lean_dojo
-        return lean_dojo
-    if len(args) == 1:
-        return import_attr_from_lean_dojo(args[0])
-    return tuple(import_attr_from_lean_dojo(arg) for arg in args)
 
 
 def get_hf_access_token(): 
@@ -129,11 +116,155 @@ def set_up_padding(
     tokenizer.padding_side = padding_side
 
 
-def lora_to_base(model):
-    model.base_model.disable_adapter_layers()
-    model.eval()
+
+# reference:
+# https://discuss.huggingface.co/t/announcement-generation-get-probabilities-for-generated-output/30075/17
+def batch_completion_probabilities(
+    model: AutoModelForCausalLM,
+    tokenizer: AutoTokenizer,
+    prompt_completion_pairs: list[tuple[str, str]],
+    sep: str = "",
+    device: Optional[str | torch.device] = None,
+    split_and_retry: bool = True,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    input_texts = []
+    start_char_idxs = [] # index of the first completion token
+    end_char_idxs = []   # index of the last completion token
+    for prompt, completion in prompt_completion_pairs:
+        text = prompt + sep + completion
+        input_texts.append(text)
+        start_char_idxs.append(len(prompt) + len(sep))
+        end_char_idxs.append(len(text) - 1)
+    
+    batch_enc = tokenizer(input_texts, padding=True, return_tensors="pt")
+    if device:
+        batch_enc = batch_enc.to(device)
+    input_ids = batch_enc.input_ids
+    try:
+        outputs = model(**batch_enc) # ensure attention mask is passed
+    except RuntimeError as e:
+        if (
+            not split_and_retry 
+            or "out of memory" not in str(e)
+            or len(prompt_completion_pairs) == 1
+        ):
+            raise e
+        # split the batch in half and retry
+        torch.cuda.empty_cache()
+        gc.collect()
+        halfway_idx = len(prompt_completion_pairs) // 2
+        half1 = prompt_completion_pairs[:halfway_idx]
+        half2 = prompt_completion_pairs[halfway_idx:]
+        sub_results = [
+            batch_completion_probabilities(
+                model, 
+                tokenizer, 
+                half_pairs,
+                sep=sep, 
+                device=device, 
+                split_and_retry=True,
+            )
+            for half_pairs in (half1, half2)
+        ]
+        return sub_results[0] + sub_results[1]
+
+    log_prob_distributions = torch.log_softmax(outputs.logits, dim=-1).detach()
+
+    # collect the probability of the generated token
+    # - softmax(logits[b, i, :]) is the probability distribution for the token AFTER input_ids[b, i]
+    # - (consequence 1): we don't care about the distribution after the last token in the input_ids
+    log_prob_distributions = log_prob_distributions[:, :-1, :]
+    # - while we have the distribution over the vocab after every token i,
+    #   we only actually care about the probability of the actual next token
+    # - i.e., we want softmax(logits[b, i, :])[input_ids[b, i+1]]
+    # - notice the idx used for input_ids is i+1 while the idx used for log_probs is i
+    # - for the gather operation, we need them aligned
+    # - (consequence 2): we shift the input_ids forwards/leftwards by 1
+    input_ids = input_ids[:, 1:]
+    # - while logits has shape (batch_size, seq_len, vocab_size),
+    #   and prob_distributions has shape (batch_size, seq_len - 1, vocab_size),
+    #   the gather result has shape (batch_size, seq_len - 1)
+    # - it's a batch of log probabilities of the actual sequence's tokens
+    seq_log_probs = torch.gather(log_prob_distributions, 2, input_ids[:, :, None]).squeeze(-1)
+
+    # version 1
+    # completion_log_probs = []
+    # for i in range(len(input_texts)):
+    #     # start: token index of the first completion token
+    #     # - the -1 is because the input_ids were shifted forward by 1
+    #     # stop: token index of the token after the last completion token
+    #     # - we use it as the end slice index, so we don't need to do -1
+    #     start = batch_enc.char_to_token(i, start_char_idxs[i]) - 1
+    #     stop = batch_enc.char_to_token(i, end_char_idxs[i])
+    #     completion_log_prob = seq_log_probs[i, start:stop].sum().item()
+    #     completion_log_probs.append({
+    #         "log_prob_sum": completion_log_prob,
+    #         "token_count": stop - start,
+    #     })
+    # return completion_log_probs
+
+    # version 2
+    start = []
+    stop = []
+    for i in range(len(input_texts)):
+        # start: token index of the first completion token
+        # - the -1 is because the input_ids were shifted forward by 1
+        # stop: token index of the token after the last completion token
+        # - we use it as the end slice index, so we don't need to do -1
+        # NOTE: char_to_token returns None if char_idx is out of bounds
+        # - this only happens when completion is empty
+        start.append(batch_enc.char_to_token(i, start_char_idxs[i]) - 1)
+        stop.append(batch_enc.char_to_token(i, end_char_idxs[i]))
+    start = torch.tensor(start, device=device).unsqueeze(1)
+    stop = torch.tensor(stop, device=device).unsqueeze(1)
+    idx = (
+        torch.arange(seq_log_probs.shape[1], device=seq_log_probs.device)
+        .unsqueeze(0)
+        .expand(seq_log_probs.shape[0], -1)
+    )
+    mask = (idx >= start) & (idx < stop)
+    completion_log_probs = (seq_log_probs * mask).sum(dim=1)
+    return completion_log_probs, (stop - start).squeeze(-1)
 
 
-def base_to_lora(model):
-    model.base_model.enable_adapter_layers()
-    model.train()
+def batch_iterator(iterable, batch_size):
+    """
+    Generator that yields fixed-size batches from the input iterable.
+    
+    Parameters:
+    - iterable: An iterable from which to yield batches.
+    - batch_size: The size of each batch as an integer.
+    
+    Yields:
+    - Batches of the input iterable, each batch is of size batch_size.
+    """
+    iterator = iter(iterable)
+    while True:
+        batch = list(islice(iterator, batch_size))
+        if not batch:
+            break
+        yield batch
+
+
+def batch_iterator_zip(iterables, batch_size):
+    """
+    Generator that yields fixed-size batches from the input iterables.
+    
+    Parameters:
+    - iterables: A list of iterables from which to yield batches.
+    - batch_size: The size of each batch as an integer.
+    
+    Yields:
+    - Batches of the input iterables, each batch is of size batch_size.
+    - If batch_size = n and we had m iterables, batches have shape 
+    [[iter1_item1, ..., iter1_itemn], ..., [iterm_item1, ..., iterm_itemn]]
+
+    Note:
+    - if any of the iterables is exhausted, the generator stops.
+    """
+    iterators = [iter(it) for it in iterables]
+    while True:
+        batch = [list(islice(it, batch_size)) for it in iterators]
+        if not all(batch):
+            break
+        yield batch
