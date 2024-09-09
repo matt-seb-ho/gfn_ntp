@@ -5,6 +5,8 @@ import time
 import uuid
 import torch
 import asyncio
+import os
+import pickle
 from loguru import logger
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
@@ -63,9 +65,10 @@ class BestFirstSearchProver:
         self,
         tac_gen,  # A given tactic generator.
         timeout: int,
-        max_expansions: Optional[int],
+        max_expansions: int,
         num_sampled_tactics: int,
         debug: bool,
+        save_search_tree: Optional[str] = None,
     ) -> None:
         self.tac_gen = tac_gen
         self.tac_gen.initialize()
@@ -73,6 +76,7 @@ class BestFirstSearchProver:
         self.max_expansions = max_expansions
         self.num_sampled_tactics = num_sampled_tactics
         self.debug = debug
+        self.save_search_tree = save_search_tree
 
         self.num_expansions = 0
         self.actor_time = 0.0
@@ -118,6 +122,12 @@ class BestFirstSearchProver:
                 proof = [e.tactic for e in self.root.extract_proof()]
             else:
                 proof = None
+
+            if self.save_search_tree:
+                filename = f"{thm.uid}.pickle"
+                tree_file =  os.path.join(self.save_search_tree, filename)
+                with open(tree_file, "wb") as f:
+                    pickle.dump(self.root, f)
 
             result = SearchResult(
                 theorem=thm,
@@ -392,6 +402,7 @@ class DistributedProver:
         timeout: int,
         max_expansions: Optional[int],
         num_sampled_tactics: int,
+        save_search_tree: Optional[str] = None,
         debug: Optional[bool] = False,
     ) -> None:
         if gen_ckpt_path is None:
@@ -428,7 +439,12 @@ class DistributedProver:
         if not self.distributed:
             assert num_gpus <= 1
             self.prover = BestFirstSearchProver(
-                tac_gen, timeout, max_expansions, num_sampled_tactics, debug
+                tac_gen, 
+                timeout, 
+                max_expansions, 
+                num_sampled_tactics, 
+                debug,
+                save_search_tree=save_search_tree,
             )
             return
 
