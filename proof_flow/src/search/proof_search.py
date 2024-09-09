@@ -411,6 +411,8 @@ class DistributedProver:
         num_sampled_tactics: int,
         max_new_tokens: int,
         save_search_tree: Optional[str] = None,
+        is_peft_model: bool = False,
+        quantization_config: Optional[BitsAndBytesConfig] = None,
         debug: Optional[bool] = False,
     ) -> None:
         if gen_ckpt_path is None:
@@ -446,6 +448,8 @@ class DistributedProver:
                 max_oup_seq_len, 
                 max_new_tokens,
                 length_penalty,
+                is_peft_model=is_peft_model,
+                quantization_config=quantization_config,
             )
 
         self.distributed = num_workers > 1

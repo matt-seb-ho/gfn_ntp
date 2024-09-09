@@ -28,7 +28,6 @@ class Status(Enum):
 
 
 class Node(ABC):
-
     @property
     @abstractmethod
     def status(self) -> Status:
@@ -105,6 +104,8 @@ class InternalNode(Node):
         default=math.inf, init=False, compare=False, repr=False
     )
 
+    # enables control over search depth
+    # - root node has depth 0
     depth: int = -1
 
     @property

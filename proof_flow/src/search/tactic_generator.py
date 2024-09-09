@@ -1,9 +1,15 @@
 import ray
 import openai
 from loguru import logger
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 from abc import ABC, abstractmethod
-from transformers import AutoModelForSeq2SeqLM, AutoModelForCausalLM, AutoTokenizer
+from peft import AutoPeftModelForCausalLM, AutoPeftModelForSeq2SeqLM
+from transformers import (
+    AutoModelForSeq2SeqLM,
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    BitsAndBytesConfig,
+)
 
 from proof_flow.src.search.common import (
     remove_marks, 
@@ -184,6 +190,8 @@ class HuggingFaceGenerator(TacticGenerator):
         max_new_tokens: int,
         length_penalty: float,
         template: str = "%s",
+        is_peft_model: bool = False,
+        quantization_config: Optional[BitsAndBytesConfig] = None,
     ):
         self.model_path = model_path
         self.device = device
@@ -192,18 +200,32 @@ class HuggingFaceGenerator(TacticGenerator):
         self.max_new_tokens = max_new_tokens
         self.length_penalty = length_penalty
         self.template = template
+        self.is_peft_model = is_peft_model
+        self.quantization_config = quantization_config
 
     def initialize(self) -> None:
         try:
+            auto_cls = (
+                AutoPeftModelForSeq2SeqLM 
+                if self.is_peft_model 
+                else AutoModelForSeq2SeqLM
+            )
             self.generator = AutoModelForSeq2SeqLM.from_pretrained(
                 self.model_path,
                 torch_dtype="auto",
+                quantization_config=self.quantization_config,
             )
             self.decoder_only = False
         except ValueError:
-            self.generator = AutoModelForCausalLM.from_pretrained(
+            auto_cls = (
+                AutoPeftModelForCausalLM
+                if self.is_peft_model 
+                else AutoModelForCausalLM
+            )
+            self.generator = auto_cls.from_pretrained(
                 self.model_path,
                 torch_dtype="auto",
+                quantization_config=self.quantization_config,
             )
             self.decoder_only = True
         self.generator = self.generator.to(self.device).eval()
