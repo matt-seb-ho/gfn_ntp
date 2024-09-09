@@ -1,13 +1,21 @@
 import ray
 import openai
-from lean_dojo import Pos
 from loguru import logger
 from typing import List, Tuple
 from abc import ABC, abstractmethod
 from transformers import AutoModelForSeq2SeqLM, AutoModelForCausalLM, AutoTokenizer
 
-from retrieval.model import PremiseRetriever
-from common import remove_marks, zip_strict, format_augmented_state
+from proof_flow.src.search.common import (
+    remove_marks, 
+    zip_strict, 
+    format_augmented_state,
+)
+from proof_flow.src.search.retriever_model import PremiseRetriever
+from proof_flow.src.utils import prepare_environment_for_lean_dojo
+
+
+prepare_environment_for_lean_dojo()
+from lean_dojo import Pos # isort: skip
 
 
 class TacticGenerator(ABC):

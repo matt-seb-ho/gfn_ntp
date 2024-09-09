@@ -1,13 +1,30 @@
-"""Proof search using best-first search.
-"""
-
+# proof search using best-first search (based on ReProver)
 import sys
 import ray
 import time
 import uuid
 import torch
 import asyncio
-from lean_dojo import (
+from loguru import logger
+from dataclasses import dataclass
+from typing import List, Optional, Tuple
+from ray.util.actor_pool import ActorPool
+from vllm import AsyncLLMEngine, AsyncEngineArgs, SamplingParams, RequestOutput
+
+from proof_flow.src.search.common import zip_strict
+from proof_flow.src.search.search_tree import *
+from proof_flow.src.search.tactic_generator import (
+    TacticGenerator,
+    HuggingFaceGenerator,
+    RetrievalAugmentedGenerator,
+    FixedTacticGenerator,
+    VllmGenerator,
+)
+from proof_flow.src.utils import prepare_environment_for_lean_dojo
+
+
+prepare_environment_for_lean_dojo()
+from lean_dojo import ( # isort: skip
     Pos,
     Dojo,
     Theorem,
@@ -20,21 +37,6 @@ from lean_dojo import (
     DojoInitError,
     DojoCrashError,
     DojoTacticTimeoutError,
-)
-from loguru import logger
-from dataclasses import dataclass
-from typing import List, Optional, Tuple
-from ray.util.actor_pool import ActorPool
-from vllm import AsyncLLMEngine, AsyncEngineArgs, SamplingParams, RequestOutput
-
-from common import zip_strict
-from prover.search_tree import *
-from prover.tactic_generator import (
-    TacticGenerator,
-    HuggingFaceGenerator,
-    RetrievalAugmentedGenerator,
-    FixedTacticGenerator,
-    VllmGenerator,
 )
 
 

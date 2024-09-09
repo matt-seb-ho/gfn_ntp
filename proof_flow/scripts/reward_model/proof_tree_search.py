@@ -14,8 +14,8 @@ from lean_dojo import Theorem
 from typing import List, Tuple, Optional
 from lean_dojo import LeanGitRepo, Theorem, Pos, is_available_in_cache
 
-from common import set_logger
-from prover.proof_search import Status, DistributedProver
+from proof_flow.src.search.common import set_logger
+from proof_flow.src.search.proof_search import Status, DistributedProver
 
 
 def _get_theorems(

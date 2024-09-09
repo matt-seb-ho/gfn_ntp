@@ -1,18 +1,16 @@
-"""Ligihtning module for the premise retriever."""
-
+# lightning module for the premise retriever.
 import os
 import torch
 import pickle
 import numpy as np
 from tqdm import tqdm
-from lean_dojo import Pos
 from loguru import logger
 import pytorch_lightning as pl
 import torch.nn.functional as F
 from typing import List, Dict, Any, Tuple, Union
 from transformers import AutoModelForTextEncoding, AutoTokenizer
 
-from common import (
+from proof_flow.src.search.common import (
     Premise,
     Context,
     Corpus,
@@ -21,6 +19,11 @@ from common import (
     zip_strict,
     cpu_checkpointing_enabled,
 )
+from proof_flow.src.utils import prepare_environment_for_lean_dojo
+
+
+prepare_environment_for_lean_dojo()
+from lean_dojo import Pos # isort: skip
 
 
 torch.set_float32_matmul_precision("medium")

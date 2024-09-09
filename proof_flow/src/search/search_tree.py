@@ -1,19 +1,22 @@
-"""Definitions of the search tree used by the prover.
-"""
-
+# search tree class used in best first search
 import math
 from enum import Enum
-from lean_dojo import (
+from abc import ABC, abstractmethod
+from functools import total_ordering
+from dataclasses import dataclass, field
+from typing import Optional, List, Iterable, Union
+
+from proof_flow.src.utils import prepare_environment_for_lean_dojo
+
+
+prepare_environment_for_lean_dojo()
+from lean_dojo import ( # isort: skip
     TacticState,
     LeanError,
     TimeoutError,
     ProofGivenUp,
     ProofFinished,
 )
-from abc import ABC, abstractmethod
-from functools import total_ordering
-from dataclasses import dataclass, field
-from typing import Optional, List, Iterable, Union
 
 
 class Status(Enum):
