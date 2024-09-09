@@ -6,8 +6,8 @@ data:
 
 model:
   # test with llemma, run later with dsp
-  name: "EleutherAI/llemma_7b"
-  # name: "deepseek-ai/DeepSeek-Prover-V1"
+  # name: "EleutherAI/llemma_7b"
+  name: "deepseek-ai/DeepSeek-Prover-V1"
   lora_config:
     _target_: peft.LoraConfig
 
@@ -73,8 +73,10 @@ reward:
   # TODO: get dsp adapters
   # reward_model_hf_id: "msho/llemma_sft"
   # reward_model_adapter_name: "reward"
-  reward_model_hf_id: null
-  reward_model_adapter_name: null
+  reward_model_hf_id: "msho/dspv1_sft_dspfmt"
+  reward_model_adapter_name: "reward"
+  # reward_model_hf_id: null
+  # reward_model_adapter_name: null
 
 callbacks:
   - _target_: pytorch_lightning.callbacks.ModelCheckpoint

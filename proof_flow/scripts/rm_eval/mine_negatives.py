@@ -185,6 +185,36 @@ if __name__ == "__main__":
                 "positive": categorized_entries["positive"],
                 "negative": categorized_entries["negative"],
             })
+    
+    if cfg.valid_tactics_only:
+        # filter out invalid negative tactics
+        # - (only keep negative tactics that have a TacticState result)
+        # - verify_generations module output indicates invalid tactics with
+        # state_after: None and non-None message
+        valid_only_stats = defaultdict(list)
+        for entry in pair_data:
+            filtered_negatives = []
+            for tactic in entry["negative"]:
+                if tactic["state_after"] is not None:
+                    filtered_negatives.append(tactic)
+            valid_only_stats["before"].append(len(entry["negative"]))
+            valid_only_stats["after"].append(len(filtered_negatives))
+            valid_only_stats["reduction"].append(
+                len(entry["negative"]) - len(filtered_negatives)
+            )
+            entry["negative"] = filtered_negatives
+
+        # remove pairs with no negative tactics
+        pair_data = [e for e in pair_data if len(e["negative"]) > 0]
+
+        # print stats
+        print(f"total neg before: {sum(valid_only_stats['before'])}")
+        print(f"total neg after: {sum(valid_only_stats['after'])}")
+        print(f"total tactic reduction: {sum(valid_only_stats['reduction'])}")
+        print(f"avg red: {sum(valid_only_stats['reduction']) / len(pair_data)}")
+        print(f"avg neg before: {sum(valid_only_stats['before']) / len(pair_data)}")
+        print(f"avg neg after: {sum(valid_only_stats['after']) / len(pair_data)}")
+
 
     print(f"Extracted RM data with pairs from {len(pair_data)} states")
     with open(repo_root() / cfg.rm_data_file, "w") as f:

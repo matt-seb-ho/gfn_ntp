@@ -195,11 +195,13 @@ if __name__ == "__main__":
         model = AutoPeftModelForCausalLM.from_pretrained(
             model_id, 
             trust_remote_code=True,
+            torch_dtype="auto",
         )
     else:
         model = AutoModelForCausalLM.from_pretrained(
             model_id, 
             trust_remote_code=True,
+            torch_dtype="auto",
         )
     tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
     set_up_padding(model, tokenizer)

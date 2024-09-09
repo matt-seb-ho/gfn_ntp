@@ -2,11 +2,12 @@
 input_file: "data/time_filtered_val.json"
 output_file: "data/sampled_proofs.json"
 verification_results_file: "data/verification_results.json"
-rm_data_file: "data/rm_eval_dataset_v2.json"
-rm_eval_results_dir: "data/rm_eval_results"
+rm_data_file: "data/rm_eval_dataset_v3.json"
+rm_eval_results_dir: "data/rm_eval_results/valid_tacs/"
 rm_eval_result_filename: "peft_sancheck.json"
 use_tqdm: true
 input_limit: null
+valid_tactics_only: true
 
 # selecting pairs to evaluate on -------------------
 # eval pairs {first, random, all}
@@ -17,7 +18,7 @@ max_pairs_per_state: 1
 
 # RM scoring settings -----------------------------
 use_sts_format: false
-prompts_for_model: llemma
+prompts_for_model: deepseek
 normalize_length: true
 
 
@@ -32,7 +33,8 @@ normalize_length: true
 # use_peft: false
 
 # trained verifiers
-model: msho/llemma_sft
+# model: msho/llemma_sft
+model: msho/dspv1_sft_dspfmt
 use_peft: true
 
 
