@@ -109,6 +109,22 @@ Resulting state (None means the tactic failed):
 {next_state}
 ---
 Answer: """
+LLEMMA_RM_STS_PROMPT_TEMPLATE_V2 = """Consider the following Lean 4 tactic state, tactic, and resulting state.
+
+Tactic state:
+---
+{state}
+---
+Candidate tactic:
+---
+{tactic}
+---
+Resulting tactic state:
+---
+{next_state}
+---
+Did the tactic make progress towards completing the proof?
+Answer: """
 LLEMMA_RM_STS_COMPLETION_TEMPLATE = "yes"
 
 # deepseek model

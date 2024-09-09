@@ -18,7 +18,7 @@ max_pairs_per_state: 1
 
 # RM scoring settings -----------------------------
 use_sts_format: false
-prompts_for_model: deepseek
+prompts_for_model: deepseek # {llemma, deepseek}
 normalize_length: true
 
 
@@ -35,6 +35,7 @@ normalize_length: true
 # trained verifiers
 # model: msho/llemma_sft
 model: msho/dspv1_sft_dspfmt
+# model: msho/dspv1_sft
 use_peft: true
 
 
