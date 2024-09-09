@@ -4,6 +4,14 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
+        {
+            "name": "Python Debugger: Current File with Arguments",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "-m proof_flow.scripts.rm_eval.post_bfs_mine_neg",
+            "console": "integratedTerminal",
+            "args": "",
+        },
         // {
         //     "name": "Python Debugger: Current File with Arguments",
         //     "type": "debugpy",
@@ -12,14 +20,14 @@
         //     "console": "integratedTerminal",
         //     "args": "--src /home/vincentzhu/gfn_ntp/data/time_filtered_v3.json",
         // },
-        {
-            "name": "Python Debugger: Current File with Arguments",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "-m proof_flow.scripts.rm_eval.sample_proofs",
-            "console": "integratedTerminal",
-            "args": "",
-        },
+        // {
+        //     "name": "Python Debugger: Current File with Arguments",
+        //     "type": "debugpy",
+        //     "request": "launch",
+        //     "program": "-m proof_flow.scripts.rm_eval.sample_proofs",
+        //     "console": "integratedTerminal",
+        //     "args": "",
+        // },
         // {
         //     "name": "Python Debugger: Current File with Arguments",
         //     "type": "debugpy",

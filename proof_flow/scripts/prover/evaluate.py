@@ -1,3 +1,5 @@
+"""Script for evaluating the prover on theorems extracted by LeanDojo.
+"""
 import sys
 sys.path.append('/home/vincentzhu/ReProver')
 import os
@@ -13,9 +15,9 @@ from lean_dojo import Theorem
 from typing import List, Tuple, Optional
 from lean_dojo import LeanGitRepo, Theorem, Pos, is_available_in_cache
 
-from common import set_logger
+from proof_flow.scripts.rm_eval.old_prover.common import set_logger
 
-from .proof_search import Status, DistributedProver
+from prover.proof_search_tree import Status, DistributedProver
 
 
 def _get_theorems(

@@ -1,18 +1,3 @@
-# --------------------------------------------------------------------
-# code reference
-# source: https://github.com/lean-dojo/ReProver/tree/main
-
-from .common import zip_strict
-from .search_tree import *
-from .tactic_generator import (
-    TacticGenerator,
-    HuggingFaceGenerator,
-    # RetrievalAugmentedGenerator,
-    FixedTacticGenerator,
-    VllmGenerator,
-)
-
-
 """Proof search using best-first search.
 """
 
@@ -42,16 +27,15 @@ from typing import List, Optional, Tuple
 from ray.util.actor_pool import ActorPool
 from vllm import AsyncLLMEngine, AsyncEngineArgs, SamplingParams, RequestOutput
 
-from common import zip_strict
-from .search_tree import *
-from .tactic_generator import (
+from proof_flow.scripts.rm_eval.old_prover.common import zip_strict
+from prover.search_tree import *
+from prover.tactic_generator import (
     TacticGenerator,
     HuggingFaceGenerator,
     RetrievalAugmentedGenerator,
     FixedTacticGenerator,
     VllmGenerator,
 )
-from tqdm import tqdm
 
 
 @dataclass(frozen=True)
@@ -408,7 +392,6 @@ class DistributedProver:
         num_sampled_tactics: int,
         debug: Optional[bool] = False,
     ) -> None:
-        self.num_workers = num_workers
         if gen_ckpt_path is None:
             assert tactic and not indexed_corpus_path
         else:
@@ -486,40 +469,16 @@ class DistributedProver:
         if not self.distributed:
             return [
                 self.prover.search(repo, thm, pos)
-                for thm, pos in tqdm(zip_strict(theorems, positions), desc="Processing Theorems", total=len(theorems))
+                for thm, pos in zip_strict(theorems, positions)
             ]
 
         try:
-            # results = list(
-            #     self.prover_pool.map_unordered(
-            #         lambda p, x: p.search.remote(repo, x[0], x[1]),
-            #         zip_strict(theorems, positions),
-            #     )
-            # )
-            # progress_bar = tqdm(total=len(theorems), desc="Processing Theorems in Parallel")
-
-            # # Use a generator to yield results and update the progress bar as tasks complete
-            # results = []
-            # for result in self.prover_pool.map_unordered(
-            #         lambda p, x: p.search.remote(repo, x[0], x[1]),
-            #         zip_strict(theorems, positions)
-            # ):
-            #     results.append(result)
-            #     progress_bar.update(self.num_workers)  # Update progress for each completed task
-
-            # progress_bar.close()
-            
             results = list(
-                tqdm(
-                    self.prover_pool.map_unordered(
-                        lambda p, x: p.search.remote(repo, x[0], x[1]),
-                        zip_strict(theorems, positions),
-                    ),
-                    total=len(theorems),
-                    desc="Searching theorems"
+                self.prover_pool.map_unordered(
+                    lambda p, x: p.search.remote(repo, x[0], x[1]),
+                    zip_strict(theorems, positions),
                 )
             )
-            
         except ray.exceptions.RayActorError as ex:
             logger.error(ex)
             sys.exit(1)

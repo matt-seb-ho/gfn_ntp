@@ -7,9 +7,9 @@ from tqdm import tqdm
 
 from proof_flow.src.utils import get_config, repo_root
 from lean_dojo import LeanGitRepo, Pos, Theorem
-from .proof_search import ProverActor, BestFirstSearchProver
-from .search_tree import Status
-from .tactic_generator import TacticGenerator, HuggingFaceGenerator
+from .old_prover.proof_search import ProverActor, BestFirstSearchProver
+from .old_prover.search_tree import Status
+from .old_prover.tactic_generator import TacticGenerator, HuggingFaceGenerator
 
 """
 given: 
