@@ -192,6 +192,7 @@ class HuggingFaceGenerator(TacticGenerator):
         template: str = "%s",
         is_peft_model: bool = False,
         quantization_config: Optional[BitsAndBytesConfig] = None,
+        use_beam_search: bool = True,
     ):
         self.model_path = model_path
         self.device = device
@@ -202,6 +203,7 @@ class HuggingFaceGenerator(TacticGenerator):
         self.template = template
         self.is_peft_model = is_peft_model
         self.quantization_config = quantization_config
+        self.use_beam_search = use_beam_search
 
     def initialize(self) -> None:
         try:
@@ -242,23 +244,28 @@ class HuggingFaceGenerator(TacticGenerator):
         state = self.template % state
         logger.debug(state)
         tokenized_state = self.tokenizer(
-            state, max_length=self.max_inp_seq_len, truncation=True, return_tensors="pt"
+            state, 
+            max_length=self.max_inp_seq_len, 
+            truncation=True, 
+            return_tensors="pt",
         )
         state_ids = tokenized_state.input_ids.to(self.device)
         state_mask = tokenized_state.attention_mask.to(self.device)
 
         # Generate tactic candidates using beam search.
+        num_beams = num_samples if self.use_beam_search else 1
         output = self.generator.generate(
             input_ids=state_ids,
             attention_mask=state_mask,
             max_length=self.max_oup_seq_len,
             max_new_tokens=self.max_new_tokens,
-            num_beams=num_samples,
+            num_beams=num_beams,
             length_penalty=self.length_penalty,
             do_sample=False,
             num_return_sequences=num_samples,
             early_stopping=False,
             output_scores=True,
+            output_logits=True,
             return_dict_in_generate=True,
         )
 
@@ -266,7 +273,23 @@ class HuggingFaceGenerator(TacticGenerator):
         raw_output_text = self.tokenizer.batch_decode(
             output.sequences, skip_special_tokens=True
         )
-        raw_scores = output.sequences_scores.tolist()
+        if self.use_beam_search:
+            raw_scores = output.sequences_scores.tolist()
+        else:
+            # when not using beam_search, generate returns a Generate(Arch)Output
+            # which unlike GenerateBeam(Arch)Output does not have sequences_scores
+            # we have to compute the scores manually
+            if self.decoder_only:
+                transition_scores = self.generator.compute_transition_scores(
+                    output.sequences, output.logits, normalize_logits=True
+                )
+                pad_mask = (
+                    output.sequences[state_ids.shape[1]:]
+                ).eq(self.tokenizer.pad_token_id)
+                transition_scores[pad_mask] = 0
+                raw_scores = transition_scores.sum(dim=1).tolist
+            else:
+                raise ValueError("non-beam search not yet supported for seq2seq models")
 
         output_text = []
         output_score = []
