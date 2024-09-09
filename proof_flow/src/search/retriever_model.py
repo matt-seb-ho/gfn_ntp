@@ -45,7 +45,10 @@ class PremiseRetriever(pl.LightningModule):
         self.num_retrieved = num_retrieved
         self.max_seq_len = max_seq_len
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.encoder = AutoModelForTextEncoding.from_pretrained(model_name)
+        self.encoder = AutoModelForTextEncoding.from_pretrained(
+            model_name,
+            torch_dtype="auto",
+        )
         self.embeddings_staled = True
 
     @classmethod

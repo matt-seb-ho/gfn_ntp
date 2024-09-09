@@ -193,10 +193,16 @@ class HuggingFaceGenerator(TacticGenerator):
 
     def initialize(self) -> None:
         try:
-            self.generator = AutoModelForSeq2SeqLM.from_pretrained(self.model_path)
+            self.generator = AutoModelForSeq2SeqLM.from_pretrained(
+                self.model_path,
+                torch_dtype="auto",
+            )
             self.decoder_only = False
         except ValueError:
-            self.generator = AutoModelForCausalLM.from_pretrained(self.model_path)
+            self.generator = AutoModelForCausalLM.from_pretrained(
+                self.model_path,
+                torch_dtype="auto",
+            )
             self.decoder_only = True
         self.generator = self.generator.to(self.device).eval()
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_path)
