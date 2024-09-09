@@ -28,6 +28,7 @@ class Status(Enum):
 
 
 class Node(ABC):
+
     @property
     @abstractmethod
     def status(self) -> Status:
@@ -103,6 +104,8 @@ class InternalNode(Node):
     _distance_to_proof: float = field(
         default=math.inf, init=False, compare=False, repr=False
     )
+
+    depth: int = -1
 
     @property
     def out_edges(self):

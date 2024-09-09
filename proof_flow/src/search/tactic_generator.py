@@ -181,6 +181,7 @@ class HuggingFaceGenerator(TacticGenerator):
         device,
         max_inp_seq_len: int,
         max_oup_seq_len: int,
+        max_new_tokens: int,
         length_penalty: float,
         template: str = "%s",
     ):
@@ -188,6 +189,7 @@ class HuggingFaceGenerator(TacticGenerator):
         self.device = device
         self.max_inp_seq_len = max_inp_seq_len
         self.max_oup_seq_len = max_oup_seq_len
+        self.max_new_tokens = max_new_tokens
         self.length_penalty = length_penalty
         self.template = template
 
@@ -228,6 +230,7 @@ class HuggingFaceGenerator(TacticGenerator):
             input_ids=state_ids,
             attention_mask=state_mask,
             max_length=self.max_oup_seq_len,
+            max_new_tokens=self.max_new_tokens,
             num_beams=num_samples,
             length_penalty=self.length_penalty,
             do_sample=False,

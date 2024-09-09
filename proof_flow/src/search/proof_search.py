@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import List, Optional, Tuple
 from ray.util.actor_pool import ActorPool
 from vllm import AsyncLLMEngine, AsyncEngineArgs, SamplingParams, RequestOutput
+from transformers import BitsAndBytesConfig
 
 from proof_flow.src.search.common import zip_strict
 from proof_flow.src.search.search_tree import *
@@ -109,6 +110,7 @@ class BestFirstSearchProver:
                 self.root = InternalNode(
                     state=init_state,
                     cumulative_logprob=0.0,
+                    depth=0,
                 )
                 self.nodes = {init_state: self.root}
 
@@ -262,6 +264,7 @@ class BestFirstSearchProver:
         try:
             # If we've seen this response before, use the existing node
             result_node = self.nodes[response]
+            result_node.depth = min(result_node.depth, node.depth + 1)
         except KeyError:
             # Build a new node
             if isinstance(response, ProofFinished):
@@ -277,9 +280,13 @@ class BestFirstSearchProver:
                 result_node = InternalNode(
                     state=response,
                     cumulative_logprob=logprob + node.cumulative_logprob,
+                    depth=node.depth + 1,
                 )
 
-            if result_node.status == Status.OPEN:  # Don't search proved/failed nodes
+            if (
+                result_node.status == Status.OPEN
+                and result_node.depth < self.max_depth
+            ):  # Don't search proved/failed nodes
                 priority_queue.put_nowait((-result_node.priority, result_node))
 
         # Record the new node and add it to the search queue.
@@ -402,6 +409,7 @@ class DistributedProver:
         timeout: int,
         max_expansions: Optional[int],
         num_sampled_tactics: int,
+        max_new_tokens: int,
         save_search_tree: Optional[str] = None,
         debug: Optional[bool] = False,
     ) -> None:
@@ -432,7 +440,12 @@ class DistributedProver:
         else:
             device = torch.device("cuda") if num_gpus > 0 else torch.device("cpu")
             tac_gen = HuggingFaceGenerator(
-                gen_ckpt_path, device, max_inp_seq_len, max_oup_seq_len, length_penalty
+                gen_ckpt_path, 
+                device, 
+                max_inp_seq_len, 
+                max_oup_seq_len, 
+                max_new_tokens,
+                length_penalty,
             )
 
         self.distributed = num_workers > 1
