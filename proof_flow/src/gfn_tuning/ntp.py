@@ -167,20 +167,30 @@ class NeuralTheoremProvingTask(LightningModule):
         return trajectories_logpf, log_reward, trajectories
 
 
-    def tb_loss(self, log_pf: torch.Tensor, log_r: torch.Tensor):
+    def tb_loss(self, log_pf: torch.Tensor, log_r: torch.Tensor) -> torch.Tensor:
         """
         Computes the batch loss using the Trajectory Balance objective
 
-        Arguments
-            - log_pf: Tensor of shape (batch_size, max_depth)
-            - log_r: Tensor of shape (batch_size,)
+        Args:
+            log_pf: log probabilities of each tactic/action. shape=(batch, max_depth)
+            log_r: log reward. shape=(batch_size,)
+
+        Returns:
+            batch_loss: scalar tensor
         """
-        if len(log_pf.shape) == 2:
-            log_pf = log_pf.sum(dim=-1)
-        # loss = (log_pf.sum(dim=-1) + self.log_z - log_r) ** 2
-        loss = (log_pf + self.log_z - log_r) ** 2
+        loss = (log_pf.sum(dim=-1) + self.log_z - log_r) ** 2
         batch_loss = loss.sum()
         return batch_loss
+
+    
+    def log_z_variance_loss(log_pf: torch.Tensor, log_r: torch.Tensor) -> torch.Tensor:
+        # log_pf has shape (batch_size, max_tactic_depth)
+        # log_r has shape (batch_size,)
+        # https://arxiv.org/pdf/2302.05446
+        trajectory_log_pf = log_pf.sum(dim=-1)
+        batch_zeta = log_r - trajectory_log_pf
+        expectation = batch_zeta.mean()
+        return ((batch_zeta - expectation) ** 2).sum()
 
 
     def training_step(
