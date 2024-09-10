@@ -9,8 +9,12 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from peft import AutoPeftModelForCausalLM
 
-from proof_flow.src.utils import get_config, repo_root, set_up_padding
-from proof_flow.src.gfn_tuning.verifier import batch_completion_probabilities
+from proof_flow.src.utils import (
+    batch_completion_probabilities,
+    get_config, 
+    repo_root, 
+    set_up_padding,
+)
 from proof_flow.src.gfn_tuning.reward import build_reward_inputs
 
 """
@@ -103,17 +107,16 @@ def evaluate_reward_model(
                     sep="(<-prompt)(completion->)",
                 )
 
-            completion_probs = batch_completion_probabilities(
+            log_ps, completion_lengths = batch_completion_probabilities(
                 model, 
                 tokenizer, 
                 prompt_completion_pair,
                 device=device,
-            )[0]
+            )
 
+            score = log_ps[0].item()
             if normalize_length:
-                score = completion_probs["log_prob_sum"] / completion_probs["token_count"]
-            else:
-                score = completion_probs["log_prob_sum"]
+                score = score / completion_lengths[0].item()
             scores_entry[key] = score
 
         results["scores"][i] = scores_entry
@@ -192,11 +195,13 @@ if __name__ == "__main__":
         model = AutoPeftModelForCausalLM.from_pretrained(
             model_id, 
             trust_remote_code=True,
+            torch_dtype="auto",
         )
     else:
         model = AutoModelForCausalLM.from_pretrained(
             model_id, 
             trust_remote_code=True,
+            torch_dtype="auto",
         )
     tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
     set_up_padding(model, tokenizer)

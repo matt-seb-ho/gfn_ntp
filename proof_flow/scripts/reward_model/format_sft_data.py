@@ -7,10 +7,7 @@ from loguru import logger
 from tqdm import tqdm
 
 from proof_flow.src.utils import get_config, repo_root
-from proof_flow.src.prompts import (
-    INSTRUCTION_PROMPT_TEMPLATE, 
-    INSTRUCTION_COMPLETION_TEMPLATE_WITH_NEXT_STATE
-)
+from proof_flow.src.gfn_tuning.reward import build_reward_inputs
 
 MARK_START_SYMBOL = "<a>"
 MARK_END_SYMBOL = "</a>"
@@ -53,18 +50,22 @@ def format_sft_dataset(
     train_size: Optional[Union[int, float]] = 0.8,
     include_next_state: bool = False,
     include_theorem_info: bool = False,
+    model_template: str = "llemma"
 ) -> DatasetDict:
     # format state, tactic [, next_state] as prompt, completion
-    prompts = [INSTRUCTION_PROMPT_TEMPLATE.format(state=r["state"]) for r in records]
-    if include_next_state:
-        completions = [
-            INSTRUCTION_COMPLETION_TEMPLATE_WITH_NEXT_STATE.format(
-                tactic=r["tactic"], 
-                next_state=r["next_state"]
-            ) for r in records
-        ]
-    else:
-        completions = [r["tactic"] for r in records]
+    prompts = []
+    completions = []
+    for r in records:
+        prompt, completion = build_reward_inputs(
+            state=r["state"],
+            tactic=r["tactic"],
+            next_state=r["next_state"],
+            use_sts_format=include_next_state,
+            prompts_for_model=model_template,
+        )
+        prompts.append(prompt)
+        completions.append(completion)
+
     # convert to arrow dataset, create train-test split, and save to disk
     if include_theorem_info:
         dataset_dict = {
@@ -86,6 +87,8 @@ def format_sft_dataset(
     else:
         dataset = Dataset.from_dict({"prompt": prompts, "completion": completions})
     dataset = dataset.train_test_split(train_size=train_size, seed=42)
+    for split in dataset.keys():
+        logger.info(f"{split}: {len(dataset[split])} examples")
     if output_path is not None:
         dataset.save_to_disk(output_path)
     return dataset
@@ -108,5 +111,6 @@ if __name__ == "__main__":
         repo_root() / config.sft.data.formatted_dataset_dir, 
         train_size=config.sft.data.train_size, 
         include_next_state=config.sft.data.include_next_state,
+        model_template=config.sft.data.model_prompt_template,
     )
     logger.info("Data preparation complete")

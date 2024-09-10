@@ -5,17 +5,20 @@ sft:
     include_next_state: false
 
     # paths are relative to the project root
-    raw_data: "data/time_filtered.json"
-    formatted_dataset_dir: "data/verifier_sft_dataset"
+    raw_data: "data/time_filtered_v3.json"
+    formatted_dataset_dir: "data/verifier_sft_dataset_dspfmt"
+
+    # prompt formatting {llemma, deepseek}
+    model_prompt_template: "deepseek" 
 
   model:
     # TODO: figure this out
-    base_model_id: "EleutherAI/llemma_7b"
+    base_model_id: "deepseek-ai/DeepSeek-Prover-V1"
     max_seq_length: 1024
     packing: true                             # pack examples together for better efficiency
 
     training_args:
-      output_dir: "llemma_sft"                # directory to save and repository id (relative to project root)
+      output_dir: "dspv1_sft_dspfmt"          # directory to save and repository id (relative to project root)
       num_train_epochs: 3                     # number of training epochs
       per_device_train_batch_size: 3          # batch size per device during training
       gradient_accumulation_steps: 2          # number of steps before performing a backward/update pass
@@ -33,6 +36,7 @@ sft:
       report_to: "tensorboard"                # report metrics to tensorboard
 
     bnb:
+      _target_: transformers.BitsAndBytesConfig
       load_in_4bit: true
       bnb_4bit_use_double_quant: true
       bnb_4bit_quant_type: nf4
@@ -40,14 +44,10 @@ sft:
 
     lora:
       _target_: peft.LoraConfig
-      lora_alpha: 128
+      r: 16
+      lora_alpha: 32
       lora_dropout: 0.05
-      r: 256
       bias: "none"
       target_modules: "all-linear"
       task_type: "CAUSAL_LM"
     
-    
-
-    
-  

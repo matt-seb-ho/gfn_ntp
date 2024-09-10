@@ -1,3 +1,4 @@
+import hydra
 import torch
 from datasets import load_from_disk
 from huggingface_hub import login
@@ -54,9 +55,10 @@ def main():
     model_id = config.sft.model.base_model_id
     
     # BitsAndBytesConfig int-4 config
-    bnb_file_cfg = OmegaConf.to_container(config.sft.model.bnb)
-    bnb_file_cfg["bnb_4bit_compute_dtype"] = getattr(torch, bnb_file_cfg["bnb_4bit_compute_dtype"])
-    bnb_config = BitsAndBytesConfig(**bnb_file_cfg)
+    # bnb_file_cfg = OmegaConf.to_container(config.sft.model.bnb)
+    # bnb_file_cfg["bnb_4bit_compute_dtype"] = getattr(torch, bnb_file_cfg["bnb_4bit_compute_dtype"])
+    # bnb_config = BitsAndBytesConfig(**bnb_file_cfg)
+    bnb_config = hydra.utils.instantiate(config.sft.model.bnb)
     
     # Load model and tokenizer
     model = AutoModelForCausalLM.from_pretrained(
@@ -70,7 +72,8 @@ def main():
     set_up_padding(model, tokenizer)
 
     # LoRA config based on QLoRA paper & Sebastian Raschka experiment
-    peft_config = LoraConfig(**config.sft.model.lora)
+    # peft_config = LoraConfig(**config.sft.model.lora)
+    peft_config = hydra.utils.instantiate(config.sft.model.lora)
 
     training_args = TrainingArguments(
         **config.sft.model.training_args

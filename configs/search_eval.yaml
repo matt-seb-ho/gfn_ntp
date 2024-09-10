@@ -1,0 +1,48 @@
+paths:
+  input_file: "data/time_filtered_val.json"
+  search_eval_results_dir: "data/search_eval/"
+  save_search_tree_dir: "data/sampled_search_trees"
+
+use_tqdm: true
+input_limit: null
+
+reward_model:
+  use_reward_model: false
+  use_sts_format: false
+  prompts_for_model: deepseek # {llemma, deepseek}
+  normalize_length: true
+
+model:
+  id: msho/dspv1_sft_dspfmt
+  # id: deepseek-ai/DeepSeek-Prover-V1
+  use_peft: true
+  use_4bit: true
+
+  quantization_config:
+    _target_: transformers.BitsAndBytesConfig
+    load_in_4bit: true
+    bnb_4bit_use_double_quant: true
+    bnb_4bit_quant_type: nf4
+    bnb_4bit_compute_dtype: bfloat16
+
+search:
+  # tree seach settings
+  num_sampled_tactics: 8
+  timeout: 600
+  max_expansions: null
+  save_results: true
+  use_vllm: true
+
+  # concurrency
+  num_workers: 6
+  num_gpus: 1
+
+  # tactic generation settings
+  # TODO: figure out max input/output tokens
+  max_input_seq_len: null
+  max_output_seq_len: null
+  max_new_tokens: 30
+  length_penalty: 0.0
+
+  # whether to save the trees
+  save_search_trees: false

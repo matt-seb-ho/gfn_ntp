@@ -26,7 +26,7 @@ class ReplayBuffer:
         buffer_size, 
         termination_token_id, 
         pad_token_id,
-        sim_tolerance=0.25
+        sim_tolerance=0.1,
     ):
         self.buffer_size = buffer_size
         self.termination_token_id = termination_token_id
