@@ -133,7 +133,7 @@ if __name__ == "__main__":
     psr.add_argument("--inf_batch_size", '-b', type=int, default=INF_BATCH_SIZE_OVERRIDE)
     args = psr.parse_args()
     
-    config = get_config(config_path=CONFIG_DIR, config_name="train")
+    config = get_config()
     main(
         config, 
         n_samples_override=args.n_samples, 

@@ -38,9 +38,12 @@ search:
   num_gpus: 1
 
   # tactic generation settings
-  # TODO: figure out max input/output tokens
-  max_input_seq_len: null
-  max_output_seq_len: null
+  # max tokens provenance: 
+  # - v4 filtered to 250 state tokens
+  # - using llemma rm st prompt gets to 280 tokens
+  # - v5 filtered to have 30 new tokens
+  max_input_seq_len: 280
+  max_output_seq_len: 320
   max_new_tokens: 30
   length_penalty: 0.0
 
