@@ -51,6 +51,7 @@ class NeuralTheoremProvingTask(LightningModule):
         max_tactic_tokens: int = 30,
         model_inference_batch_size: int = 4,
         dojo_timeout: int = 600, # default comes from LeanDojo
+        max_input_length: int = 280,
         device: Optional[str | torch.device] = None,
     ):
         super().__init__()
@@ -196,7 +197,7 @@ class NeuralTheoremProvingTask(LightningModule):
         theorem: Theorem, 
         batch_idx: int,              # required by PyTorch Lightning(?)
         force_replay: bool = False,  # for testing purposes
-):
+    ):
         theorem_id = theorem.uid
 
         # replay trajectories
@@ -315,6 +316,9 @@ class NeuralTheoremProvingTask(LightningModule):
         # generate n new tactics
         prompt_text = self.format_prompt(node.state.pp if node.state else node.state_str) 
         input_ids = self.tokenizer(prompt_text, return_tensors="pt").input_ids
+        if input_ids.shape[1] > self.hparams.max_input_length:
+            # early exit to avoid OOM issues
+            return
         if input_ids.ndim == 1:
             input_ids = input_ids.unsqueeze(0)
         n_samples = n_samples or self.hparams.n_samples
