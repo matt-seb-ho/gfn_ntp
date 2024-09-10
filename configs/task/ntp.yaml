@@ -82,7 +82,7 @@ reward:
   # TODO: get dsp adapters
   # reward_model_hf_id: "msho/llemma_sft"
   # reward_model_adapter_name: "reward"
-  reward_model_hf_id: "msho/dspv1_sft_dspfmt"
+  reward_model_hf_id: "msho/dspv1_sft"
   reward_model_adapter_name: "reward"
   # reward_model_hf_id: null
   # reward_model_adapter_name: null

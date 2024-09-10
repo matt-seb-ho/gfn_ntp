@@ -152,9 +152,9 @@ class NTPReward:
                 
             stepwise_scores = torch.cat(stepwise_scores)
             log_r = log_r.scatter_add(
-                0,                  # dim
-                trajectory_groups,  # indices
-                stepwise_scores     # values
+                0,                                               # dim
+                torch.tensor(trajectory_groups, device=device),  # indices
+                stepwise_scores                                  # values
             )
 
         # clip reward to -100
