@@ -8,7 +8,7 @@ from icecream import ic
 from proof_flow.src.gfn_tuning.replay_buffer import ReplayBuffer
 from proof_flow.src.gfn_tuning.lean_data_module import NTPDataModule
 from proof_flow.src.gfn_tuning.ntp import NeuralTheoremProvingTask
-from proof_flow.src.utils import repo_root
+from proof_flow.src.utils import repo_root, get_config
 from proof_flow.scripts.gfn_tuning.train import get_model, get_reward
 
 # relative to this file (proof_flow/scripts/gfn_tuning/train.py)
@@ -17,7 +17,6 @@ N_SAMPLES_OVERRIDE = 32
 INF_BATCH_SIZE_OVERRIDE = 32
 
 
-@hydra.main(version_base=None, config_path=CONFIG_DIR, config_name="train")
 def main(config: DictConfig, n_samples_override, inf_batch_size_override):
     pl.seed_everything(config.seed, workers=True)
 
@@ -133,4 +132,10 @@ if __name__ == "__main__":
     psr.add_argument("--n_samples", '-n', type=int, default=N_SAMPLES_OVERRIDE)
     psr.add_argument("--inf_batch_size", '-b', type=int, default=INF_BATCH_SIZE_OVERRIDE)
     args = psr.parse_args()
-    main(n_samples_override=args.n_samples, inf_batch_size_override=args.inf_batch_size)
+    
+    config = get_config(config_path=CONFIG_DIR, config_name="train")
+    main(
+        config, 
+        n_samples_override=args.n_samples, 
+        inf_batch_size_override=args.inf_batch_size
+    )
