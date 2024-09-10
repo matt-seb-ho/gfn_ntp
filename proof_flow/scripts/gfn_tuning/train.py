@@ -59,6 +59,7 @@ def train(config: DictConfig):
         min_tactic_tokens=config.task.constraints.min_tactic_tokens,
         max_tactic_tokens=config.task.constraints.max_tactic_tokens,
         model_inference_batch_size=config.task.model.inf_batch_size,
+        dojo_timeout=config.task.training.dojo_timeout,
     )
 
     trainer = pl.Trainer(
