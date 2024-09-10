@@ -17,6 +17,9 @@ prepare_environment_for_lean_dojo()
 
 from lean_dojo import LeanGitRepo, Pos, Theorem, is_available_in_cache # isort: skip
 
+def custom_theorem_collate_fn(batch: list[Theorem]) -> list[Theorem]:
+    return batch
+
 
 class NTPDataModule(LightningDataModule):
     def __init__(
@@ -48,10 +51,21 @@ class NTPDataModule(LightningDataModule):
     def train_dataloader(self):
         # data loader init args are copied from original code base
         # - batch_size=None (no batching), num_workers=0 (no new threads)
-        return DataLoader(self.train_data, shuffle=True, batch_size=None, num_workers=0)
+        return DataLoader(
+            self.train_data, 
+            shuffle=True, 
+            batch_size=1, 
+            num_workers=0,
+            collate_fn=custom_theorem_collate_fn,
+        )
 
     def val_dataloader(self):
-        return DataLoader(self.val_data, batch_size=None, num_workers=0)
+        return DataLoader(
+            self.val_data, 
+            batch_size=1, 
+            num_workers=0,
+            collate_fn=custom_theorem_collate_fn,
+        )
 
 
 class TheoremDataset(Dataset):

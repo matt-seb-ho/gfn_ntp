@@ -198,10 +198,11 @@ class NeuralTheoremProvingTask(LightningModule):
 
     def training_step(
         self, 
-        theorem: Theorem, 
+        theorem: list[Theorem], 
         batch_idx: int,              # required by PyTorch Lightning(?)
         force_replay: bool = False,  # for testing purposes
     ):
+        theorem = theorem[0]
         theorem_id = theorem.uid
 
         # replay trajectories
@@ -244,6 +245,7 @@ class NeuralTheoremProvingTask(LightningModule):
             on_epoch=True,
             sync_dist=True,
             prog_bar=True,
+            batch_size=1,
         )
         self.log(
             "train/logR",
@@ -252,11 +254,13 @@ class NeuralTheoremProvingTask(LightningModule):
             on_step=False,
             on_epoch=True,
             sync_dist=True,
+            batch_size=1,
         )
         return loss
 
 
-    def validation_step(self, theorem: Theorem, batch_idx: int):
+    def validation_step(self, theorem: list[Theorem], batch_idx: int):
+        theorem = theorem[0]
         # sample a proof and get the reward
         log_pf, log_r, _ = self.forward(theorem)
 
@@ -269,11 +273,13 @@ class NeuralTheoremProvingTask(LightningModule):
             loss,
             sync_dist=True,
             prog_bar=True,
+            batch_size=1,
         )
         self.log(
             "val/logR",
             log_r.mean(),
             sync_dist=True,
+            batch_size=1,
         )
 
 
