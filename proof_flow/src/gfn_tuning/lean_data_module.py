@@ -29,7 +29,7 @@ class NTPDataModule(LightningDataModule):
         self.train_data = None
         self.val_data = None
 
-    def setup(self):
+    def setup(self, stage: str):
         # read theorem dicts from json file
         with open(repo_root() / self.hparams.data_path) as f:
             thm_dicts = json.load(f)

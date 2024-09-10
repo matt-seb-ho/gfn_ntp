@@ -544,6 +544,11 @@ class NeuralTheoremProvingTask(LightningModule):
         # commented_lines = ["-- INPUT:"] + ["-- " + line for line in lines]
         # return "\n".join(commented_lines)
         return INSTRUCTION_PROMPT_TEMPLATE.format(state=state)
+    
+    # 
+    def transfer_batch_to_device(self, batch, device, dataloader_idx):
+        # Return the batch as-is, without moving it to the device
+        return batch
 
 
 def generate_step(

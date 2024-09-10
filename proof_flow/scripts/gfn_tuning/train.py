@@ -38,7 +38,7 @@ def train(config: DictConfig):
         data_path=config.task.data.path,
         train_size=config.task.data.train_size,
     )
-    data.setup()
+    data.setup("fit")
 
     task = NeuralTheoremProvingTask(
         model=model,
@@ -59,7 +59,7 @@ def train(config: DictConfig):
         min_tactic_tokens=config.task.constraints.min_tactic_tokens,
         max_tactic_tokens=config.task.constraints.max_tactic_tokens,
         model_inference_batch_size=config.task.model.inf_batch_size,
-        branch_only_at_root=config.training.branch_only_at_root,
+        branch_only_at_root=config.task.training.branch_only_at_root,
         dojo_timeout=config.task.training.dojo_timeout,
     )
 
