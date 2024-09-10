@@ -12,7 +12,7 @@ from loguru import logger
 from typing import Optional
 from pathlib import Path
 
-from proof_flow.scripts.rm_eval.old_prover.common import prepare_environment_for_lean_dojo, set_logger
+from proof_flow.scripts.common import prepare_environment_for_lean_dojo, set_logger
 prepare_environment_for_lean_dojo("config.yaml")
 
 from lean_dojo import LeanGitRepo, Theorem, Pos 

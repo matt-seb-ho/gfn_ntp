@@ -27,7 +27,7 @@ from typing import List, Optional, Tuple
 from ray.util.actor_pool import ActorPool
 from vllm import AsyncLLMEngine, AsyncEngineArgs, SamplingParams, RequestOutput
 
-from proof_flow.scripts.rm_eval.old_prover.common import zip_strict
+from proof_flow.scripts.common import zip_strict
 from prover.search_tree import *
 from prover.tactic_generator import (
     TacticGenerator,

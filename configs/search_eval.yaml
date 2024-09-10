@@ -31,7 +31,7 @@ search:
   timeout: 600
   max_expansions: null
   save_results: true
-  use_vllm: true
+  use_vllm: false
 
   # concurrency
   num_workers: 6

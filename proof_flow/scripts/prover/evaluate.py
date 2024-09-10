@@ -15,7 +15,7 @@ from lean_dojo import Theorem
 from typing import List, Tuple, Optional
 from lean_dojo import LeanGitRepo, Theorem, Pos, is_available_in_cache
 
-from proof_flow.scripts.rm_eval.old_prover.common import set_logger
+from proof_flow.scripts.common import set_logger
 
 from prover.proof_search_tree import Status, DistributedProver
 
