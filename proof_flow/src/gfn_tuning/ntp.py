@@ -137,17 +137,19 @@ class NeuralTheoremProvingTask(LightningModule):
                     device=self.model_device,
                 )
                 new_stack_items = []
-                for child in node.children:
-                    if node.depth + 1 < max_depth and isinstance(child.state, TacticState):
-                        new_stack_items.append((child, False))
-                    else:
-                        # terminal
-                        trajectories_logpf.append(torch.cat(trajectory_logpf + [child.tactic_logpf]))
-                        log_reward.append(child.log_r)
+                if node.children is not None:
+                    for child in node.children:
+                        if node.depth + 1 < max_depth and isinstance(child.state, TacticState):
+                            new_stack_items.append((child, False))
+                        else:
+                            # terminal
+                            trajectories_logpf.append(torch.cat(trajectory_logpf + [child.tactic_logpf]))
+                            log_reward.append(child.log_r)
                 # add new stack items in reverse order for depth-first traversal
                 # - why not iterate reversed(node.children)?
                 #   we want to handle the terminal outputs in the correct order
-                stack.extend(reversed(new_stack_items))
+                if new_stack_items:
+                    stack.extend(reversed(new_stack_items))
                 
         
         # trajectories can have different lengths (may be jagged) and need to be padded
