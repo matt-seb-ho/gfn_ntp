@@ -36,6 +36,7 @@ sft:
       report_to: "tensorboard"                # report metrics to tensorboard
 
     bnb:
+      _target_: transformers.BitsAndBytesConfig
       load_in_4bit: true
       bnb_4bit_use_double_quant: true
       bnb_4bit_quant_type: nf4

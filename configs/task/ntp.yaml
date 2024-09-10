@@ -8,6 +8,14 @@ model:
   # test with llemma, run later with dsp
   # name: "EleutherAI/llemma_7b"
   name: "deepseek-ai/DeepSeek-Prover-V1"
+
+  bnb:
+    _target_: transformers.BitsAndBytesConfig
+    load_in_4bit: true
+    bnb_4bit_use_double_quant: true
+    bnb_4bit_quant_type: nf4
+    bnb_4bit_compute_dtype: bfloat16
+
   lora_config:
     _target_: peft.LoraConfig
 

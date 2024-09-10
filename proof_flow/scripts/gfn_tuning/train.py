@@ -96,12 +96,15 @@ def get_model(config: DictConfig):
     
     # Use 4-bit quantization for lower memory use
     if config.task.training.use_4bit:
-        bnb_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype="float16",
-            bnb_4bit_use_double_quant=True,
-        )
+        # bnb_config = BitsAndBytesConfig(
+        #     load_in_4bit=True,
+        #     bnb_4bit_quant_type="nf4",
+        #     bnb_4bit_compute_dtype="float16",
+        #     bnb_4bit_use_double_quant=True,
+        # )
+        # config has all the same options as above
+        # EXCEPT bnb_4bit_compute_dtype is "bfloat16" instead of "float16"
+        bnb_config = hydra.utils.instantiate(config.task.model.bnb)
     else:
         bnb_config = None
 

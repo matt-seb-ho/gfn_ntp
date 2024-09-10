@@ -55,9 +55,10 @@ def main():
     model_id = config.sft.model.base_model_id
     
     # BitsAndBytesConfig int-4 config
-    bnb_file_cfg = OmegaConf.to_container(config.sft.model.bnb)
-    bnb_file_cfg["bnb_4bit_compute_dtype"] = getattr(torch, bnb_file_cfg["bnb_4bit_compute_dtype"])
-    bnb_config = BitsAndBytesConfig(**bnb_file_cfg)
+    # bnb_file_cfg = OmegaConf.to_container(config.sft.model.bnb)
+    # bnb_file_cfg["bnb_4bit_compute_dtype"] = getattr(torch, bnb_file_cfg["bnb_4bit_compute_dtype"])
+    # bnb_config = BitsAndBytesConfig(**bnb_file_cfg)
+    bnb_config = hydra.utils.instantiate(config.sft.model.bnb)
     
     # Load model and tokenizer
     model = AutoModelForCausalLM.from_pretrained(
