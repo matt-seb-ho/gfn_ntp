@@ -52,6 +52,7 @@ class NeuralTheoremProvingTask(LightningModule):
         model_inference_batch_size: int = 4,
         dojo_timeout: int = 600, # default comes from LeanDojo
         max_input_length: int = 280,
+        branch_only_at_root: bool = True,
         device: Optional[str | torch.device] = None,
     ):
         super().__init__()
@@ -101,7 +102,10 @@ class NeuralTheoremProvingTask(LightningModule):
         # n_samples[d] is the number of tactics to sample at depth d
         # if provided as int, we use the same number of samples at each depth
         if not isinstance(n_samples, list):
-            n_samples = [n_samples or self.hparams.n_samples] * max_depth
+            if self.hparams.branch_only_at_root:
+                n_samples = [n_samples] + ([1] * (max_depth - 1))
+            else:
+                n_samples = [n_samples or self.hparams.n_samples] * max_depth
         with Dojo(
             theorem, 
             timeout=self.hparams.dojo_timeout
