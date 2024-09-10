@@ -49,7 +49,6 @@ class NeuralTheoremProvingTask(LightningModule):
         max_tactics: int = 3,
         min_tactic_tokens: int = 2,
         max_tactic_tokens: int = 30,
-        use_replay_tree: bool = False,
         model_inference_batch_size: int = 4,
         device: Optional[str | torch.device] = None,
     ):
@@ -85,7 +84,6 @@ class NeuralTheoremProvingTask(LightningModule):
         n_samples: Optional[int | list[int]] = None, 
         pf_temperature: float =  1.0, 
         max_depth: int = 3, # depth starts at 0
-        replay_tactics: Optional[ProofTreeNode] = None,
         generate_func: Optional[callable] = None,
     ) -> tuple[torch.Tensor, torch.Tensor, Optional[list]]:
         """
@@ -102,7 +100,8 @@ class NeuralTheoremProvingTask(LightningModule):
         # if provided as int, we use the same number of samples at each depth
         if not isinstance(n_samples, list):
             n_samples = [n_samples or self.hparams.n_samples] * max_depth
-        with lean_context(theorem, replay_tactics) as (dojo, root):
+        with Dojo(theorem) as (dojo, initial_state):
+            root = ProofTreeNode(state=initial_state, children=[])
             trajectory_logpf: list[torch.Tensor] = []
             stack = [(root, False)]
             while stack:
@@ -121,11 +120,10 @@ class NeuralTheoremProvingTask(LightningModule):
                     trajectory_logpf.append(node.tactic_logpf)
                 self.expand_node(
                     node, 
+                    dojo,
                     n_samples=n_samples[node.depth], 
                     pf_temperature=pf_temperature,
                     max_depth=max_depth,
-                    lean_env=dojo,
-                    replay=(replay_tactics is not None),
                     generate_func=generate_func,
                     device=self.model_device,
                 )
@@ -149,20 +147,16 @@ class NeuralTheoremProvingTask(LightningModule):
             batch_first=True, 
             padding_value=0.0
         )
-        if replay_tactics:
-            log_reward = torch.tensor(log_reward)
-            trajectories = None
-        else:
-            # compute and assign log_r to leaf nodes
-            trajectories = extract_trajectories(root, theorem.uid)
-            states = [t["states"] for t in trajectories]
-            tactics = [t["tactics"] for t in trajectories]
-            log_reward = self.reward.score(states, tactics, device=self.model_device)
+        # compute and assign log_r to leaf nodes
+        trajectories = extract_trajectories(root, theorem.uid)
+        states = [t["states"] for t in trajectories]
+        tactics = [t["tactics"] for t in trajectories]
+        log_reward = self.reward.score(states, tactics, device=self.model_device)
 
-            # trajectories were extracted from the tree before log_r was computed
-            # - ensure we have the log_r for each trajectory for the replay buffer
-            for trajectory, log_r in zip(trajectories, log_reward):
-                trajectory["log_r"] = log_r.item()
+        # trajectories were extracted from the tree before log_r was computed
+        # - ensure we have the log_r for each trajectory for the replay buffer
+        for trajectory, log_r in zip(trajectories, log_reward):
+            trajectory["log_r"] = log_r.item()
 
         return trajectories_logpf, log_reward, trajectories
 
@@ -210,13 +204,10 @@ class NeuralTheoremProvingTask(LightningModule):
         
         if replay_ts is not None:
             # using sample from replay buffer
-            if self.hparams.use_replay_tree:
-                t_logpf, log_r, _ = self.forward(theorem, replay_tactics=replay_ts)
-            else:
-                t_logpf, log_r, = self.replay_trajectories(
-                    replay_ts,
-                    model_inf_batch_size=self.hparams.model_inference_batch_size,
-                )
+            t_logpf, log_r, = self.replay_trajectories(
+                replay_ts,
+                model_inf_batch_size=self.hparams.model_inference_batch_size,
+            )
             log_r *= 1 / self.reward.temperature  # redo the effect of reward tempering
         else:
             # Using the forward policy
@@ -303,38 +294,33 @@ class NeuralTheoremProvingTask(LightningModule):
     def expand_node(
         self,
         node: ProofTreeNode,
+        lean_env: Dojo,
         n_samples: Optional[int] = None,
         pf_temperature: float = 1.0,
         max_depth: int = 3,
-        lean_env: Optional[Dojo] = None,
-        replay: bool = False,
         generate_func: Optional[callable] = None,
         device: Optional[str | torch.device] = None,
     ) -> None:
         """
         Expands a node in the proof tree by generating tactics.
-        If replaying a trajectory, the method recomputes log_pf with the updated model.
+
         """
-        assert (lean_env is not None) or replay, "lean_env must be provided if not replaying tactics"
         if (node.state and not isinstance(node.state, TacticState)) or node.depth >= max_depth:
             return
-        if replay:
-            # replay tree construction should have already prepared the input_ids
-            input_ids = node.children_tactic_tokens
-        else:
-            # generate n new tactics
-            prompt_text = self.format_prompt(node.state.pp if node.state else node.state_str) 
-            input_ids = self.tokenizer(prompt_text, return_tensors="pt").input_ids
-            if input_ids.ndim == 1:
-                input_ids = input_ids.unsqueeze(0)
-            n_samples = n_samples or self.hparams.n_samples
-            input_ids = input_ids.expand(n_samples, -1)
-            prompt_length = input_ids.shape[1]
-            if device:
-                input_ids = input_ids.to(device)
+
+        # generate n new tactics
+        prompt_text = self.format_prompt(node.state.pp if node.state else node.state_str) 
+        input_ids = self.tokenizer(prompt_text, return_tensors="pt").input_ids
+        if input_ids.ndim == 1:
+            input_ids = input_ids.unsqueeze(0)
+        n_samples = n_samples or self.hparams.n_samples
+        input_ids = input_ids.expand(n_samples, -1)
+        prompt_length = input_ids.shape[1]
+        if device:
+            input_ids = input_ids.to(device)
 
         # sample tactics (if not provided by action_seq) and compute terms needed for loss
-        if generate_func and not replay:
+        if generate_func:
             # for baseline generation/decoding methods
             tokens, log_pf = generate_func(input_ids)
         else:
@@ -343,7 +329,6 @@ class NeuralTheoremProvingTask(LightningModule):
                 input_ids,
                 termination_token_id=self.end_of_step_token_id,
                 temperature=pf_temperature,
-                replay=replay,
                 prompt_length=prompt_length,
                 max_new_tokens=self.hparams.max_tactic_tokens,
             )
@@ -352,40 +337,32 @@ class NeuralTheoremProvingTask(LightningModule):
         # NOTE: this assumes that padded tokens have a log_pf of 0
         log_pf_tactic = log_pf.sum(dim=1)
         
-        if replay:
-            for child, tactic_logpf in zip(node.children, log_pf_tactic):
-                child.tactic_logpf = tactic_logpf
-        else:
-            # SKIPPED: replay uses reconstructed trees ~~save the generated tactics for replay~~
-            # node.children_tactic_tokens = tokens
-            # pass the generated tactics through the lean environment
-            generated_tactics = self.tokenizer.batch_decode(
-                tokens[:, input_ids.shape[1]:],
-                skip_special_tokens=True,
-                clean_up_tokenization_spaces=True,
-            )
-            # tactics_token_length = (tokens[:, input_ids.shape[1]:] == self.end_of_sentence_token_id).count_nonzero(dim=-1)
-            # looking for first occurence of end_of_step_token_id after the prompt
-            # - among multiple max values, argmax returns the first occurrence
-            # - this excludes the end of step token (eos token omitted in replay buffer!!)
-            is_end_of_step = (tokens[:, prompt_length:]).eq(self.end_of_step_token_id)
-            pre_pad_length = is_end_of_step.float().argmax(dim=-1) + prompt_length
+        # get non-padded length of each sequence in the batch
+        # NOTE: this implementation excludes the end of step token 
+        #       (eos token omitted in replay buffer's state_tactic_tokens)
+        is_end_of_step = (tokens[:, prompt_length:]).eq(self.end_of_step_token_id)
+        pre_pad_length = is_end_of_step.float().argmax(dim=-1) + prompt_length
 
-            # create new children nodes by running the generated tactics through the environment
-            for i, tactic in enumerate(generated_tactics):
-                next_state = lean_env.run_tac(node.state, tactic.rstrip())
-                child_node = ProofTreeNode(
-                    state=next_state,
-                    tactic=generated_tactics[i].strip(),
-                    depth=node.depth + 1,
-                    prompt_length=input_ids.shape[1],
-                    tactic_logpf=log_pf_tactic[i:i+1],
-                    parent_tactic_tokens=tokens[i, :pre_pad_length[i]].cpu(),
-                    parent=node,
-                )
-                if node.children is None:
-                    node.children = []
-                node.children.append(child_node)
+        # create new children by running the generated tactics through lean
+        generated_tactics = self.tokenizer.batch_decode(
+            tokens[:, input_ids.shape[1]:],
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=True,
+        )
+        for i, tactic in enumerate(generated_tactics):
+            next_state = lean_env.run_tac(node.state, tactic.rstrip())
+            child_node = ProofTreeNode(
+                state=next_state,
+                tactic=generated_tactics[i].strip(),
+                depth=node.depth + 1,
+                prompt_length=input_ids.shape[1],
+                tactic_logpf=log_pf_tactic[i:i+1],
+                parent_tactic_tokens=tokens[i, :pre_pad_length[i]].cpu(),
+                parent=node,
+            )
+            if node.children is None:
+                node.children = []
+            node.children.append(child_node)
     
 
     def replay_trajectories(
@@ -536,14 +513,11 @@ class NeuralTheoremProvingTask(LightningModule):
         self, 
         theorem_id: str,
         force_replay: bool = False,
-    ) -> Optional[ProofTreeNode | list[dict]]:
+    ) -> Optional[list[dict]]:
         # if force replay is True, this random check is skipped
         if (not force_replay and random.random() >= self.hparams.use_buffer_prob):
             return None
-        if self.hparams.use_replay_tree:
-            return self.reward_buffer.sample_tree(theorem_id, self.hparams.n_samples)
-        else:
-            return self.reward_buffer.sample(theorem_id, self.hparams.n_samples)
+        return self.reward_buffer.sample(theorem_id, self.hparams.n_samples)
 
 
     @staticmethod
@@ -567,7 +541,6 @@ def generate_step(
     temperature: float = 1.0,
     top_k: int = 999999,
     top_p: float = 1.0,
-    replay: bool = False,
     prompt_length: Optional[int] = None,
     max_new_tokens: int = 30,
     **generation_kwargs,
@@ -577,31 +550,7 @@ def generate_step(
     returns:
     1. token id tensor of (state, tactic)
     2. log probability tensor for the tactics
-    
-    if replay is True, then the passed input_ids should include the previously generated tactics
     """
-    if replay:
-        # assert prompt_length is not None
-        outputs = model(
-            input_ids=input_ids,
-            eos_token_id=termination_token_id,
-            return_dict=True,
-        )
-        # the standard usage of compute_transition_scores is to pass GenerateOutput.scores
-        # which is a tuple (length=max_seq_len) of tensors of shape (batch_size, vocab_size).
-        # - we need to rearrange the model.__call__ logits to match this shape
-        input_scores = tuple(outputs.logits.transpose(0, 1)[prompt_length-1:-1])
-        transition_scores = model.compute_transition_scores(
-            input_ids,
-            input_scores,
-            normalize_logits=True,
-        )
-        # post processing
-        # - mask out pad tokens 
-        pad_mask = (input_ids[:, prompt_length:] == model.config.pad_token_id)
-        transition_scores[pad_mask] = 0
-        return input_ids, transition_scores
-        
     # model.generate notes
     # - do_sample=True turns off greedy decoding
     # - begin_suppress_tokens: prevents the first token from being the termination token
@@ -640,13 +589,3 @@ def generate_step(
     ).cumsum(dim=1) > 0
     scores[pad_mask] = 0
     return outputs.sequences, scores
-
-
-@contextmanager
-def lean_context(theorem: Theorem, replay_tactics: Optional[ProofTreeNode] = None):
-    if replay_tactics:
-        yield None, replay_tactics
-    else:
-        with Dojo(theorem) as (dojo, initial_state):
-            new_root = ProofTreeNode(state=initial_state, children=[])
-            yield dojo, new_root

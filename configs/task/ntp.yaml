@@ -63,7 +63,6 @@ training:
   accumulate_grad_batches: 25
   epochs: 1 # next_sentence task had 300
   use_4bit: true 
-  use_replay_tree: false
 
 eval:
   n_probes: 10

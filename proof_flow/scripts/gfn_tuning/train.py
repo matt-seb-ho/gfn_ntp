@@ -58,7 +58,6 @@ def train(config: DictConfig):
         max_tactics=config.task.constraints.max_tactics,
         min_tactic_tokens=config.task.constraints.min_tactic_tokens,
         max_tactic_tokens=config.task.constraints.max_tactic_tokens,
-        use_replay_tree=config.task.training.use_replay_tree,
         model_inference_batch_size=config.task.model.inf_batch_size,
     )
 
