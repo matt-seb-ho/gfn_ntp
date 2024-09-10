@@ -97,7 +97,6 @@ class NeuralTheoremProvingTask(LightningModule):
             - extracted_trajectories: list of trajectories for the replay buffer
         """
         trajectories_logpf: list[torch.Tensor] = []
-        log_reward: list[float] = []
 
         # n_samples[d] is the number of tactics to sample at depth d
         # if provided as int, we use the same number of samples at each depth
@@ -137,14 +136,16 @@ class NeuralTheoremProvingTask(LightningModule):
                     device=self.model_device,
                 )
                 new_stack_items = []
-                if node.children is not None:
+                if node.children is None:
+                    # node is terminal
+                    trajectories_logpf.append(torch.cat(trajectory_logpf))
+                else:
                     for child in node.children:
                         if node.depth + 1 < max_depth and isinstance(child.state, TacticState):
                             new_stack_items.append((child, False))
                         else:
-                            # terminal
+                            # child is terminal
                             trajectories_logpf.append(torch.cat(trajectory_logpf + [child.tactic_logpf]))
-                            log_reward.append(child.log_r)
                 # add new stack items in reverse order for depth-first traversal
                 # - why not iterate reversed(node.children)?
                 #   we want to handle the terminal outputs in the correct order
@@ -188,7 +189,11 @@ class NeuralTheoremProvingTask(LightningModule):
         return batch_loss
 
     
-    def log_z_variance_loss(log_pf: torch.Tensor, log_r: torch.Tensor) -> torch.Tensor:
+    def log_z_variance_loss(
+        self, 
+        log_pf: torch.Tensor, 
+        log_r: torch.Tensor,
+    ) -> torch.Tensor:
         # log_pf has shape (batch_size, max_tactic_depth)
         # log_r has shape (batch_size,)
         # https://arxiv.org/pdf/2302.05446
@@ -239,7 +244,8 @@ class NeuralTheoremProvingTask(LightningModule):
         # get gfn loss
         # - sub tb requires estimating flow (possible impl: scalar head over RM)
         # - for the proof of concept, we'll just use vanilla TB
-        loss = self.tb_loss(log_pf=t_logpf, log_r=log_r)
+        # loss = self.tb_loss(log_pf=t_logpf, log_r=log_r)
+        loss = self.log_z_variance_loss(t_logpf, log_r)
         self.log(
             "train/loss",
             loss,
