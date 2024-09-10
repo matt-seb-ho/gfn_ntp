@@ -5,6 +5,7 @@ import hydra
 import pytorch_lightning as pl
 from omegaconf import DictConfig
 from icecream import ic
+import bitsandbytes as bnb
 from proof_flow.src.gfn_tuning.replay_buffer import ReplayBuffer
 from proof_flow.src.gfn_tuning.lean_data_module import NTPDataModule
 from proof_flow.src.gfn_tuning.ntp import NeuralTheoremProvingTask
@@ -53,10 +54,11 @@ def main(config: DictConfig, n_samples_override, inf_batch_size_override):
         max_tactics=config.task.constraints.max_tactics,
         min_tactic_tokens=config.task.constraints.min_tactic_tokens,
         max_tactic_tokens=config.task.constraints.max_tactic_tokens,
-        use_replay_tree=config.task.training.use_replay_tree,
         # model_inference_batch_size=config.task.model.inf_batch_size,
         model_inference_batch_size=inf_batch_size_override,
+        dojo_timeout=config.task.training.dojo_timeout,
     )
+    task.automatic_optimization = False
 
     trainer = pl.Trainer(
         accelerator=config.device.accelerator,
@@ -67,6 +69,7 @@ def main(config: DictConfig, n_samples_override, inf_batch_size_override):
         else hydra.utils.instantiate(config.logger),
         callbacks=[hydra.utils.instantiate(c) for c in config.task.callbacks],
     )
+    
 
     # Fix a bug that arises when using 4-bit quantized models.
     # It's caused by different operations being on different devices,
@@ -78,7 +81,8 @@ def main(config: DictConfig, n_samples_override, inf_batch_size_override):
 
     print("FINISHED INIT")
 
-
+    print("go check nvitop for memory, only model and adapters loaded so far, then press enter to continue to inference")
+    _ = input()
 
     # first construct the longest possible trajectory
     with open(repo_root() / "data/longest_input_data.json") as f:
@@ -117,12 +121,14 @@ def main(config: DictConfig, n_samples_override, inf_batch_size_override):
 
     # run a training step with forced replay
     # - do a backward step with optimizers to ensure we don't oom there either
-    opt = task.optimizers()
+    opt = bnb.optim.PagedAdamW8bit(model.parameters(), lr=task.hparams.lr)
     ic(opt)
     opt.zero_grad()
     loss = task.training_step(thm0, 0, force_replay=True)
-    task.manual_backward(loss)
-    opt.step()
+    print("inference is done, check mem again, then enter to end")
+    _ = input()
+    # task.manual_backward(loss)
+    # opt.step()
 
     print(f"REPLAY PASSED WITH {n_samples_override} samples and {inf_batch_size_override} inference batch size")
     
