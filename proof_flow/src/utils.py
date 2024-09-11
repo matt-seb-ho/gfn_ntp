@@ -240,3 +240,7 @@ def batch_iterator_zip(iterables, batch_size):
         if not all(batch):
             break
         yield batch
+
+
+def disable_tokenizer_parallelism():
+    os.environ["TOKENIZERS_PARALLELISM"] = "false"

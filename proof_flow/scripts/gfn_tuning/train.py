@@ -2,6 +2,7 @@ from types import MethodType
 import hydra
 import pytorch_lightning as pl
 import torch
+import os
 from omegaconf import DictConfig
 from peft import get_peft_model, prepare_model_for_kbit_training
 from transformers import (
@@ -16,7 +17,7 @@ from proof_flow.src.gfn_tuning.reward import NTPReward
 from proof_flow.src.gfn_tuning.replay_buffer import ReplayBuffer
 from proof_flow.src.gfn_tuning.lean_data_module import NTPDataModule
 from proof_flow.src.gfn_tuning.ntp import NeuralTheoremProvingTask
-from proof_flow.src.utils import set_up_padding
+from proof_flow.src.utils import disable_tokenizer_parallelism, set_up_padding
 
 # relative to this file (proof_flow/scripts/gfn_tuning/train.py)
 CONFIG_DIR = "../../../configs/"
@@ -24,6 +25,7 @@ CONFIG_DIR = "../../../configs/"
 
 @hydra.main(version_base=None, config_path=CONFIG_DIR, config_name="train")
 def train(config: DictConfig):
+    disable_tokenizer_parallelism()
     pl.seed_everything(config.seed, workers=True)
 
     model, tokenizer = get_model(config)

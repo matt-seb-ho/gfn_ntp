@@ -5,7 +5,12 @@ from icecream import ic
 import torch
 from peft import PeftModel, PeftModelForCausalLM
 from pytorch_lightning import LightningModule
-from transformers import AutoTokenizer, DynamicCache
+from transformers import (
+    AutoTokenizer, 
+    DynamicCache, 
+    QuantizedCache,
+    QuantizedCacheConfig,
+)
 from torch.nn.utils.rnn import pad_sequence
 
 from proof_flow.src.gfn_tuning.proof_tree import (
@@ -640,6 +645,7 @@ def generate_step(
     temperature: float = 1.0,
     top_k: int = 999999,
     top_p: float = 1.0,
+    use_quantized_cache: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     alternate implementation to HuggingFace's .generate() WITH GRADIENTS
@@ -659,7 +665,15 @@ def generate_step(
     log_pf = []
     token_ids = state  # For caching hidden states during generation
     # past_key_values = None  # For caching hidden states during generation
-    kv_cache = DynamicCache()
+    if use_quantized_cache:
+        kv_cache = QuantizedCache(
+            QuantizedCacheConfig(
+                compute_dtype=torch.bfloat16,
+                device=encoded_prompt.device,
+            )
+        )
+    else:
+        kv_cache = DynamicCache()
     for i in range(max_len + 1):
         output = model(
             input_ids=token_ids, 
