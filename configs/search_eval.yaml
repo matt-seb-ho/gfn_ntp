@@ -34,7 +34,7 @@ search:
   use_vllm: false
 
   # concurrency
-  num_workers: 6
+  num_workers: 1
   num_gpus: 1
 
   # tactic generation settings

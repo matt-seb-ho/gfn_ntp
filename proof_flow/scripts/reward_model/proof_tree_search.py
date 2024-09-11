@@ -68,11 +68,11 @@ def evaluate(
     )
     prover = DistributedProver(
         cfg.search.use_vllm,
-        cfg.gen_ckpt_path,
+        cfg.model.id,
         None, # ret_ckpt_path
         None, # indexed_corpus_path
         cfg.search.max_input_seq_len,
-        cfg.search.max_ouput_seq_len,
+        cfg.search.max_output_seq_len,
         cfg.search.length_penalty,
         None, # tactic
         None, # module
@@ -146,8 +146,8 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    assert args.gen_ckpt_path or args.tactic
-    assert args.num_gpus <= args.num_workers
+    # assert args.gen_ckpt_path or args.tactic
+    # assert args.num_gpus <= args.num_workers
 
     logger.info(f"PID: {os.getpid()}")
     logger.info(args)

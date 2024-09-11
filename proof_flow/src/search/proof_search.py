@@ -334,6 +334,7 @@ class ProverActor:
         max_expansions: Optional[int],
         num_sampled_tactics: int,
         debug: bool,
+        save_search_tree: Optional[str] = None,
     ) -> None:
         self.prover = BestFirstSearchProver(
             tac_gen,
@@ -341,6 +342,7 @@ class ProverActor:
             max_expansions,
             num_sampled_tactics,
             debug,
+            save_search_tree
         )
 
     def search(
@@ -479,6 +481,7 @@ class DistributedProver:
                     max_expansions=max_expansions,
                     num_sampled_tactics=num_sampled_tactics,
                     debug=debug,
+                    save_search_tree=save_search_tree,
                 )
                 for _ in range(num_workers)
             ]
@@ -491,6 +494,7 @@ class DistributedProver:
                     max_expansions=max_expansions,
                     num_sampled_tactics=num_sampled_tactics,
                     debug=debug,
+                    save_search_tree=save_search_tree,
                 )
                 for _ in range(num_workers)
             ]

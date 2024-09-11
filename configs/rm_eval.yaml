@@ -9,22 +9,22 @@
 # input_limit: null
 
 # Negative Tactics Data Generation: training split not test split -----------------------
-# input_file: "/home/vincentzhu/gfn_ntp/data/time_filtered_v3_wfs_30_samples.json"  # Updated to use training data split
-# output_file: "data/sampled_proofs_BFS.json"  # Updated output file for sampled proofs
-# verification_results_file: "data/verification_results_BFS.json"  # Updated for training verification results
-# rm_data_file: "data/negative_tactics_dataset_BFS.json"  # Updated RM data output file for training
-# use_tqdm: true
-# input_limit: null
-# use_BFS: true
-
-input_file: "data/time_filtered_val.json"
-output_file: "data/sampled_proofs.json"
-verification_results_file: "data/verification_results.json"
-rm_data_file: "data/rm_eval_dataset_v3.json"
-rm_eval_results_dir: "data/rm_eval_results/valid_tacs/"
-rm_eval_result_filename: "peft_sancheck.json"
+input_file: "/home/vincentzhu/gfn_ntp/data/straight_shot_proof_sample/time_filtered_v2_wfs.json"  # Updated to use training data split
+output_file: "data/straight_shot_proof_sample/sampled_proofs_train.json"  # Updated output file for sampled proofs
+verification_results_file: "data/straight_shot_proof_sample/verification_results_train.json"  # Updated for training verification results
+rm_data_file: "data/straight_shot_proof_sample/filtered_negative_tactics_dataset.json"  # Updated RM data output file for training
 use_tqdm: true
 input_limit: null
+# use_BFS: true
+
+# input_file: "data/time_filtered_val.json"
+# output_file: "data/sampled_proofs.json"
+# verification_results_file: "data/verification_results.json"
+# rm_data_file: "data/rm_eval_dataset_v3.json"
+# rm_eval_results_dir: "data/rm_eval_results/valid_tacs/"
+# rm_eval_result_filename: "peft_sancheck.json"
+# use_tqdm: true
+# input_limit: null
 valid_tactics_only: true
 
 # selecting pairs to evaluate on -------------------
@@ -70,9 +70,9 @@ data_generation:
   device: "cuda"
   max_inp_seq_len: 256
   max_oup_seq_len: 30
-  length_penalty: 1.0
+  length_penalty: 0.0
   template: "%s"
-  max_expansions: 10
+  max_expansions: 50
   timeout: 3000
 
   sampling_params:
