@@ -7,7 +7,10 @@ dpo:
     # paths are relative to the project root
     raw_data: "data/time_filtered_v3.json"
     formatted_dataset_dir: "data/straight_shot_proof_sample/filtered_negative_tactics_dataset.json"
-    processed_data: "data/straight_shot_proof_sample/dpo_processed_dataset"
+
+    expand_records: false
+    # processed_data: "data/straight_shot_proof_sample/dpo_expanded_dataset"
+    processed_data: "data/straight_shot_proof_sample/dpo_flattened_dataset"
 
     # prompt formatting {llemma, deepseek}
     model_prompt_template: "deepseek"

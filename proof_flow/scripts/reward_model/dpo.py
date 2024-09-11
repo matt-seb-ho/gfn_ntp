@@ -51,17 +51,38 @@ def expand_record(record):
     
     return expanded_records   
 
+def flatten_record(record):
+    flattened_records = []
+    positive_list = record.get("positive", [])
+    negative_list = record.get("negative", [])
+    
+    # Check if there are elements in both lists
+    if positive_list and negative_list:
+        # Get only the first combination of positive and negative tactics
+        pos = positive_list[0]
+        neg = negative_list[0]
+        # Create a new record for the first combination
+        new_record = record.copy()
+        new_record["positive"] = pos['tactic']
+        new_record["negative"] = neg['tactic']
+        flattened_records.append(new_record)
+    
+    return flattened_records 
+
 
 def load_dpo_data(cfg):
     # load raw data into arrow format
     with open(repo_root() / cfg.dpo.data.formatted_dataset_dir) as f:
         records = json.load(f)
     
-    expanded_records = []
+    processed_records = []
     for record in records:
-        expanded_records += expand_record(record)
+        if cfg.dpo.data.expand_records:
+            processed_records += expand_record(record)
+        else:
+            processed_records += flatten_record(record)
     
-    full_dataset = Dataset.from_list(expanded_records)
+    full_dataset = Dataset.from_list(processed_records)
 
     # prep for DPOTrainer format
     def add_prompt_template(example):
