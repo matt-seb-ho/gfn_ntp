@@ -67,6 +67,7 @@ class BestFirstSearchProver:
         tac_gen,  # A given tactic generator.
         timeout: int,
         max_expansions: int,
+        max_depth: int,
         num_sampled_tactics: int,
         debug: bool,
         save_search_tree: Optional[str] = None,
@@ -75,6 +76,7 @@ class BestFirstSearchProver:
         self.tac_gen.initialize()
         self.timeout = timeout
         self.max_expansions = max_expansions
+        self.max_depth = max_depth
         self.num_sampled_tactics = num_sampled_tactics
         self.debug = debug
         self.save_search_tree = save_search_tree
@@ -283,10 +285,7 @@ class BestFirstSearchProver:
                     depth=node.depth + 1,
                 )
 
-            if (
-                result_node.status == Status.OPEN
-                and result_node.depth < self.max_depth
-            ):  # Don't search proved/failed nodes
+            if result_node.status == Status.OPEN and result_node.depth < self.max_depth:  # Don't search proved/failed nodes
                 priority_queue.put_nowait((-result_node.priority, result_node))
 
         # Record the new node and add it to the search queue.
@@ -332,6 +331,7 @@ class ProverActor:
         tac_gen: TacticGenerator,
         timeout: int,
         max_expansions: Optional[int],
+        max_depth: int,
         num_sampled_tactics: int,
         debug: bool,
         save_search_tree: Optional[str] = None,
@@ -340,6 +340,7 @@ class ProverActor:
             tac_gen,
             timeout,
             max_expansions,
+            max_depth,
             num_sampled_tactics,
             debug,
             save_search_tree
@@ -410,6 +411,7 @@ class DistributedProver:
         num_gpus: int,
         timeout: int,
         max_expansions: Optional[int],
+        max_depth: int,
         num_sampled_tactics: int,
         max_new_tokens: int,
         save_search_tree: Optional[str] = None,
@@ -461,6 +463,7 @@ class DistributedProver:
                 tac_gen, 
                 timeout, 
                 max_expansions, 
+                max_depth,
                 num_sampled_tactics, 
                 debug,
                 save_search_tree=save_search_tree,
@@ -479,6 +482,7 @@ class DistributedProver:
                     tac_gen,
                     timeout=timeout,
                     max_expansions=max_expansions,
+                    max_depth=max_depth,
                     num_sampled_tactics=num_sampled_tactics,
                     debug=debug,
                     save_search_tree=save_search_tree,
@@ -492,6 +496,7 @@ class DistributedProver:
                     tac_gen,
                     timeout=timeout,
                     max_expansions=max_expansions,
+                    max_depth=max_depth,
                     num_sampled_tactics=num_sampled_tactics,
                     debug=debug,
                     save_search_tree=save_search_tree,

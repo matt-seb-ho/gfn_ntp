@@ -30,6 +30,7 @@ search:
   num_sampled_tactics: 8
   timeout: 600
   max_expansions: null
+  max_depth: 20
   save_results: true
   use_vllm: false
 

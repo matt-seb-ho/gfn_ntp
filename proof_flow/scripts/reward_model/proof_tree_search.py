@@ -80,6 +80,7 @@ def evaluate(
         cfg.search.num_gpus,
         cfg.search.timeout,
         cfg.search.max_expansions,
+        cfg.search.max_depth,
         cfg.search.num_sampled_tactics,
         cfg.search.max_new_tokens,
         save_search_tree=search_tree_dir,

@@ -59,6 +59,7 @@ class ErrorNode(Node):
     status = Status.FAILED
     distance_to_proof = math.inf
     is_terminal = True
+    depth = -1
 
 
 @total_ordering
