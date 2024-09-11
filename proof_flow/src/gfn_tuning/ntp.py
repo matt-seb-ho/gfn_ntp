@@ -1,14 +1,11 @@
-import json
-import gc
 import random
-from contextlib import contextmanager
 from typing import Optional
 from icecream import ic
 
 import torch
-from peft import PeftModel
+from peft import PeftModel, PeftModelForCausalLM
 from pytorch_lightning import LightningModule
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, DynamicCache
 from torch.nn.utils.rnn import pad_sequence
 
 from proof_flow.src.gfn_tuning.proof_tree import (
@@ -141,11 +138,16 @@ class NeuralTheoremProvingTask(LightningModule):
                     trajectories_logpf.append(torch.cat(trajectory_logpf))
                 else:
                     for child in node.children:
-                        if node.depth + 1 < max_depth and isinstance(child.state, TacticState):
+                        if (
+                            node.depth + 1 < max_depth 
+                            and isinstance(child.state, TacticState)
+                        ):
                             new_stack_items.append((child, False))
                         else:
                             # child is terminal
-                            trajectories_logpf.append(torch.cat(trajectory_logpf + [child.tactic_logpf]))
+                            trajectories_logpf.append(torch.cat(
+                                trajectory_logpf + [child.tactic_logpf]
+                            ))
                 # add new stack items in reverse order for depth-first traversal
                 # - why not iterate reversed(node.children)?
                 #   we want to handle the terminal outputs in the correct order
@@ -200,7 +202,8 @@ class NeuralTheoremProvingTask(LightningModule):
         trajectory_log_pf = log_pf.sum(dim=-1)
         batch_zeta = log_r - trajectory_log_pf
         expectation = batch_zeta.mean()
-        return ((batch_zeta - expectation) ** 2).sum()
+        loss = ((batch_zeta - expectation) ** 2).sum()
+        return loss
 
 
     def training_step(
@@ -304,6 +307,8 @@ class NeuralTheoremProvingTask(LightningModule):
         # Log scheduled quantities
         self.log("scheduled/R_temperature", self.reward.temperature, sync_dist=True)
         self.log("scheduled/lr", self.get_lr_at_step(self.global_step), sync_dist=True)
+        # ensure training mode is on
+        self.model.train()
 
 
     def configure_optimizers(self):
@@ -354,9 +359,9 @@ class NeuralTheoremProvingTask(LightningModule):
                 self.model,
                 input_ids,
                 termination_token_id=self.end_of_step_token_id,
+                pad_token_id=self.tokenizer.pad_token_id,
                 temperature=pf_temperature,
-                prompt_length=prompt_length,
-                max_new_tokens=self.hparams.max_tactic_tokens,
+                max_len=self.hparams.max_tactic_tokens,
             )
 
         # log_pf outputted by generate_step is at token-level granularity
@@ -565,7 +570,7 @@ class NeuralTheoremProvingTask(LightningModule):
         return batch
 
 
-def generate_step(
+def generate_step_hf(
     model: PeftModel,
     input_ids: torch.Tensor,
     termination_token_id: int,
@@ -620,3 +625,112 @@ def generate_step(
     ).cumsum(dim=1) > 0
     scores[pad_mask] = 0
     return outputs.sequences, scores
+
+
+def generate_step(
+    model: PeftModelForCausalLM,
+    encoded_prompt: torch.Tensor,
+    termination_token_id: int,
+    pad_token_id: int,
+    vocab_nice_mask: Optional[torch.Tensor] = None,
+    vocab_naughty_mask: Optional[torch.Tensor] = None,
+    vocab_alpha: int = -99,
+    max_len: int = 30,
+    min_len: int = 1,
+    temperature: float = 1.0,
+    top_k: int = 999999,
+    top_p: float = 1.0,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    alternate implementation to HuggingFace's .generate() WITH GRADIENTS
+    - TODO: add beam search?
+
+    args (required)
+        model
+        encoded_prompt: input_ids tensor shape (batch_size, input_seq_len)
+        termination_token_id
+        pad_token_id
+    returns
+        token_ids: tensor of sampled tokens with shape (batch_size, max_seq_len)
+        log_pf: tensor of log_pf for sampled tokens (batch_size, max_new_tokens)
+    """
+    active_seqs = torch.ones(encoded_prompt.size(0)).bool().to(encoded_prompt.device)
+    state = encoded_prompt.clone()
+    log_pf = []
+    token_ids = state  # For caching hidden states during generation
+    # past_key_values = None  # For caching hidden states during generation
+    kv_cache = DynamicCache()
+    for i in range(max_len + 1):
+        output = model(
+            input_ids=token_ids, 
+            past_key_values=kv_cache,
+            use_cache=True,
+            return_dict=True,
+        )
+        # past_key_values = output.past_key_values
+        kv_cache = output.past_key_values
+        logits = output.logits[:, -1, :]
+        
+        # sample out a token from logits
+        with torch.no_grad():
+            prob = logits.softmax(dim=-1)
+            modified_logits = logits.clone().detach()
+            # implement top-k by getting the top-k largest values and setting the rest to 0
+            if top_k < 999999:
+                modified_logits[prob >= prob.topk(top_k)] = -torch.inf
+            # implement top-p by getting indices in the top-p prob mass and setting the rest to 0
+            if top_p < 1.0:
+                sorted_probs, _ = torch.sort(prob, dim=-1, descending=True)
+                cumsum_prob = torch.cumsum(sorted_probs, dim=-1)
+                nucleus = cumsum_prob < top_p
+                nucleus = torch.cat(
+                    [
+                        nucleus.new_ones(nucleus.shape[:-1] + (1,)),
+                        nucleus[..., :-1],
+                    ],
+                    dim=-1,
+                )
+                modified_logits[~nucleus] = -torch.inf
+            if i < min_len:
+                # if we haven't reach the minimum length, set the probability of terminating to 0
+                modified_logits[:, termination_token_id] = -torch.inf
+            elif i >= max_len:
+                # if we've reached the maximum length, set the probability of terminating to 1
+                mask = [True] * modified_logits.shape[1]
+                mask[termination_token_id] = False
+                modified_logits[:, mask] = -torch.inf
+            if vocab_nice_mask is not None:
+                # add vocab_alpha to the logits of the unmasked vocab items
+                modified_logits[:, ~vocab_nice_mask] += vocab_alpha
+            if vocab_naughty_mask is not None:
+                # add vocab_alpha to the logits of the masked vocab items
+                modified_logits[:, vocab_naughty_mask] += vocab_alpha
+            prob = (modified_logits / temperature).softmax(dim=-1)
+            token_ids = torch.multinomial(prob, num_samples=1)
+
+        token_ids = torch.where(
+            active_seqs.unsqueeze(-1),
+            token_ids,
+            # termination_token_id,
+            pad_token_id,
+        )
+        if vocab_nice_mask is not None:
+            logits[:, ~vocab_nice_mask] += vocab_alpha
+        if vocab_naughty_mask is not None:
+            logits[:, vocab_naughty_mask] += vocab_alpha
+        logprob = logits.log_softmax(dim=-1)
+        active_seqs = active_seqs * (token_ids != termination_token_id).squeeze(-1)
+        log_pf.append(
+            torch.where(
+                active_seqs,
+                logprob.gather(-1, token_ids).squeeze(-1),
+                0,
+            )
+        )
+        state = torch.cat([state, token_ids], dim=-1)
+        # check if all sequences have terminated
+        if torch.all(~active_seqs):
+            break
+
+    log_pf = torch.stack(log_pf, dim=1)
+    return state, log_pf
