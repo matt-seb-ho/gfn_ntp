@@ -163,6 +163,8 @@ DEEPSEEK_RM_ST_PROMPT_TEMPLATE_V2 = """Suggest a next tactic given the following
 -/
 -- next tactic
 """
+DEEPSEEK_RM_ST_COMPLETION_TEMPLATE_V2 = """{tactic}
+```"""
 DEEPSEEK_RM_ST_PROMPT_TEMPLATE_V3 = """Given the following Lean 4 tactic state:
 ```
 {state}
@@ -186,7 +188,7 @@ RM_TEMPLATES = {
     "deepseek": {
         "st": {
             "prompt": DEEPSEEK_RM_ST_PROMPT_TEMPLATE_V2,
-            "completion": DEEPSEEK_RM_ST_COMPLETION_TEMPLATE,
+            "completion": DEEPSEEK_RM_ST_COMPLETION_TEMPLATE_V2,
         },
         "sts": {
             "prompt": DEEPSEEK_RM_STS_PROMPT_TEMPLATE,

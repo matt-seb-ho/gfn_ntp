@@ -431,6 +431,7 @@ class DistributedProver:
         model: Optional[_HuggingFaceLM] = None,
         tokenizer: Optional[AutoTokenizer] = None,
         prompt_template: Optional[str] = None,
+        is_decoder_only: Optional[bool] = None,
     ) -> None:
         if gen_ckpt_path is None:
             assert tactic and not indexed_corpus_path
@@ -470,6 +471,7 @@ class DistributedProver:
                 model=model,
                 tokenizer=tokenizer,
                 template=(prompt_template or "{state}"),
+                is_decoder_only=is_decoder_only,
             )
 
         self.distributed = num_workers > 1

@@ -385,6 +385,7 @@ class NeuralTheoremProvingTask(LightningModule):
             model=self.model,
             tokenizer=self.tokenizer,
             prompt_template=self.hparams.tac_gen_prompt_template,
+            is_decoder_only=True,
         )
         with torch.no_grad():
             results = prover.search_unordered(repo, thms, positions)

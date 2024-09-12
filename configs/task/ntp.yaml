@@ -1,7 +1,7 @@
 name: "ntp"
 
 data:
-  path: "data/time_filtered_v5.json"
+  path: "data/long1k_train.json"
   train_size: 0.95
 
 model:
@@ -58,7 +58,7 @@ training:
   pf_temp_low: 0.5
   pf_temp_prob: 0.666
   use_buffer_prob: 0.25
-  n_samples: 3  # next_sentence task had 20
+  n_samples: 4  # next_sentence task had 20
   branch_only_at_root: true
   lr: 0.0001
   accumulate_grad_batches: 25

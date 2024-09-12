@@ -201,6 +201,7 @@ class HuggingFaceGenerator(TacticGenerator):
         use_beam_search: bool = True,
         model: Optional[_HuggingFaceLM] = None,
         tokenizer: Optional[AutoTokenizer] = None,
+        is_decoder_only: Optional[bool] = None,
     ):
         self.model_path = model_path
         self.device = device
@@ -214,19 +215,21 @@ class HuggingFaceGenerator(TacticGenerator):
         self.use_beam_search = use_beam_search
         self.model = model
         self.tokenizer = tokenizer
+        self.decoder_only = is_decoder_only
 
     def initialize(self) -> None:
         if self.model is not None and self.tokenizer is not None:
             self.generator = self.model
             self.tokenizer = self.tokenizer
-            self.decoder_only = isinstance(
-                self.generator,
-                (
-                    AutoModelForCausalLM, 
-                    AutoPeftModelForCausalLM,
-                    PeftModelForCausalLM,
+            if self.decoder_only is None:
+                self.decoder_only = isinstance(
+                    self.generator,
+                    (
+                        AutoModelForCausalLM, 
+                        AutoPeftModelForCausalLM,
+                        PeftModelForCausalLM,
+                    )
                 )
-            )
             logger.debug(f"using generator of type: {type(self.generator)}, decoder_only: {self.decoder_only}")
             return
         try:
