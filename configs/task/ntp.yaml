@@ -118,6 +118,7 @@ constraints:
   max_tactic_tokens: 30
 
 debug_logger:
+  include_lean_dojo_debug: true
   log_debug_to_stdout: true
   write_to_file: true
   debug_log_file: "logs/debug.log"

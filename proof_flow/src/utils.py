@@ -20,6 +20,7 @@ DEFAULT_PAD_TOKEN = "<pad>"
 # - llemma: <s>, </s>
 # - deepseek: <｜begin▁of▁sentence｜>, <｜end▁of▁sentence｜>
 # - internlm math: <s>, </s>
+CUSTOM_LOG_LEVEL = "GFN_DEBUG"
 
 
 @cache
@@ -248,7 +249,13 @@ def disable_tokenizer_parallelism():
 
 
 def set_up_debug_logging(cfg: OmegaConf):
+    if cfg.include_lean_dojo_debug:
+        level = "DEBUG"
+    else:
+        # between DEBUG (10) and INFO (20)
+        logger.level(CUSTOM_LOG_LEVEL, no=15)
     if cfg.log_debug_to_stdout:
-        logger.add(sys.stdout, level="DEBUG")
+        logger.add(sys.stdout, level=level)
     if cfg.write_to_file:
-        logger.add(repo_root() / cfg.debug_log_file, level="DEBUG")
+        logger.add(repo_root() / cfg.debug_log_file, level=level)
+    return level
