@@ -9,12 +9,15 @@
 # input_limit: null
 
 # Negative Tactics Data Generation: training split not test split -----------------------
-input_file: "/home/vincentzhu/gfn_ntp/data/straight_shot_proof_sample/time_filtered_v2_wfs.json"  # Updated to use training data split
+input_file: "data/straight_shot_proof_sample/time_filtered_v2_wfs.json"  # Updated to use training data split
 output_file: "data/straight_shot_proof_sample/sampled_proofs_train.json"  # Updated output file for sampled proofs
 verification_results_file: "data/straight_shot_proof_sample/verification_results_train.json"  # Updated for training verification results
-rm_data_file: "data/straight_shot_proof_sample/filtered_negative_tactics_dataset.json"  # Updated RM data output file for training
+rm_data_file: "data/rm_eval_dataset_v3.json"  # Updated RM data output file for training
+rm_eval_results_dir: "data/rm_eval_results/"
+rm_eval_result_filename: "dspv1_dpo_dspfmt_rm_eval_all.json"
 use_tqdm: true
 input_limit: null
+valid_tactics_only: true
 # use_BFS: true
 
 # input_file: "data/time_filtered_val.json"
@@ -25,13 +28,13 @@ input_limit: null
 # rm_eval_result_filename: "peft_sancheck.json"
 # use_tqdm: true
 # input_limit: null
-valid_tactics_only: true
+# valid_tactics_only: true
 
 # selecting pairs to evaluate on -------------------
 # eval pairs {first, random, all}
-pair_selection_strategy: first
+# pair_selection_strategy: first
 max_pairs_per_state: 1
-# pair_selection_strategy: random 
+pair_selection_strategy: all 
 # max_pairs_per_state: 5
 
 # RM scoring settings -----------------------------
@@ -52,10 +55,12 @@ normalize_length: true
 
 # trained verifiers
 # model: msho/llemma_sft
-model: msho/dspv1_sft_dspfmt
 # model: msho/dspv1_sft
+# model: vincentlinzhu/dspv1_dpo_dspfmt
+model: vincentlinzhu/dspv1_dpo_dspfmt_medium
+# model: vincentlinzhu/dspv1_dpo_llemmafmt_medium
 use_peft: true
-
+device: cuda
 
 # generating evaluation data -----------------------
 # values from DeepSeek-Prover-V1.5/configs/sampling.py
@@ -67,13 +72,13 @@ data_generation:
     max_num_batched_tokens: 8192
     seed: 42
     trust_remote_code: true
-  device: "cuda"
-  max_inp_seq_len: 256
-  max_oup_seq_len: 30
-  length_penalty: 0.0
-  template: "%s"
-  max_expansions: 50
-  timeout: 3000
+
+  # max_inp_seq_len: 256
+  # max_oup_seq_len: 30
+  # length_penalty: 0.0
+  # template: "%s"
+  # max_expansions: 50
+  # timeout: 3000
 
   sampling_params:
     temperature: 1

@@ -4,6 +4,7 @@ import random
 import itertools
 from typing import Optional
 # import vllm
+from omegaconf import OmegaConf
 from tqdm import tqdm
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -187,8 +188,11 @@ if __name__ == "__main__":
     config_name = args.cfg or "rm_eval"
     cfg = get_config(config_name=config_name, overrides=overrides)
 
+    formatted_cfg = OmegaConf.to_yaml(cfg, resolve=True)
+    print(formatted_cfg)
+
     model_id = cfg.model
-    device = torch.device("cuda")
+    device = torch.device(cfg.device)
 
         
     if cfg.use_peft:
