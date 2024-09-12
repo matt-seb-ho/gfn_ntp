@@ -163,6 +163,13 @@ DEEPSEEK_RM_ST_PROMPT_TEMPLATE_V2 = """Suggest a next tactic given the following
 -/
 -- next tactic
 """
+DEEPSEEK_RM_ST_PROMPT_TEMPLATE_V3 = """Given the following Lean 4 tactic state:
+```
+{state}
+```
+Suggest a next tactic without commentary.
+```lean4
+"""
 
 
 RM_TEMPLATES = {

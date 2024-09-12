@@ -30,9 +30,11 @@ class SearchEvalConfig:
     num_sampled_tactics: int = 8
     timeout: int = 30
     max_expansions: Optional[int] = None
+    max_depth: Optional[int] = 6
     num_workers: int = 1
     num_gpus: int = 1
     max_input_seq_len: int = 130
+    max_output_seq_len: int = 170
     max_new_tokens: int = 30
     length_penalty: float = 0.0
         

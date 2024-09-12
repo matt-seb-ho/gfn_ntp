@@ -14,6 +14,9 @@ from types import MethodType
 from proof_flow.src.constants import (
     GFN_POLICY_ADAPTER_NAME,
 )
+from proof_flow.src.prompts import (
+    DEEPSEEK_RM_ST_PROMPT_TEMPLATE,
+)
 from proof_flow.src.gfn_tuning.reward import NTPReward
 from proof_flow.src.gfn_tuning.replay_buffer import ReplayBuffer
 from proof_flow.src.gfn_tuning.lean_data_module import NTPDataModule
@@ -32,7 +35,7 @@ CONFIG_DIR = "../../../configs/"
 
 @hydra.main(version_base=None, config_path=CONFIG_DIR, config_name="train")
 def train(config: DictConfig):
-    set_up_debug_logging(config.task.debug_logger)
+    debug_log_level = set_up_debug_logging(config.task.debug_logger)
     disable_tokenizer_parallelism()
     pl.seed_everything(config.seed, workers=True)
 
@@ -74,6 +77,8 @@ def train(config: DictConfig):
         dojo_timeout=config.task.training.dojo_timeout,
         search_eval_probes=val_probes,
         ckpt_dest=config.task.training.ckpt_dest,
+        debug_log_level=debug_log_level,
+        tac_gen_prompt_template=DEEPSEEK_RM_ST_PROMPT_TEMPLATE,
     )
 
     trainer = pl.Trainer(

@@ -3,7 +3,12 @@ import openai
 from loguru import logger
 from typing import List, Optional, Tuple, Union
 from abc import ABC, abstractmethod
-from peft import AutoPeftModelForCausalLM, AutoPeftModelForSeq2SeqLM
+from peft import (
+    AutoPeftModelForCausalLM, 
+    AutoPeftModelForSeq2SeqLM,
+    PeftModelForCausalLM,
+    PeftModelForSeq2SeqLM,
+)
 from transformers import (
     AutoModelForSeq2SeqLM,
     AutoModelForCausalLM,
@@ -216,8 +221,13 @@ class HuggingFaceGenerator(TacticGenerator):
             self.tokenizer = self.tokenizer
             self.decoder_only = isinstance(
                 self.generator,
-                (AutoModelForCausalLM, AutoPeftModelForCausalLM)
+                (
+                    AutoModelForCausalLM, 
+                    AutoPeftModelForCausalLM,
+                    PeftModelForCausalLM,
+                )
             )
+            logger.debug(f"using generator of type: {type(self.generator)}, decoder_only: {self.decoder_only}")
             return
         try:
             auto_cls = (
@@ -312,7 +322,12 @@ class HuggingFaceGenerator(TacticGenerator):
         for j in range(num_samples):
             t = remove_marks(raw_output_text[j])
             if self.decoder_only and t.startswith(state):
-                t = t[len(state) :]
+                # skip prompt
+                t = t[len(state):]
+                # end at next newline
+                next_newline = t.find("\n")
+                if next_newline != -1:
+                    t = t[:next_newline]
             if t not in output_text:
                 output_text.append(t)
                 output_score.append(raw_scores[j])

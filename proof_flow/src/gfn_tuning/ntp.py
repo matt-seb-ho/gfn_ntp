@@ -306,6 +306,8 @@ class NeuralTheoremProvingTask(LightningModule):
             sync_dist=True,
             batch_size=1,
         )
+        self._debug_log(f"train/loss: {loss.item()}")
+        self._debug_log(f"train/logR: {log_r.mean().item()}")
         if (
             self.hparams.search_eval_probes is not None
             and (batch_idx + 1) % self.search_eval_cfg.step_interval == 0
@@ -384,7 +386,8 @@ class NeuralTheoremProvingTask(LightningModule):
             tokenizer=self.tokenizer,
             prompt_template=self.hparams.tac_gen_prompt_template,
         )
-        results = prover.search_unordered(repo, thms, positions)
+        with torch.no_grad():
+            results = prover.search_unordered(repo, thms, positions)
         num_proved = 0
         for r in results:
             if r is not None and r.status == Status.PROVED:

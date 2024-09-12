@@ -12,7 +12,12 @@ from dataclasses import dataclass, field
 from pytorch_lightning.utilities.deepspeed import (
     convert_zero_checkpoint_to_fp32_state_dict,
 )
-from transformers import get_constant_schedule_with_warmup
+from transformers import (
+    AutoModelForSeq2SeqLM,
+    AutoModelForCausalLM,
+    get_constant_schedule_with_warmup,
+)
+from peft import AutoPeftModelForSeq2SeqLM, AutoPeftModelForCausalLM
 from deepspeed.ops.adam import FusedAdam, DeepSpeedCPUAdam
 from typing import Optional, List, Dict, Any, Tuple, Generator, Union
 from pytorch_lightning.strategies.deepspeed import DeepSpeedStrategy
