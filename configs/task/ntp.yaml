@@ -47,7 +47,7 @@ model:
   
   # specify a huggingface model id to initialize the policy adapter from
   # e.g. "msho/llemma_sft"
-  initialize_policy_adapter_from_pretrained: null
+  initialize_policy_adapter_from_pretrained: "msho/dspv1_policy_sft"
 
   # currently just used for replay
   inf_batch_size: 8

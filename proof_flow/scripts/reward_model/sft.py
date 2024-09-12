@@ -1,3 +1,4 @@
+import argparse
 import hydra
 import torch
 from datasets import load_from_disk
@@ -41,8 +42,12 @@ def batch_sft_formatting_func(batch):
 
 
 def main():
+    psr = argparse.ArgumentParser()
+    psr.add_argument("--config", type=str, default="verifier_training")
+    args = psr.parse_args()
+    
     # load config
-    config = get_config(config_name="verifier_training")
+    config = get_config(config_name=args.config)
     # make output directory relative to repo root
     config_train_args = config.sft.model.training_args
     config_train_args.output_dir = repo_root() / config_train_args.output_dir

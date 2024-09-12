@@ -4,7 +4,11 @@ import pytorch_lightning as pl
 import torch
 from loguru import logger
 from omegaconf import DictConfig
-from peft import get_peft_model, prepare_model_for_kbit_training
+from peft import (
+    PeftModelForCausalLM,
+    get_peft_model, 
+    prepare_model_for_kbit_training,
+)
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
@@ -161,8 +165,9 @@ def get_model(config: DictConfig):
         )
     else:
         # otherwise, load the specified adapter
-        model.load_adapter(
-            config.task.model.initialize_policy_adapter_from_pretrained,
+        model = PeftModelForCausalLM.from_pretrained(
+            model=model,
+            model_id=config.task.model.initialize_policy_adapter_from_pretrained,
             adapter_name=GFN_POLICY_ADAPTER_NAME,
         )
     
