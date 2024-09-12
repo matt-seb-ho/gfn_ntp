@@ -90,7 +90,7 @@ class NeuralTheoremProvingTask(LightningModule):
         pf_temperature: float =  1.0, 
         max_depth: int = 3, # depth starts at 0
         generate_func: Optional[callable] = None,
-    ) -> tuple[torch.Tensor, torch.Tensor, Optional[list]]:
+    ) -> tuple[Optional[torch.Tensor], Optional[torch.Tensor], Optional[list]]:
         """
         Samples a proof tree for a given theorem
         Returns
@@ -111,7 +111,7 @@ class NeuralTheoremProvingTask(LightningModule):
             theorem, 
             timeout=self.hparams.dojo_timeout
         ) as (dojo, initial_state):
-            root = ProofTreeNode(state=initial_state, children=[])
+            root = ProofTreeNode(state=initial_state)
             trajectory_logpf: list[torch.Tensor] = []
             stack = [(root, False)]
             while stack:
@@ -138,8 +138,13 @@ class NeuralTheoremProvingTask(LightningModule):
                     device=self.model_device,
                 )
                 new_stack_items = []
-                if node.children is None:
+                if node.children is None or len(node.children) == 0:
                     # node is terminal
+                    if len(trajectory_logpf) == 0:
+                        # found that root node is terminal, 
+                        # no trajectories were generated
+                        # TODO: add logging for this case
+                        return None, None, None
                     trajectories_logpf.append(torch.cat(trajectory_logpf))
                 else:
                     for child in node.children:
@@ -160,6 +165,11 @@ class NeuralTheoremProvingTask(LightningModule):
                     stack.extend(reversed(new_stack_items))
                 
         
+        # redundant check for no trajectories
+        if len(trajectories_logpf) == 0:
+            # TODO: add logging for this case
+            return None, None, None
+
         # trajectories can have different lengths (may be jagged) and need to be padded
         trajectories_logpf = pad_sequence(
             trajectories_logpf, 
@@ -246,7 +256,14 @@ class NeuralTheoremProvingTask(LightningModule):
                 # Without tempering
                 pf_temp = 1.0
 
-            t_logpf, log_r, extracted_ts = self.forward(theorem, pf_temperature=pf_temp)
+            t_logpf, log_r, extracted_ts = self.forward(
+                theorem, 
+                pf_temperature=pf_temp
+            )
+            if t_logpf is None:
+                # no trajectories were generated
+                # TODO: log this!
+                return None
             self.reward_buffer.add_batch(theorem_id, extracted_ts)
 
         # get gfn loss
@@ -279,6 +296,10 @@ class NeuralTheoremProvingTask(LightningModule):
         theorem = theorem[0]
         # sample a proof and get the reward
         log_pf, log_r, _ = self.forward(theorem)
+        if log_pf is None:
+            # no trajectories generated
+            # TODO: log this!
+            return
 
         # get the GFN loss
         loss = self.tb_loss(log_pf=log_pf, log_r=log_r)
