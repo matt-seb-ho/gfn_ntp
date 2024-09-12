@@ -33,7 +33,7 @@ def main(config: DictConfig, n_samples_override, inf_batch_size_override):
         data_path=config.task.data.path,
         train_size=config.task.data.train_size,
     )
-    data.setup()
+    data.setup("fit")
 
     task = NeuralTheoremProvingTask(
         model=model,
@@ -125,7 +125,7 @@ def main(config: DictConfig, n_samples_override, inf_batch_size_override):
     opt = bnb.optim.PagedAdamW8bit(model.parameters(), lr=task.hparams.lr)
     ic(opt)
     opt.zero_grad()
-    loss = task.training_step(thm0, 0, force_replay=True)
+    loss = task.training_step([thm0], 0, force_replay=True)
     print("inference is done, check mem again, then enter to end")
     _ = input()
     # task.manual_backward(loss)

@@ -42,8 +42,9 @@ search:
   # - v4 filtered to 250 state tokens
   # - using llemma rm st prompt gets to 280 tokens
   # - v5 filtered to have 30 new tokens
-  max_input_seq_len: 280
-  max_output_seq_len: 320
+  # 1k filtering pulls down to 130 input
+  max_input_seq_len: 130
+  max_output_seq_len: null
   max_new_tokens: 30
   length_penalty: 0.0
 

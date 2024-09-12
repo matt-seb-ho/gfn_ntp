@@ -55,7 +55,7 @@ class NeuralTheoremProvingTask(LightningModule):
         max_tactic_tokens: int = 30,
         model_inference_batch_size: int = 4,
         dojo_timeout: int = 600, # default comes from LeanDojo
-        max_input_length: int = 280,
+        max_input_length: int = 130,
         branch_only_at_root: bool = True,
         debug_log_level: str = CUSTOM_LOG_LEVEL,
         device: Optional[str | torch.device] = None,
