@@ -19,7 +19,7 @@ from proof_flow.src.constants import (
     GFN_POLICY_ADAPTER_NAME,
 )
 from proof_flow.src.prompts import (
-    DEEPSEEK_RM_ST_PROMPT_TEMPLATE,
+    DEEPSEEK_RM_ST_PROMPT_TEMPLATE_V2,
 )
 from proof_flow.src.gfn_tuning.reward import NTPReward
 from proof_flow.src.gfn_tuning.replay_buffer import ReplayBuffer
@@ -82,7 +82,7 @@ def train(config: DictConfig):
         search_eval_probes=val_probes,
         ckpt_dest=config.task.training.ckpt_dest,
         debug_log_level=debug_log_level,
-        tac_gen_prompt_template=DEEPSEEK_RM_ST_PROMPT_TEMPLATE,
+        tac_gen_prompt_template=DEEPSEEK_RM_ST_PROMPT_TEMPLATE_V2,
     )
 
     trainer = pl.Trainer(
