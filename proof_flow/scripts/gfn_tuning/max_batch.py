@@ -85,9 +85,10 @@ def main(config: DictConfig, n_samples_override, inf_batch_size_override):
     _ = input()
 
     # first construct the longest possible trajectory
-    with open(repo_root() / "data/longest_input_data.json") as f:
+    # with open(repo_root() / "data/longest_input_data.json") as f:
+    with open(repo_root() / "data/longest_input1k.json") as f:
         input_data = json.load(f)
-    text = input_data["prompt"] + input_data["tactic"]
+    text = input_data["ll_prompt"] + input_data["tactic"]
     state_tactic_tokens = tokenizer(text, return_tensors="pt")["input_ids"].squeeze(0)
     ic(state_tactic_tokens.shape)
     
@@ -102,11 +103,11 @@ def main(config: DictConfig, n_samples_override, inf_batch_size_override):
     #     "log_r": node.log_r,
     # })
     tactics = [input_data["tactic"]] * 3
-    prompt_length = len(tokenizer.encode(input_data["prompt"]))
+    prompt_length = len(tokenizer.encode(input_data["ll_prompt"]))
     ic(prompt_length)
     trajectory = {
         "theorem_id": "longest_input",
-        "states": [input_data["prompt"]] * 4,
+        "states": [input_data["ll_prompt"]] * 4,
         "tactics": tactics,
         "proof": "\n".join(tactics),
         "state_tactic_tokens": [state_tactic_tokens] * 3,
