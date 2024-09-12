@@ -3,7 +3,7 @@ from typing import Optional
 
 import torch
 from icecream import ic
-from loguru import Logger, logger
+from loguru import logger
 from peft import PeftModel, PeftModelForCausalLM
 from pytorch_lightning import LightningModule
 from transformers import (
@@ -56,7 +56,6 @@ class NeuralTheoremProvingTask(LightningModule):
         dojo_timeout: int = 600, # default comes from LeanDojo
         max_input_length: int = 280,
         branch_only_at_root: bool = True,
-        debug_logger: Logger = logger,
         device: Optional[str | torch.device] = None,
     ):
         super().__init__()
