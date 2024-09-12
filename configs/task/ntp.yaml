@@ -116,3 +116,9 @@ constraints:
   max_tactics: 3
   min_tactic_tokens: 1
   max_tactic_tokens: 30
+
+debug_logger:
+  log_debug_to_stdout: true
+  write_to_file: true
+  debug_log_file: "logs/debug.log"
+  

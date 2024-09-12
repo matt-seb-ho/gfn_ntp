@@ -1,8 +1,9 @@
 import random
 from typing import Optional
-from icecream import ic
 
 import torch
+from icecream import ic
+from loguru import Logger, logger
 from peft import PeftModel, PeftModelForCausalLM
 from pytorch_lightning import LightningModule
 from transformers import (
@@ -55,6 +56,7 @@ class NeuralTheoremProvingTask(LightningModule):
         dojo_timeout: int = 600, # default comes from LeanDojo
         max_input_length: int = 280,
         branch_only_at_root: bool = True,
+        debug_logger: Logger = logger,
         device: Optional[str | torch.device] = None,
     ):
         super().__init__()
@@ -143,7 +145,7 @@ class NeuralTheoremProvingTask(LightningModule):
                     if len(trajectory_logpf) == 0:
                         # found that root node is terminal, 
                         # no trajectories were generated
-                        # TODO: add logging for this case
+                        logger.debug(f"root node is terminal.")
                         return None, None, None
                     trajectories_logpf.append(torch.cat(trajectory_logpf))
                 else:
@@ -167,7 +169,7 @@ class NeuralTheoremProvingTask(LightningModule):
         
         # redundant check for no trajectories
         if len(trajectories_logpf) == 0:
-            # TODO: add logging for this case
+            logger.debug("trajectories_logpf empty after forward pass.")
             return None, None, None
 
         # trajectories can have different lengths (may be jagged) and need to be padded
@@ -262,7 +264,7 @@ class NeuralTheoremProvingTask(LightningModule):
             )
             if t_logpf is None:
                 # no trajectories were generated
-                # TODO: log this!
+                logger.debug("forward returned None (0 trajectories generated)")
                 return None
             self.reward_buffer.add_batch(theorem_id, extracted_ts)
 
@@ -298,7 +300,7 @@ class NeuralTheoremProvingTask(LightningModule):
         log_pf, log_r, _ = self.forward(theorem)
         if log_pf is None:
             # no trajectories generated
-            # TODO: log this!
+            logger.debug("forward returned None (0 trajectories generated)")
             return
 
         # get the GFN loss

@@ -1,6 +1,6 @@
-import gc
 import torch
 import os
+import sys
 from functools import cache
 from itertools import islice
 from pathlib import Path
@@ -8,6 +8,7 @@ from typing import Optional
 
 import hydra
 from dotenv import load_dotenv
+from loguru import logger
 from omegaconf import OmegaConf
 from transformers import AutoModelForCausalLM
 from transformers import AutoTokenizer
@@ -244,3 +245,10 @@ def batch_iterator_zip(iterables, batch_size):
 
 def disable_tokenizer_parallelism():
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+
+def set_up_debug_logging(cfg: OmegaConf):
+    if cfg.log_debug_to_stdout:
+        logger.add(sys.stdout, level="DEBUG")
+    if cfg.write_to_file:
+        logger.add(repo_root() / cfg.debug_log_file, level="DEBUG")
