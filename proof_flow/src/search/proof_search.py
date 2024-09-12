@@ -1,3 +1,4 @@
+
 # proof search using best-first search (based on ReProver)
 import sys
 import ray
@@ -7,6 +8,7 @@ import torch
 import asyncio
 import os
 import pickle
+from tqdm import tqdm
 from loguru import logger
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
@@ -24,6 +26,7 @@ from proof_flow.src.search.tactic_generator import (
     VllmGenerator,
 )
 from proof_flow.src.utils import prepare_environment_for_lean_dojo
+from rich import print
 
 
 prepare_environment_for_lean_dojo()
@@ -266,7 +269,9 @@ class BestFirstSearchProver:
         try:
             # If we've seen this response before, use the existing node
             result_node = self.nodes[response]
-            result_node.depth = min(result_node.depth, node.depth + 1)
+            if isinstance(result_node, InternalNode):
+                result_node.depth = min(result_node.depth, node.depth + 1)
+                print(f"[bold yellow]Cached Node Depth: {result_node.depth}[/]")
         except KeyError:
             # Build a new node
             if isinstance(response, ProofFinished):
@@ -284,9 +289,12 @@ class BestFirstSearchProver:
                     cumulative_logprob=logprob + node.cumulative_logprob,
                     depth=node.depth + 1,
                 )
+                print(f"[bold red]New Node Depth: {result_node.depth}[/]")
 
-            if result_node.status == Status.OPEN and result_node.depth < self.max_depth:  # Don't search proved/failed nodes
-                priority_queue.put_nowait((-result_node.priority, result_node))
+            if result_node.status == Status.OPEN:
+                assert isinstance(result_node, InternalNode)
+                if result_node.depth < self.max_depth:  # Don't search proved/failed nodes
+                    priority_queue.put_nowait((-result_node.priority, result_node))
 
         # Record the new node and add it to the search queue.
         self.nodes[response] = result_node
@@ -511,11 +519,14 @@ class DistributedProver:
     ) -> List[Optional[SearchResult]]:
         """Parallel proof search for `theorems`. The order of the results is not guaranteed to match the order of the input."""
         if not self.distributed:
-            return [
-                self.prover.search(repo, thm, pos)
-                for thm, pos in zip_strict(theorems, positions)
-            ]
-
+            # return [
+            #     self.prover.search(repo, thm, pos)
+            #     for thm, pos in tqdm(zip_strict(theorems, positions), total=len(theorems), desc="Searching theorems")
+            # ]
+            results = []
+            for thm, pos in tqdm(zip_strict(theorems, positions), total=len(theorems), desc="Evaluating Theorems"):
+                results.append(self.prover.search(repo, thm, pos))
+            
         try:
             results = list(
                 self.prover_pool.map_unordered(

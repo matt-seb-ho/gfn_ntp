@@ -10,6 +10,7 @@ dpo:
 
     expand_records: false
     # processed_data: "data/straight_shot_proof_sample/dpo_expanded_dataset"
+    # processed_data: "data/straight_shot_proof_sample/dpo_single_entry_dataset"
     processed_data: "data/straight_shot_proof_sample/dpo_flattened_dataset"
 
     # prompt formatting {llemma, deepseek}
@@ -24,7 +25,7 @@ dpo:
     packing: true                             # pack examples together for better efficiency
 
     training_args:
-      output_dir: "dspv1_dpo_dspfmt"          # directory to save and repository id (relative to project root)
+      output_dir: "dspv1_dpo_dspfmt_medium"   # directory to save and repository id (relative to project root)
       num_train_epochs: 3                     # number of training epochs
       per_device_train_batch_size: 3          # batch size per device during training
       gradient_accumulation_steps: 2          # number of steps before performing a backward/update pass

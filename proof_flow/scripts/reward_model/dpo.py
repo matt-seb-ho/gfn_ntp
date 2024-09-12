@@ -9,7 +9,7 @@ from huggingface_hub import login
 from icecream import ic
 from peft import LoraConfig
 # from sft import _add_pad_token, sft_subset
-import flash_attn
+# import flash_attn
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
@@ -51,8 +51,9 @@ def expand_record(record):
     
     return expanded_records   
 
-def flatten_record(record):
-    flattened_records = []
+
+def single_entry_record(record):
+    single_entry_records = []
     positive_list = record.get("positive", [])
     negative_list = record.get("negative", [])
     
@@ -62,6 +63,21 @@ def flatten_record(record):
         pos = positive_list[0]
         neg = negative_list[0]
         # Create a new record for the first combination
+        new_record = record.copy()
+        new_record["positive"] = pos['tactic']
+        new_record["negative"] = neg['tactic']
+        single_entry_records.append(new_record)
+    
+    return single_entry_records
+
+
+def flatten_record(record):
+    flattened_records = []
+    positive_list = record.get("positive", [])
+    negative_list = record.get("negative", [])
+        
+    for pos, neg in zip(positive_list, negative_list):
+        # Create a new record for each combination
         new_record = record.copy()
         new_record["positive"] = pos['tactic']
         new_record["negative"] = neg['tactic']

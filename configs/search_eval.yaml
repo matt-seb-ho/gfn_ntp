@@ -13,10 +13,11 @@ reward_model:
   normalize_length: true
 
 model:
-  id: msho/dspv1_sft_dspfmt
+  # id: msho/dspv1_sft_dspfmt
+  id: kaiyuy/leandojo-lean4-tacgen-byt5-small
   # id: deepseek-ai/DeepSeek-Prover-V1
-  use_peft: true
-  use_4bit: true
+  use_peft: false
+  use_4bit: false
 
   quantization_config:
     _target_: transformers.BitsAndBytesConfig
@@ -28,9 +29,9 @@ model:
 search:
   # tree seach settings
   num_sampled_tactics: 8
-  timeout: 600
+  timeout: 30
   max_expansions: null
-  max_depth: 20
+  max_depth: 8
   save_results: true
   use_vllm: false
 
@@ -40,8 +41,8 @@ search:
 
   # tactic generation settings
   # TODO: figure out max input/output tokens
-  max_input_seq_len: null
-  max_output_seq_len: null
+  max_input_seq_len: 280
+  max_output_seq_len: 310
   max_new_tokens: 30
   length_penalty: 0.0
 
