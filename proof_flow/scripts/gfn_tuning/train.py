@@ -1,4 +1,5 @@
 import hydra
+import json
 import pytorch_lightning as pl
 import torch
 from loguru import logger
@@ -19,6 +20,7 @@ from proof_flow.src.gfn_tuning.lean_data_module import NTPDataModule
 from proof_flow.src.gfn_tuning.ntp import NeuralTheoremProvingTask
 from proof_flow.src.utils import (
     disable_tokenizer_parallelism,
+    repo_root,
     set_up_padding,
     set_up_debug_logging,
 )
@@ -47,6 +49,7 @@ def train(config: DictConfig):
         train_size=config.task.data.train_size,
     )
     data.setup("fit")
+    val_probes = get_val_probes(config)
 
     task = NeuralTheoremProvingTask(
         model=model,
@@ -69,6 +72,8 @@ def train(config: DictConfig):
         model_inference_batch_size=config.task.model.inf_batch_size,
         branch_only_at_root=config.task.training.branch_only_at_root,
         dojo_timeout=config.task.training.dojo_timeout,
+        search_eval_probes=val_probes,
+        ckpt_dest=config.task.training.ckpt_dest,
     )
 
     trainer = pl.Trainer(
@@ -181,6 +186,13 @@ def get_reward(config: DictConfig, model: AutoModelForCausalLM, tokenizer: AutoT
         verifier_adapter_name=config.task.reward.reward_model_adapter_name,
     )
     return reward
+
+
+def get_val_probes(cfg: DictConfig):
+    with open(repo_root() / cfg.task.search_eval.probe_file) as f:
+        probes = json.load(f)
+    # convert to list from {idx: thm} dict
+    return list(probes.values())
 
 
 if __name__ == "__main__":

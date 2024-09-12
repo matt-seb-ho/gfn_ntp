@@ -65,6 +65,7 @@ training:
   epochs: 1 # next_sentence task had 300
   use_4bit: true 
   dojo_timeout: 60 # in seconds (LeanDojo's default is 600)
+  ckpt_dest: "checkpoints"
 
 eval:
   n_probes: 10
@@ -123,3 +124,5 @@ debug_logger:
   write_to_file: true
   debug_log_file: "logs/debug.log"
   
+search_eval:
+  probe_file: data/val20.json

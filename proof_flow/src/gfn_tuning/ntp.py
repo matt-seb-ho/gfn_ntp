@@ -14,6 +14,7 @@ from transformers import (
 )
 from torch.nn.utils.rnn import pad_sequence
 
+from proof_flow.src.constants import GFN_POLICY_ADAPTER_NAME
 from proof_flow.src.gfn_tuning.proof_tree import (
     ProofTreeNode, extract_trajectories
 )
@@ -21,16 +22,20 @@ from proof_flow.src.gfn_tuning.replay_buffer import ReplayBuffer
 from proof_flow.src.gfn_tuning.reward import NTPReward
 from proof_flow.src.prompts import (
     INSTRUCTION_PROMPT_TEMPLATE,
+    DEEPSEEK_RM_ST_PROMPT_TEMPLATE_V2,
 )
+from proof_flow.src.search.proof_search import Status, DistributedProver
 from proof_flow.src.utils import (
+    CUSTOM_LOG_LEVEL,
+    SearchEvalConfig,
     prepare_environment_for_lean_dojo,
     batch_iterator_zip,
-    CUSTOM_LOG_LEVEL,
+    repo_root,
 )
 
 
 prepare_environment_for_lean_dojo()
-from lean_dojo import Dojo, TacticState, Theorem  # isort: skip
+from lean_dojo import Dojo, LeanGitRepo, TacticState, Theorem  # isort: skip
 
 
 class NeuralTheoremProvingTask(LightningModule):
@@ -58,6 +63,10 @@ class NeuralTheoremProvingTask(LightningModule):
         max_input_length: int = 130,
         branch_only_at_root: bool = True,
         debug_log_level: str = CUSTOM_LOG_LEVEL,
+        tac_gen_prompt_template: str = DEEPSEEK_RM_ST_PROMPT_TEMPLATE_V2,
+        search_eval_probes: Optional[list[dict]] = None,
+        search_eval_cfg: Optional[SearchEvalConfig] = None,
+        ckpt_dest: str = "checkpoints",
         device: Optional[str | torch.device] = None,
     ):
         super().__init__()
@@ -65,7 +74,8 @@ class NeuralTheoremProvingTask(LightningModule):
             "model", 
             "tokenizer", 
             "reward", 
-            "reward_buffer"
+            "reward_buffer",
+            "search_eval_cfg",
         ])
 
         self.model = model
@@ -77,6 +87,7 @@ class NeuralTheoremProvingTask(LightningModule):
             torch.tensor(0.0, requires_grad=True, device=self.model_device)
         )
 
+
         self.get_lr_at_step = lambda step: min(step / 20 * lr, lr)
         self.get_reward_temp_at_step = lambda step: reward_temp_start + (
             reward_temp_end - reward_temp_start
@@ -84,6 +95,9 @@ class NeuralTheoremProvingTask(LightningModule):
 
         # end step generation at newline char
         self.end_of_step_token_id = tokenizer.encode("assumption\n", add_special_tokens=False)[-1]
+        
+        # proof search evaluation configuration
+        self.search_eval_cfg = search_eval_cfg or SearchEvalConfig()
     
 
     def forward(
@@ -292,6 +306,23 @@ class NeuralTheoremProvingTask(LightningModule):
             sync_dist=True,
             batch_size=1,
         )
+        if (
+            self.hparams.search_eval_probes is not None
+            and (batch_idx + 1) % self.search_eval_cfg.step_interval == 0
+        ):
+            self._debug_log(f"starting search eval on batch_idx {batch_idx}")
+            self.model.eval()
+            self.run_proof_search_eval(batch_idx)
+            self.model.train()
+            
+            # save model
+            # TODO: make this not depend on constant
+            save_dir = repo_root() / f"{self.hparams.ckpt_dest}/{batch_idx}"
+            save_dir.mkdir(parents=True, exist_ok=True)
+            self.model.save_pretrained(
+                save_directory=save_dir,
+                selected_adapters=[GFN_POLICY_ADAPTER_NAME],
+            )
         return loss
 
 
@@ -321,7 +352,46 @@ class NeuralTheoremProvingTask(LightningModule):
             sync_dist=True,
             batch_size=1,
         )
+    
 
+    def run_proof_search_eval(self, batch_idx):
+        # get repo and theorems
+        thm0 = self.hparams.search_eval_probes[0]
+        repo = LeanGitRepo(thm0["url"], thm0["commit"])
+        thms = [
+            Theorem(repo, thm["file_path"], thm["full_name"]) 
+            for thm in self.hparams.search_eval_probes
+        ]
+        positions = [None] * len(thms) # ignored by HF tac gen
+        prover = DistributedProver(
+            use_vllm=False, # use_vllm
+            gen_ckpt_path="", # gen_ckpt_path (needs to be not None)
+            ret_ckpt_path=None, # ret_ckpt_path
+            indexed_corpus_path=None, # indexed_corpus_path
+            max_inp_seq_len=self.search_eval_cfg.max_input_seq_len,
+            max_oup_seq_len=self.search_eval_cfg.max_output_seq_len,
+            length_penalty=self.search_eval_cfg.length_penalty,
+            tactic=None, # tactic
+            module=None, # module
+            num_workers=self.search_eval_cfg.num_workers,
+            num_gpus=self.search_eval_cfg.num_gpus,
+            timeout=self.search_eval_cfg.timeout,
+            max_expansions=self.search_eval_cfg.max_expansions,
+            max_depth=self.search_eval_cfg.max_depth,
+            num_sampled_tactics=self.search_eval_cfg.num_sampled_tactics,
+            max_new_tokens=self.search_eval_cfg.max_new_tokens,
+            model=self.model,
+            tokenizer=self.tokenizer,
+            prompt_template=self.hparams.tac_gen_prompt_template,
+        )
+        results = prover.search_unordered(repo, thms, positions)
+        num_proved = 0
+        for r in results:
+            if r is not None and r.status == Status.PROVED:
+                num_proved += 1
+        self._debug_log(f"search eval: {num_proved} proved out of {len(thms)}")
+        self.log("val/num_proved", num_proved, sync_dist=True, batch_size=1)
+    
 
     def on_train_batch_start(self, theorem, batch_idx):
         # Update scheduled quantities
@@ -585,8 +655,7 @@ class NeuralTheoremProvingTask(LightningModule):
         return self.reward_buffer.sample(theorem_id, self.hparams.n_samples)
 
 
-    @staticmethod
-    def format_prompt(state: str):
+    def format_prompt(self, state: str):
         # TODO: verify Dojo's pp output is the "goals:..."
         # prepending "-- " to every line to match the evaluation setup in Llemma-7B paper
         # - see figure 4
@@ -596,11 +665,14 @@ class NeuralTheoremProvingTask(LightningModule):
         # # TODO: check if we want line.lstrip() 
         # commented_lines = ["-- INPUT:"] + ["-- " + line for line in lines]
         # return "\n".join(commented_lines)
-        return INSTRUCTION_PROMPT_TEMPLATE.format(state=state)
+        # return INSTRUCTION_PROMPT_TEMPLATE.format(state=state)
+        # return DEEPSEEK_RM_ST_PROMPT_TEMPLATE_V2.format(state=state)
+        return self.hparams.tac_gen_prompt_template.format(state=state)
     
-    # 
+
     def transfer_batch_to_device(self, batch, device, dataloader_idx):
-        # Return the batch as-is, without moving it to the device
+        # return the batch as-is, without moving it to the device
+        # assuming batch has type list[Theorem]
         return batch
 
 
@@ -777,3 +849,4 @@ def generate_step(
 
     log_pf = torch.stack(log_pf, dim=1)
     return state, log_pf
+

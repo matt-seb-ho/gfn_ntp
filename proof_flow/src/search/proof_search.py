@@ -12,10 +12,10 @@ from dataclasses import dataclass
 from typing import List, Optional, Tuple
 from ray.util.actor_pool import ActorPool
 from vllm import AsyncLLMEngine, AsyncEngineArgs, SamplingParams, RequestOutput
-from transformers import BitsAndBytesConfig
+from transformers import AutoTokenizer, BitsAndBytesConfig
 from tqdm import tqdm
 
-from proof_flow.src.search.common import zip_strict
+from proof_flow.src.search.common import zip_strict, _HuggingFaceLM
 from proof_flow.src.search.search_tree import *
 from proof_flow.src.search.tactic_generator import (
     TacticGenerator,
@@ -94,7 +94,7 @@ class BestFirstSearchProver:
 
         self.repo = repo
         self.theorem = thm
-        self.posision = pos
+        self.position = pos
         self.actor_time = 0.0
         self.environment_time = 0.0
         self.num_expansions = 0
@@ -246,7 +246,7 @@ class BestFirstSearchProver:
             state=ts,
             file_path=path,
             theorem_full_name=self.theorem.full_name,
-            theorem_pos=self.posision,
+            theorem_pos=self.position,
             num_samples=self.num_sampled_tactics,
         )
 
@@ -428,6 +428,9 @@ class DistributedProver:
         is_peft_model: bool = False,
         quantization_config: Optional[BitsAndBytesConfig] = None,
         debug: Optional[bool] = False,
+        model: Optional[_HuggingFaceLM] = None,
+        tokenizer: Optional[AutoTokenizer] = None,
+        prompt_template: Optional[str] = None,
     ) -> None:
         if gen_ckpt_path is None:
             assert tactic and not indexed_corpus_path
@@ -464,6 +467,9 @@ class DistributedProver:
                 length_penalty,
                 is_peft_model=is_peft_model,
                 quantization_config=quantization_config,
+                model=model,
+                tokenizer=tokenizer,
+                template=(prompt_template or "{state}"),
             )
 
         self.distributed = num_workers > 1

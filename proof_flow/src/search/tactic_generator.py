@@ -1,7 +1,7 @@
 import ray
 import openai
 from loguru import logger
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 from abc import ABC, abstractmethod
 from peft import AutoPeftModelForCausalLM, AutoPeftModelForSeq2SeqLM
 from transformers import (
@@ -15,6 +15,7 @@ from proof_flow.src.search.common import (
     remove_marks, 
     zip_strict, 
     format_augmented_state,
+    _HuggingFaceLM,
 )
 from proof_flow.src.search.retriever_model import PremiseRetriever
 from proof_flow.src.utils import prepare_environment_for_lean_dojo
@@ -193,6 +194,8 @@ class HuggingFaceGenerator(TacticGenerator):
         is_peft_model: bool = False,
         quantization_config: Optional[BitsAndBytesConfig] = None,
         use_beam_search: bool = True,
+        model: Optional[_HuggingFaceLM] = None,
+        tokenizer: Optional[AutoTokenizer] = None,
     ):
         self.model_path = model_path
         self.device = device
@@ -204,8 +207,18 @@ class HuggingFaceGenerator(TacticGenerator):
         self.is_peft_model = is_peft_model
         self.quantization_config = quantization_config
         self.use_beam_search = use_beam_search
+        self.model = model
+        self.tokenizer = tokenizer
 
     def initialize(self) -> None:
+        if self.model is not None and self.tokenizer is not None:
+            self.generator = self.model
+            self.tokenizer = self.tokenizer
+            self.decoder_only = isinstance(
+                self.generator,
+                (AutoModelForCausalLM, AutoPeftModelForCausalLM)
+            )
+            return
         try:
             auto_cls = (
                 AutoPeftModelForSeq2SeqLM 
@@ -241,7 +254,8 @@ class HuggingFaceGenerator(TacticGenerator):
         theorem_pos: Pos,
         num_samples: int,
     ) -> List[Tuple[str, float]]:
-        state = self.template % state
+        # state = self.template % state
+        state = self.template.format(state=state)
         logger.debug(state)
         tokenized_state = self.tokenizer(
             state, 
