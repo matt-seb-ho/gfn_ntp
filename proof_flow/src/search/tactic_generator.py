@@ -212,7 +212,7 @@ class HuggingFaceGenerator(TacticGenerator):
                 if self.is_peft_model 
                 else AutoModelForSeq2SeqLM
             )
-            self.generator = AutoModelForSeq2SeqLM.from_pretrained(
+            self.generator = auto_cls.from_pretrained(
                 self.model_path,
                 torch_dtype="auto",
                 quantization_config=self.quantization_config,
@@ -257,7 +257,8 @@ class HuggingFaceGenerator(TacticGenerator):
         output = self.generator.generate(
             input_ids=state_ids,
             attention_mask=state_mask,
-            max_length=self.max_oup_seq_len,
+            # .generate expects one of max_length or max_new_tokens
+            # max_length=self.max_oup_seq_len,
             max_new_tokens=self.max_new_tokens,
             num_beams=num_beams,
             length_penalty=self.length_penalty,
