@@ -35,7 +35,15 @@ from proof_flow.src.utils import (
 
 
 prepare_environment_for_lean_dojo()
-from lean_dojo import Dojo, LeanGitRepo, TacticState, Theorem  # isort: skip
+from lean_dojo import ( # isort: skip
+    Dojo,
+    DojoCrashError,
+    DojoInitError,
+    DojoTacticTimeoutError,
+    LeanGitRepo,
+    TacticState,
+    Theorem,
+)
 
 
 class NeuralTheoremProvingTask(LightningModule):
@@ -273,10 +281,15 @@ class NeuralTheoremProvingTask(LightningModule):
                 # Without tempering
                 pf_temp = 1.0
 
-            t_logpf, log_r, extracted_ts = self.forward(
-                theorem, 
-                pf_temperature=pf_temp
-            )
+            try:
+                t_logpf, log_r, extracted_ts = self.forward(
+                    theorem, 
+                    pf_temperature=pf_temp
+                )
+            except (DojoInitError, DojoCrashError) as e:
+                self._debug_log(f"train step dojo error: {e}")
+                return None
+                
             if t_logpf is None:
                 # no trajectories were generated
                 self._debug_log("forward returned None (0 trajectories generated)")
@@ -331,7 +344,11 @@ class NeuralTheoremProvingTask(LightningModule):
     def validation_step(self, theorem: list[Theorem], batch_idx: int):
         theorem = theorem[0]
         # sample a proof and get the reward
-        log_pf, log_r, _ = self.forward(theorem)
+        try:
+            log_pf, log_r, _ = self.forward(theorem)
+        except (DojoInitError, DojoCrashError) as e:
+            self._debug_log(f"val_step forward hit dojo error: {e}")
+            return 
         if log_pf is None:
             # no trajectories generated
             self._debug_log("forward returned None (0 trajectories generated)")
@@ -485,7 +502,11 @@ class NeuralTheoremProvingTask(LightningModule):
         )
         self._debug_log(f"generated_tactics: {generated_tactics}")
         for i, tactic in enumerate(generated_tactics):
-            next_state = lean_env.run_tac(node.state, tactic.rstrip())
+            try:
+                next_state = lean_env.run_tac(node.state, tactic.rstrip())
+            except (DojoTacticTimeoutError, DojoCrashError) as e:
+                self._debug_log(f"run_tac error ({e}) on tactic: {tactic}")
+                next_state = None # this gets converted to timeout
             child_node = ProofTreeNode(
                 state=next_state,
                 tactic=generated_tactics[i].strip(),

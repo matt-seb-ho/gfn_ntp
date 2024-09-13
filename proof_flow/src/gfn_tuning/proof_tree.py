@@ -21,7 +21,7 @@ from lean_dojo import ( # isort: skip
     TacticResult, 
     TacticState,
     LeanError,
-    TimeoutError,
+    ProofGivenUp,
 )
 
 
@@ -120,15 +120,14 @@ def extract_trajectories(root: ProofTreeNode, theorem_id: str) -> list:
     return trajectories
 
 
-def convert_tactic_result_to_state_string(res: TacticResult) -> str:
+def convert_tactic_result_to_state_string(res: Optional[TacticResult]) -> str:
     if isinstance(res, TacticState):
         return res.pp
     elif isinstance(res, ProofFinished):
         return PROOF_COMPLETE_MESSAGE
     elif isinstance(res, LeanError):
         return f"{LEAN_ERROR_STRING}: {res.error}"
-    elif isinstance(res, TimeoutError):
-        return TIMEOUT_ERROR_STRING
-    else:
-        # assert isinstance(res, ProofGivenUp):
+    elif isinstance(res, ProofGivenUp):
         return PROOF_GIVEN_UP_STRING
+    else:
+        return TIMEOUT_ERROR_STRING
