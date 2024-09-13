@@ -1,5 +1,6 @@
 models--gpt2-xl/
 dspv1_*/
+dspv1_dpo_*/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -1,6 +1,7 @@
-import gc
 import torch
 import os
+import sys
+from dataclasses import dataclass
 from functools import cache
 from itertools import islice
 from pathlib import Path
@@ -8,6 +9,7 @@ from typing import Optional
 
 import hydra
 from dotenv import load_dotenv
+from loguru import logger
 from omegaconf import OmegaConf
 from transformers import AutoModelForCausalLM
 from transformers import AutoTokenizer
@@ -19,7 +21,23 @@ DEFAULT_PAD_TOKEN = "<pad>"
 # - llemma: <s>, </s>
 # - deepseek: <｜begin▁of▁sentence｜>, <｜end▁of▁sentence｜>
 # - internlm math: <s>, </s>
+CUSTOM_LOG_LEVEL = "GFN_DEBUG"
 
+
+@dataclass
+class SearchEvalConfig:
+    step_interval: int = 250
+    num_sampled_tactics: int = 8
+    timeout: int = 30
+    max_expansions: Optional[int] = None
+    max_depth: Optional[int] = 6
+    num_workers: int = 1
+    num_gpus: int = 1
+    max_input_seq_len: int = 130
+    max_output_seq_len: int = 170
+    max_new_tokens: int = 30
+    length_penalty: float = 0.0
+        
 
 @cache
 def get_config(config_path: str = "../../configs", config_name: str = "example_train", overrides: Optional[str] = None,) -> OmegaConf:
@@ -241,3 +259,20 @@ def batch_iterator_zip(iterables, batch_size):
         if not all(batch):
             break
         yield batch
+
+
+def disable_tokenizer_parallelism():
+    os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+
+def set_up_debug_logging(cfg: OmegaConf):
+    if cfg.include_lean_dojo_debug:
+        level = "DEBUG"
+    else:
+        # between DEBUG (10) and INFO (20)
+        logger.level(CUSTOM_LOG_LEVEL, no=15)
+    if cfg.log_debug_to_stdout:
+        logger.add(sys.stdout, level=level)
+    if cfg.write_to_file:
+        logger.add(repo_root() / cfg.debug_log_file, level=level)
+    return level

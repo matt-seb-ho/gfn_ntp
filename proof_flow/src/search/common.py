@@ -12,9 +12,14 @@ from dataclasses import dataclass, field
 from pytorch_lightning.utilities.deepspeed import (
     convert_zero_checkpoint_to_fp32_state_dict,
 )
-from transformers import get_constant_schedule_with_warmup
+from transformers import (
+    AutoModelForSeq2SeqLM,
+    AutoModelForCausalLM,
+    get_constant_schedule_with_warmup,
+)
+from peft import AutoPeftModelForSeq2SeqLM, AutoPeftModelForCausalLM
 from deepspeed.ops.adam import FusedAdam, DeepSpeedCPUAdam
-from typing import Optional, List, Dict, Any, Tuple, Generator
+from typing import Optional, List, Dict, Any, Tuple, Generator, Union
 from pytorch_lightning.strategies.deepspeed import DeepSpeedStrategy
 
 from proof_flow.src.utils import prepare_environment_for_lean_dojo
@@ -26,6 +31,12 @@ from lean_dojo import Pos # isort: skip
 
 Example = Dict[str, Any]
 Batch = Dict[str, Any]
+_HuggingFaceLM = Union[
+    AutoModelForSeq2SeqLM,
+    AutoModelForCausalLM,
+    AutoPeftModelForSeq2SeqLM,
+    AutoPeftModelForCausalLM,
+]
 
 MARK_START_SYMBOL = "<a>"
 MARK_END_SYMBOL = "</a>"

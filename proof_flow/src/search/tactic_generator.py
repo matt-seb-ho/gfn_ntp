@@ -1,9 +1,14 @@
 import ray
 import openai
 from loguru import logger
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 from abc import ABC, abstractmethod
-from peft import AutoPeftModelForCausalLM, AutoPeftModelForSeq2SeqLM
+from peft import (
+    AutoPeftModelForCausalLM, 
+    AutoPeftModelForSeq2SeqLM,
+    PeftModelForCausalLM,
+    PeftModelForSeq2SeqLM,
+)
 from transformers import (
     AutoModelForSeq2SeqLM,
     AutoModelForCausalLM,
@@ -15,6 +20,7 @@ from proof_flow.src.search.common import (
     remove_marks, 
     zip_strict, 
     format_augmented_state,
+    _HuggingFaceLM,
 )
 from proof_flow.src.search.retriever_model import PremiseRetriever
 from proof_flow.src.utils import prepare_environment_for_lean_dojo
@@ -193,6 +199,9 @@ class HuggingFaceGenerator(TacticGenerator):
         is_peft_model: bool = False,
         quantization_config: Optional[BitsAndBytesConfig] = None,
         use_beam_search: bool = True,
+        model: Optional[_HuggingFaceLM] = None,
+        tokenizer: Optional[AutoTokenizer] = None,
+        is_decoder_only: Optional[bool] = None,
     ):
         self.model_path = model_path
         self.device = device
@@ -204,8 +213,25 @@ class HuggingFaceGenerator(TacticGenerator):
         self.is_peft_model = is_peft_model
         self.quantization_config = quantization_config
         self.use_beam_search = use_beam_search
+        self.model = model
+        self.tokenizer = tokenizer
+        self.decoder_only = is_decoder_only
 
     def initialize(self) -> None:
+        if self.model is not None and self.tokenizer is not None:
+            self.generator = self.model
+            self.tokenizer = self.tokenizer
+            if self.decoder_only is None:
+                self.decoder_only = isinstance(
+                    self.generator,
+                    (
+                        AutoModelForCausalLM, 
+                        AutoPeftModelForCausalLM,
+                        PeftModelForCausalLM,
+                    )
+                )
+            logger.debug(f"using generator of type: {type(self.generator)}, decoder_only: {self.decoder_only}")
+            return
         try:
             auto_cls = (
                 AutoPeftModelForSeq2SeqLM 
@@ -241,7 +267,8 @@ class HuggingFaceGenerator(TacticGenerator):
         theorem_pos: Pos,
         num_samples: int,
     ) -> List[Tuple[str, float]]:
-        state = self.template % state
+        # state = self.template % state
+        state = self.template.format(state=state)
         logger.debug(state)
         tokenized_state = self.tokenizer(
             state, 
@@ -257,6 +284,7 @@ class HuggingFaceGenerator(TacticGenerator):
         output = self.generator.generate(
             input_ids=state_ids,
             attention_mask=state_mask,
+            # .generate expects one of max_length or max_new_tokens
             # max_length=self.max_oup_seq_len,
             max_new_tokens=self.max_new_tokens,
             num_beams=num_beams,
@@ -297,7 +325,12 @@ class HuggingFaceGenerator(TacticGenerator):
         for j in range(num_samples):
             t = remove_marks(raw_output_text[j])
             if self.decoder_only and t.startswith(state):
-                t = t[len(state) :]
+                # skip prompt
+                t = t[len(state):]
+                # end at next newline
+                next_newline = t.find("\n")
+                if next_newline != -1:
+                    t = t[:next_newline]
             if t not in output_text:
                 output_text.append(t)
                 output_score.append(raw_scores[j])

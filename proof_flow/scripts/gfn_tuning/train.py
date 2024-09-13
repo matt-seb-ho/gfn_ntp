@@ -1,22 +1,37 @@
-from types import MethodType
 import hydra
+import json
 import pytorch_lightning as pl
 import torch
+from loguru import logger
 from omegaconf import DictConfig
-from peft import get_peft_model, prepare_model_for_kbit_training
+from peft import (
+    PeftModelForCausalLM,
+    get_peft_model, 
+    prepare_model_for_kbit_training,
+)
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     BitsAndBytesConfig
 )
+from types import MethodType
 from proof_flow.src.constants import (
     GFN_POLICY_ADAPTER_NAME,
+)
+from proof_flow.src.prompts import (
+    DEEPSEEK_RM_ST_PROMPT_TEMPLATE_V2,
 )
 from proof_flow.src.gfn_tuning.reward import NTPReward
 from proof_flow.src.gfn_tuning.replay_buffer import ReplayBuffer
 from proof_flow.src.gfn_tuning.lean_data_module import NTPDataModule
 from proof_flow.src.gfn_tuning.ntp import NeuralTheoremProvingTask
-from proof_flow.src.utils import set_up_padding
+from proof_flow.src.utils import (
+    disable_tokenizer_parallelism,
+    repo_root,
+    set_up_padding,
+    set_up_debug_logging,
+)
+
 
 # relative to this file (proof_flow/scripts/gfn_tuning/train.py)
 CONFIG_DIR = "../../../configs/"
@@ -27,6 +42,8 @@ from proof_flow.src.gfn_tuning.ppo import NTP_PPO
 # @hydra.main(version_base=None, config_path="/Users/vincentwork/Documents/GFN_NTP/gfn_ntp/configs/", config_name="example_train")
 # @hydra.main(version_base=None, config_path=CONFIG_DIR, config_name="train")
 def train(config: DictConfig):
+    debug_log_level = set_up_debug_logging(config.task.debug_logger)
+    disable_tokenizer_parallelism()
     pl.seed_everything(config.seed, workers=True)
 
     model, tokenizer = get_model(config)
@@ -41,7 +58,8 @@ def train(config: DictConfig):
         data_path=config.task.data.path,
         train_size=config.task.data.train_size,
     )
-    data.setup()
+    data.setup("fit")
+    val_probes = get_val_probes(config)
 
     task = NeuralTheoremProvingTask(
         model=model,
@@ -62,7 +80,14 @@ def train(config: DictConfig):
         min_tactic_tokens=config.task.constraints.min_tactic_tokens,
         max_tactic_tokens=config.task.constraints.max_tactic_tokens,
         model_inference_batch_size=config.task.model.inf_batch_size,
+        branch_only_at_root=config.task.training.branch_only_at_root,
         dojo_timeout=config.task.training.dojo_timeout,
+        search_eval_probes=val_probes,
+        ckpt_dest=config.task.training.ckpt_dest,
+        save_ckpt_on_val=config.task.training.save_ckpt_on_val,
+        sanity_check_probes=config.task.search_eval.sanity_check_probe_count,
+        debug_log_level=debug_log_level,
+        tac_gen_prompt_template=DEEPSEEK_RM_ST_PROMPT_TEMPLATE_V2,
     )
     if config.task.name == "ntp":
         task = NTP_PPO(
@@ -87,14 +112,18 @@ def train(config: DictConfig):
             wandb_project=config.task.training.wandb_project,
         )
 
+    trainer_logger = (
+        config.logger 
+        if isinstance(config.logger, bool) 
+        else hydra.utils.instantiate(config.logger)
+    )
     trainer = pl.Trainer(
         accelerator=config.device.accelerator,
         max_epochs=config.task.training.epochs,
         accumulate_grad_batches=config.task.training.accumulate_grad_batches,
-        logger=config.logger
-        if isinstance(config.logger, bool)
-        else hydra.utils.instantiate(config.logger),
+        logger=trainer_logger,
         callbacks=[hydra.utils.instantiate(c) for c in config.task.callbacks],
+        val_check_interval=config.task.training.val_check_interval,
     )
 
     # Fix a bug that arises when using 4-bit quantized models.
@@ -167,8 +196,9 @@ def get_model(config: DictConfig):
         )
     else:
         # otherwise, load the specified adapter
-        model.load_adapter(
-            config.task.model.initialize_policy_adapter_from_pretrained,
+        model = PeftModelForCausalLM.from_pretrained(
+            model=model,
+            model_id=config.task.model.initialize_policy_adapter_from_pretrained,
             adapter_name=GFN_POLICY_ADAPTER_NAME,
         )
     
@@ -197,6 +227,17 @@ def get_reward(config: DictConfig, model: AutoModelForCausalLM, tokenizer: AutoT
         verifier_adapter_name=config.task.reward.reward_model_adapter_name,
     )
     return reward
+
+
+def get_val_probes(cfg: DictConfig):
+    with open(repo_root() / cfg.task.search_eval.probe_file) as f:
+        probes = json.load(f)
+    # convert to list from {idx: thm} dict
+    probes = list(probes.values())
+    # limit number of probes
+    if cfg.task.search_eval.probe_count is not None:
+        probes = probes[:cfg.task.search_eval.probe_count]
+    return probes
 
 
 if __name__ == "__main__":

@@ -46,7 +46,7 @@ def time_tactics(dojo, initial_state, tacs):
 def main():
     psr = argparse.ArgumentParser()
     psr.add_argument("--theorem_file_path", type=str, default=theorem_file_path)
-    psr.add_argument("--idx", type=int, default=0)
+    psr.add_argument("--idx", type=str)
     args = psr.parse_args()
 
     init_msg = (
@@ -57,7 +57,11 @@ def main():
     print(init_msg)
     with open(args.theorem_file_path) as f:
         data = json.load(f)
-    ttd = data[args.idx] # test theorem dict
+
+    if args.idx is None:
+        ttd = next(iter(data.values()))
+    else:
+        ttd = data[args.idx] # test theorem dict
 
     # initialize repo for dojo
     # 1. LeanGitRepo.__post_init__ downloads repo copy into tmp

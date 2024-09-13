@@ -14,9 +14,10 @@ from dataclasses import dataclass
 from typing import List, Optional, Tuple
 from ray.util.actor_pool import ActorPool
 from vllm import AsyncLLMEngine, AsyncEngineArgs, SamplingParams, RequestOutput
-from transformers import BitsAndBytesConfig
+from transformers import AutoTokenizer, BitsAndBytesConfig
+from tqdm import tqdm
 
-from proof_flow.src.search.common import zip_strict
+from proof_flow.src.search.common import zip_strict, _HuggingFaceLM
 from proof_flow.src.search.search_tree import *
 from proof_flow.src.search.tactic_generator import (
     TacticGenerator,
@@ -69,8 +70,8 @@ class BestFirstSearchProver:
         self,
         tac_gen,  # A given tactic generator.
         timeout: int,
-        max_expansions: int,
-        max_depth: int,
+        max_expansions: Optional[int],
+        max_depth: Optional[int],
         num_sampled_tactics: int,
         debug: bool,
         save_search_tree: Optional[str] = None,
@@ -96,7 +97,7 @@ class BestFirstSearchProver:
 
         self.repo = repo
         self.theorem = thm
-        self.posision = pos
+        self.position = pos
         self.actor_time = 0.0
         self.environment_time = 0.0
         self.num_expansions = 0
@@ -248,7 +249,7 @@ class BestFirstSearchProver:
             state=ts,
             file_path=path,
             theorem_full_name=self.theorem.full_name,
-            theorem_pos=self.posision,
+            theorem_pos=self.position,
             num_samples=self.num_sampled_tactics,
         )
 
@@ -270,8 +271,8 @@ class BestFirstSearchProver:
             # If we've seen this response before, use the existing node
             result_node = self.nodes[response]
             if isinstance(result_node, InternalNode):
+                # update depth if we found a shorter path
                 result_node.depth = min(result_node.depth, node.depth + 1)
-                print(f"[bold yellow]Cached Node Depth: {result_node.depth}[/]")
         except KeyError:
             # Build a new node
             if isinstance(response, ProofFinished):
@@ -291,10 +292,15 @@ class BestFirstSearchProver:
                 )
                 print(f"[bold red]New Node Depth: {result_node.depth}[/]")
 
-            if result_node.status == Status.OPEN:
-                assert isinstance(result_node, InternalNode)
-                if result_node.depth < self.max_depth:  # Don't search proved/failed nodes
-                    priority_queue.put_nowait((-result_node.priority, result_node))
+            if (
+                result_node.status == Status.OPEN
+                and (
+                    self.max_depth is None
+                    or result_node.depth < self.max_depth
+                )
+            ):  
+                # Don't search proved/failed nodes
+                priority_queue.put_nowait((-result_node.priority, result_node))
 
         # Record the new node and add it to the search queue.
         self.nodes[response] = result_node
@@ -339,7 +345,7 @@ class ProverActor:
         tac_gen: TacticGenerator,
         timeout: int,
         max_expansions: Optional[int],
-        max_depth: int,
+        max_depth: Optional[int],
         num_sampled_tactics: int,
         debug: bool,
         save_search_tree: Optional[str] = None,
@@ -351,7 +357,7 @@ class ProverActor:
             max_depth,
             num_sampled_tactics,
             debug,
-            save_search_tree
+            save_search_tree=save_search_tree,
         )
 
     def search(
@@ -419,13 +425,17 @@ class DistributedProver:
         num_gpus: int,
         timeout: int,
         max_expansions: Optional[int],
-        max_depth: int,
+        max_depth: Optional[int],
         num_sampled_tactics: int,
         max_new_tokens: int,
         save_search_tree: Optional[str] = None,
         is_peft_model: bool = False,
         quantization_config: Optional[BitsAndBytesConfig] = None,
         debug: Optional[bool] = False,
+        model: Optional[_HuggingFaceLM] = None,
+        tokenizer: Optional[AutoTokenizer] = None,
+        prompt_template: Optional[str] = None,
+        is_decoder_only: Optional[bool] = None,
     ) -> None:
         if gen_ckpt_path is None:
             assert tactic and not indexed_corpus_path
@@ -462,6 +472,10 @@ class DistributedProver:
                 length_penalty,
                 is_peft_model=is_peft_model,
                 quantization_config=quantization_config,
+                model=model,
+                tokenizer=tokenizer,
+                template=(prompt_template or "{state}"),
+                is_decoder_only=is_decoder_only,
             )
 
         self.distributed = num_workers > 1
@@ -519,14 +533,14 @@ class DistributedProver:
     ) -> List[Optional[SearchResult]]:
         """Parallel proof search for `theorems`. The order of the results is not guaranteed to match the order of the input."""
         if not self.distributed:
-            # return [
-            #     self.prover.search(repo, thm, pos)
-            #     for thm, pos in tqdm(zip_strict(theorems, positions), total=len(theorems), desc="Searching theorems")
-            # ]
             results = []
-            for thm, pos in tqdm(zip_strict(theorems, positions), total=len(theorems), desc="Evaluating Theorems"):
+            for thm, pos in tqdm(
+                zip_strict(theorems, positions),
+                total=len(theorems),
+                desc="proof search eval",
+            ):
                 results.append(self.prover.search(repo, thm, pos))
-            
+            return results
         try:
             results = list(
                 self.prover_pool.map_unordered(
