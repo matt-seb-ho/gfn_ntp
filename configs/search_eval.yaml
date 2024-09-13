@@ -14,8 +14,8 @@ reward_model:
 
 model:
   # id: msho/dspv1_sft_dspfmt
-  id: kaiyuy/leandojo-lean4-tacgen-byt5-small
-  # id: deepseek-ai/DeepSeek-Prover-V1
+  # id: kaiyuy/leandojo-lean4-tacgen-byt5-small
+  id: deepseek-ai/DeepSeek-Prover-V1
   use_peft: false
   use_4bit: false
 

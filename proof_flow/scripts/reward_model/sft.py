@@ -1,5 +1,6 @@
 import hydra
 import torch
+import random
 from datasets import load_from_disk
 from huggingface_hub import login
 from omegaconf import OmegaConf
@@ -50,6 +51,12 @@ def main():
     # load dataset
     dataset = load_from_disk(repo_root() / config.sft.data.formatted_dataset_dir)
     train_data = dataset["train"]
+    
+    # This is temperary, need it to reduce iteration time for testing
+    # random.seed(42)
+    # sample_indices = random.sample(range(len(train_data)), min(1000, len(train_data)))
+    # train_data = train_data.select(sample_indices)
+    print(len(train_data))
 
     # Hugging Face model id
     model_id = config.sft.model.base_model_id
