@@ -93,7 +93,7 @@ def main(config: DictConfig):
 
     # trainer.fit(model=task, datamodule=data)
     model.eval()
-    task.run_proof_search_eval(0)
+    task.run_proof_search_eval()
     model.train()
 
 

@@ -81,18 +81,24 @@ def train(config: DictConfig):
         dojo_timeout=config.task.training.dojo_timeout,
         search_eval_probes=val_probes,
         ckpt_dest=config.task.training.ckpt_dest,
+        save_ckpt_on_val=config.task.training.save_ckpt_on_val,
+        sanity_check_probes=config.task.search_eval.sanity_check_probe_count,
         debug_log_level=debug_log_level,
         tac_gen_prompt_template=DEEPSEEK_RM_ST_PROMPT_TEMPLATE_V2,
     )
 
+    trainer_logger = (
+        config.logger 
+        if isinstance(config.logger, bool) 
+        else hydra.utils.instantiate(config.logger)
+    )
     trainer = pl.Trainer(
         accelerator=config.device.accelerator,
         max_epochs=config.task.training.epochs,
         accumulate_grad_batches=config.task.training.accumulate_grad_batches,
-        logger=config.logger
-        if isinstance(config.logger, bool)
-        else hydra.utils.instantiate(config.logger),
+        logger=trainer_logger,
         callbacks=[hydra.utils.instantiate(c) for c in config.task.callbacks],
+        val_check_interval=config.task.training.val_check_interval,
     )
 
     # Fix a bug that arises when using 4-bit quantized models.
@@ -202,7 +208,11 @@ def get_val_probes(cfg: DictConfig):
     with open(repo_root() / cfg.task.search_eval.probe_file) as f:
         probes = json.load(f)
     # convert to list from {idx: thm} dict
-    return list(probes.values())
+    probes = list(probes.values())
+    # limit number of probes
+    if cfg.task.search_eval.probe_count is not None:
+        probes = probes[:cfg.task.search_eval.probe_count]
+    return probes
 
 
 if __name__ == "__main__":

@@ -75,6 +75,8 @@ class NeuralTheoremProvingTask(LightningModule):
         search_eval_probes: Optional[list[dict]] = None,
         search_eval_cfg: Optional[SearchEvalConfig] = None,
         ckpt_dest: str = "checkpoints",
+        save_ckpt_on_val: bool = False,
+        sanity_check_probes: int = 1,
         device: Optional[str | torch.device] = None,
     ):
         super().__init__()
@@ -321,31 +323,19 @@ class NeuralTheoremProvingTask(LightningModule):
         )
         self._debug_log(f"train/loss: {loss.item()}")
         self._debug_log(f"train/logR: {log_r.mean().item()}")
-        if (
-            self.hparams.search_eval_probes is not None
-            and (batch_idx + 1) % self.search_eval_cfg.step_interval == 0
-        ):
-            self._debug_log(f"starting search eval on batch_idx {batch_idx}")
-            self.model.eval()
-            self.run_proof_search_eval(batch_idx)
-            self.model.train()
-            
-            # save model
-            # TODO: make this not depend on constant
-            save_dir = repo_root() / f"{self.hparams.ckpt_dest}/{batch_idx}"
-            save_dir.mkdir(parents=True, exist_ok=True)
-            self.model.save_pretrained(
-                save_directory=save_dir,
-                selected_adapters=[GFN_POLICY_ADAPTER_NAME],
-            )
         return loss
 
 
     def validation_step(self, theorem: list[Theorem], batch_idx: int):
+        # search eval
+        if self.hparams.search_eval_probes:
+            self.run_proof_search_eval()
+
+        # forward pass on a validation theorem (extremely light search)
         theorem = theorem[0]
-        # sample a proof and get the reward
         try:
-            log_pf, log_r, _ = self.forward(theorem)
+            with torch.no_grad():
+                log_pf, log_r, _ = self.forward(theorem)
         except (DojoInitError, DojoCrashError) as e:
             self._debug_log(f"val_step forward hit dojo error: {e}")
             return 
@@ -355,7 +345,8 @@ class NeuralTheoremProvingTask(LightningModule):
             return
 
         # get the GFN loss
-        loss = self.tb_loss(log_pf=log_pf, log_r=log_r)
+        # loss = self.tb_loss(log_pf=log_pf, log_r=log_r)
+        loss = self.log_z_variance_loss(log_pf=log_pf, log_r=log_r)
 
         # Log metrics
         self.log(
@@ -373,13 +364,18 @@ class NeuralTheoremProvingTask(LightningModule):
         )
     
 
-    def run_proof_search_eval(self, batch_idx):
+    def run_proof_search_eval(self):
+        probes = self.hparams.search_eval_probes
+        if self.trainer.sanity_checking:
+            if self.hparams.sanity_check_probes == 0:
+                return
+            probes = probes[:self.hparams.sanity_check_probes]
+        self._debug_log(f"starting search eval on step {self.global_step}")
         # get repo and theorems
-        thm0 = self.hparams.search_eval_probes[0]
-        repo = LeanGitRepo(thm0["url"], thm0["commit"])
+        repo = LeanGitRepo(probes[0]["url"], probes[0]["commit"])
         thms = [
             Theorem(repo, thm["file_path"], thm["full_name"]) 
-            for thm in self.hparams.search_eval_probes
+            for thm in probes
         ]
         positions = [None] * len(thms) # ignored by HF tac gen
         prover = DistributedProver(
@@ -429,6 +425,23 @@ class NeuralTheoremProvingTask(LightningModule):
         self.log("scheduled/lr", self.get_lr_at_step(self.global_step), sync_dist=True)
         # ensure training mode is on
         self.model.train()
+    
+
+    def on_validation_epoch_start(self):
+        self.model.eval()
+    
+
+    def on_validation_epoch_end(self):
+        self.model.train()
+        # save model
+        if self.hparams.save_ckpt_on_val:
+            save_dir = repo_root() / self.hparams.ckpt_dest / self.global_step
+            save_dir.mkdir(parents=True, exist_ok=True)
+            # TODO: make this not depend on a constant
+            self.model.save_pretrained(
+                save_directory=save_dir,
+                selected_adapters=[GFN_POLICY_ADAPTER_NAME],
+            )
 
 
     def configure_optimizers(self):
