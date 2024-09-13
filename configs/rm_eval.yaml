@@ -9,6 +9,17 @@
 # input_limit: null
 
 # Negative Tactics Data Generation: training split not test split -----------------------
+# input_file: "data/straight_shot_proof_sample/time_filtered_v2_wfs.json"  # Updated to use training data split
+# output_file: "data/straight_shot_proof_sample/sampled_proofs_train.json"  # Updated output file for sampled proofs
+# verification_results_file: "data/straight_shot_proof_sample/verification_results_train.json"  # Updated for training verification results
+# rm_data_file: "data/rm_eval_dataset_v3.json"  # Updated RM data output file for training
+# rm_eval_results_dir: "data/rm_eval_results/"
+# rm_eval_result_filename: "dspv1_dpo_dspfmt_rm_eval_all.json"
+# use_tqdm: true
+# input_limit: null
+# valid_tactics_only: true
+# use_BFS: false
+
 input_file: "data/straight_shot_proof_sample/time_filtered_v2_wfs.json"  # Updated to use training data split
 output_file: "data/straight_shot_proof_sample/sampled_proofs_train.json"  # Updated output file for sampled proofs
 verification_results_file: "data/straight_shot_proof_sample/verification_results_train.json"  # Updated for training verification results
@@ -18,7 +29,7 @@ rm_eval_result_filename: "dspv1_dpo_dspfmt_rm_eval_all.json"
 use_tqdm: true
 input_limit: null
 valid_tactics_only: true
-# use_BFS: true
+use_BFS: false
 
 # input_file: "data/time_filtered_val.json"
 # output_file: "data/sampled_proofs.json"

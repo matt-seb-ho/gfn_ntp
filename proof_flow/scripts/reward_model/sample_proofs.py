@@ -7,9 +7,9 @@ from tqdm import tqdm
 
 from proof_flow.src.utils import get_config, repo_root
 from lean_dojo import LeanGitRepo, Pos, Theorem
-from .old_prover.proof_search import ProverActor, BestFirstSearchProver
-from .old_prover.search_tree import Status
-from .old_prover.tactic_generator import TacticGenerator, HuggingFaceGenerator
+# from .old_prover.proof_search import ProverActor, BestFirstSearchProver
+# from .old_prover.search_tree import Status
+# from .old_prover.tactic_generator import TacticGenerator, HuggingFaceGenerator
 
 """
 given: 
@@ -64,55 +64,55 @@ def sample_proofs(
     return outputs
      
         
-def sample_proofs_with_best_first_search(
-    thm_dicts: list | dict,
-    tactic_generator: TacticGenerator,
-    timeout: int,
-    max_expansions: Optional[int] = None,
-    num_sampled_tactics: int = 1,
-    use_tqdm: bool = False,
-) -> list[list[str]]:
-    """
-    Sample proofs using BestFirstSearchProver instead of an LLM.
-    """
-    # Initialize the prover with the given tactic generator
-    prover = BestFirstSearchProver(
-        tac_gen=tactic_generator,
-        timeout=timeout,
-        max_expansions=max_expansions,
-        num_sampled_tactics=num_sampled_tactics,
-        debug=True,
-    )
+# def sample_proofs_with_best_first_search(
+#     thm_dicts: list | dict,
+#     tactic_generator: TacticGenerator,
+#     timeout: int,
+#     max_expansions: Optional[int] = None,
+#     num_sampled_tactics: int = 1,
+#     use_tqdm: bool = False,
+# ) -> list[list[str]]:
+#     """
+#     Sample proofs using BestFirstSearchProver instead of an LLM.
+#     """
+#     # Initialize the prover with the given tactic generator
+#     prover = BestFirstSearchProver(
+#         tac_gen=tactic_generator,
+#         timeout=timeout,
+#         max_expansions=max_expansions,
+#         num_sampled_tactics=num_sampled_tactics,
+#         debug=True,
+#     )
 
-    proofs = []
-    if isinstance(thm_dicts, list):
-        thms = thm_dicts
-    else:
-        thms = thm_dicts.values()
+#     proofs = []
+#     if isinstance(thm_dicts, list):
+#         thms = thm_dicts
+#     else:
+#         thms = thm_dicts.values()
 
-    # Use tqdm for progress bar if use_tqdm is True
-    iterator = tqdm(thms, desc="Sampling Proofs w/ Best First Search") if use_tqdm else thms
+#     # Use tqdm for progress bar if use_tqdm is True
+#     iterator = tqdm(thms, desc="Sampling Proofs w/ Best First Search") if use_tqdm else thms
 
-    for thm_data in iterator:
-        # Set up theorem and repo information
-        repo = LeanGitRepo(thm_data['url'], thm_data['commit'])
-        theorem = Theorem(
-            repo=repo,
-            file_path=thm_data['file_path'],
-            full_name=thm_data['full_name'],
-        )
-        pos = Pos(thm_data['start'][0], thm_data['start'][1])
+#     for thm_data in iterator:
+#         # Set up theorem and repo information
+#         repo = LeanGitRepo(thm_data['url'], thm_data['commit'])
+#         theorem = Theorem(
+#             repo=repo,
+#             file_path=thm_data['file_path'],
+#             full_name=thm_data['full_name'],
+#         )
+#         pos = Pos(thm_data['start'][0], thm_data['start'][1])
 
-        # Use the prover to search for a proof
-        result = prover.search(repo, theorem, pos)
+#         # Use the prover to search for a proof
+#         result = prover.search(repo, theorem, pos)
 
-        # Collect the proof if found
-        if result and result.status == Status.PROVED:
-            proofs.append(result.proof)
-        else:
-            proofs.append([])  # No proof found or other status
+#         # Collect the proof if found
+#         if result and result.status == Status.PROVED:
+#             proofs.append(result.proof)
+#         else:
+#             proofs.append([])  # No proof found or other status
 
-    return proofs
+#     return proofs
      
         
 def cot_prompt(data):
@@ -148,36 +148,36 @@ if __name__ == "__main__":
         input_data = {keys[i]: input_data[keys[i]] for i in range(cfg.input_limit)}
 
 
-    if cfg.use_BFS:
-        # define a tactics generator with the given model
-        tactic_generator = HuggingFaceGenerator(
-            model_path=cfg.data_generation.llm.model, 
-            device=cfg.data_generation.device,
-            max_inp_seq_len=cfg.data_generation.max_inp_seq_len,
-            max_oup_seq_len=cfg.data_generation.max_oup_seq_len,
-            length_penalty=cfg.data_generation.length_penalty,
-            template=cfg.data_generation.template,
-        )
+    # if cfg.use_BFS:
+    #     # define a tactics generator with the given model
+    #     tactic_generator = HuggingFaceGenerator(
+    #         model_path=cfg.data_generation.llm.model, 
+    #         device=cfg.data_generation.device,
+    #         max_inp_seq_len=cfg.data_generation.max_inp_seq_len,
+    #         max_oup_seq_len=cfg.data_generation.max_oup_seq_len,
+    #         length_penalty=cfg.data_generation.length_penalty,
+    #         template=cfg.data_generation.template,
+    #     )
         
-        # Test the max expansion (10, maybe None) and timeout (10) parameters for the BestFirstSearchProver see how many proofs are found
-        # Sample 30 and evaluated if proof correctness. You can check how good it is tactic at a time (accuracy, try to get accuracy > 50%) 
-        # max_inp_seq_len = max length of the theorems (already removed top 5%)
-        # max_oup_seq_len = max number of new tokens (30). 
+    #     # Test the max expansion (10, maybe None) and timeout (10) parameters for the BestFirstSearchProver see how many proofs are found
+    #     # Sample 30 and evaluated if proof correctness. You can check how good it is tactic at a time (accuracy, try to get accuracy > 50%) 
+    #     # max_inp_seq_len = max length of the theorems (already removed top 5%)
+    #     # max_oup_seq_len = max number of new tokens (30). 
         
-        # get proofs with Best First Search and the defined tactic generator
-        proofs = sample_proofs_with_best_first_search(
-            input_data, 
-            tactic_generator, 
-            timeout=cfg.data_generation.timeout, # in seconds, the amount of time it takes for the dojo to find a proof
-            max_expansions=cfg.data_generation.max_expansions, 
-            num_sampled_tactics=cfg.data_generation.sampling_params.n, 
-            use_tqdm=cfg.use_tqdm
-        )
-    else:
-        sampling_params = SamplingParams(**cfg.data_generation.sampling_params)
-        llm = LLM(**cfg.data_generation.llm)
-        # get proofs
-        proofs = sample_proofs(input_data, llm, sampling_params, use_tqdm=cfg.use_tqdm)
+    #     # get proofs with Best First Search and the defined tactic generator
+    #     proofs = sample_proofs_with_best_first_search(
+    #         input_data, 
+    #         tactic_generator, 
+    #         timeout=cfg.data_generation.timeout, # in seconds, the amount of time it takes for the dojo to find a proof
+    #         max_expansions=cfg.data_generation.max_expansions, 
+    #         num_sampled_tactics=cfg.data_generation.sampling_params.n, 
+    #         use_tqdm=cfg.use_tqdm
+    #     )
+    # else:
+    sampling_params = SamplingParams(**cfg.data_generation.sampling_params)
+    llm = LLM(**cfg.data_generation.llm)
+    # get proofs
+    proofs = sample_proofs(input_data, llm, sampling_params, use_tqdm=cfg.use_tqdm)
     
 
     # write to file

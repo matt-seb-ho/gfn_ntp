@@ -7,7 +7,7 @@ from abc import ABC, abstractmethod
 from transformers import AutoModelForSeq2SeqLM, AutoModelForCausalLM, AutoTokenizer
 
 # from retrieval.model import PremiseRetriever
-from proof_flow.scripts.rm_eval.old_prover.common import remove_marks, zip_strict, format_augmented_state
+from proof_flow.scripts.reward_model.old_prover.common import remove_marks, zip_strict, format_augmented_state
 
 
 class TacticGenerator(ABC):

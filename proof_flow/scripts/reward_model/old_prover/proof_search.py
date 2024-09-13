@@ -42,7 +42,7 @@ from typing import List, Optional, Tuple
 from ray.util.actor_pool import ActorPool
 from vllm import AsyncLLMEngine, AsyncEngineArgs, SamplingParams, RequestOutput
 
-from proof_flow.scripts.rm_eval.old_prover.common import zip_strict
+from proof_flow.scripts.reward_model.old_prover.common import zip_strict
 from .search_tree import *
 from .tactic_generator import (
     TacticGenerator,
