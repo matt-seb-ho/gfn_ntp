@@ -327,10 +327,6 @@ class NeuralTheoremProvingTask(LightningModule):
 
 
     def validation_step(self, theorem: list[Theorem], batch_idx: int):
-        # search eval
-        if self.hparams.search_eval_probes:
-            self.run_proof_search_eval()
-
         # forward pass on a validation theorem (extremely light search)
         theorem = theorem[0]
         try:
@@ -429,7 +425,9 @@ class NeuralTheoremProvingTask(LightningModule):
 
     def on_validation_epoch_start(self):
         self.model.eval()
-    
+        if self.hparams.search_eval_probes:
+            self.run_proof_search_eval()
+
 
     def on_validation_epoch_end(self):
         self.model.train()
