@@ -28,6 +28,10 @@ from proof_flow.src.utils import prepare_environment_for_lean_dojo
 
 prepare_environment_for_lean_dojo()
 from lean_dojo import Pos # isort: skip
+import time
+import json
+from rich import print
+from collections import defaultdict
 
 
 class TacticGenerator(ABC):
@@ -328,12 +332,33 @@ class HuggingFaceGenerator(TacticGenerator):
                 # skip prompt
                 t = t[len(state):]
                 # end at next newline
-                next_newline = t.find("\n")
+                next_newline = t.find("\n```")
                 if next_newline != -1:
                     t = t[:next_newline]
+                    logger.info(t)
+                else:
+                    next_newline = t.rfind("\n")
+                    if next_newline != -1:
+                        t = t[:next_newline]
+                        logger.info(t)
+            if self.decoder_only and ("-- next tactic\n" in t):
+                # skip prompt
+                t = t.split("-- next tactic\n")[1]
+                # end at next newline
+                next_newline = t.find("\n```")
+                if next_newline != -1:
+                    t = t[:next_newline]
+                    logger.info(t)
+                else:
+                    next_newline = t.rfind("\n")
+                    if next_newline != -1:
+                        t = t[:next_newline]
+                        logger.info(t)            
+        
             if t not in output_text:
                 output_text.append(t)
                 output_score.append(raw_scores[j])
+                
 
         return list(zip_strict(output_text, output_score))
 

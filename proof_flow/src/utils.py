@@ -40,12 +40,11 @@ class SearchEvalConfig:
         
 
 @cache
-def get_config(config_path: str = "../../configs", config_name: str = "example_train", overrides: Optional[str] = None,) -> OmegaConf:
-# def get_config(
-#     config_path: str = "../../configs", 
-#     config_name: str = "train",
-#     overrides: Optional[str] = None,
-# ) -> OmegaConf:
+def get_config(
+    config_path: str = "../../configs", 
+    config_name: str = "train",
+    overrides: Optional[str] = None,
+) -> OmegaConf:
     if overrides:
         overrides = overrides.split(",")
     with hydra.initialize(config_path=config_path, version_base=None):
@@ -271,6 +270,7 @@ def set_up_debug_logging(cfg: OmegaConf):
     else:
         # between DEBUG (10) and INFO (20)
         logger.level(CUSTOM_LOG_LEVEL, no=15)
+        level = CUSTOM_LOG_LEVEL
     if cfg.log_debug_to_stdout:
         logger.add(sys.stdout, level=level)
     if cfg.write_to_file:

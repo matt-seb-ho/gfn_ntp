@@ -1,4 +1,3 @@
-
 # proof search using best-first search (based on ReProver)
 import sys
 import ray
@@ -8,7 +7,6 @@ import torch
 import asyncio
 import os
 import pickle
-from tqdm import tqdm
 from loguru import logger
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
@@ -27,7 +25,6 @@ from proof_flow.src.search.tactic_generator import (
     VllmGenerator,
 )
 from proof_flow.src.utils import prepare_environment_for_lean_dojo
-from rich import print
 
 
 prepare_environment_for_lean_dojo()
@@ -290,7 +287,6 @@ class BestFirstSearchProver:
                     cumulative_logprob=logprob + node.cumulative_logprob,
                     depth=node.depth + 1,
                 )
-                print(f"[bold red]New Node Depth: {result_node.depth}[/]")
 
             if (
                 result_node.status == Status.OPEN
@@ -537,7 +533,7 @@ class DistributedProver:
             for thm, pos in tqdm(
                 zip_strict(theorems, positions),
                 total=len(theorems),
-                desc="proof search eval",
+                desc="best first proof search",
             ):
                 results.append(self.prover.search(repo, thm, pos))
             return results

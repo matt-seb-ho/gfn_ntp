@@ -124,5 +124,19 @@ debug_logger:
   
 search_eval:
   probe_count: null # null for all
-  sanity_check_probe_count: 1
+  sanity_check_probe_count: 20
   probe_file: data/val20.json
+
+search_eval_cfg:
+  _target_: proof_flow.src.utils.SearchEvalConfig
+  num_sampled_tactics: 8
+  timeout: 30
+  max_expansions: null
+  max_depth: 6
+  num_workers: 1
+  num_gpus: 1
+  max_input_seq_len: 280
+  max_output_seq_len: null
+  max_new_tokens: 30
+  length_penalty: 0.0
+

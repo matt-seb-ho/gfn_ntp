@@ -1,6 +1,10 @@
 import hydra
 import pytorch_lightning as pl
 from omegaconf import DictConfig
+from transformers import (
+    AutoModelForCausalLM,
+    AutoTokenizer,
+)
 from types import MethodType
 from proof_flow.scripts.gfn_tuning.train import (
     get_model, 
@@ -20,6 +24,8 @@ from proof_flow.src.utils import (
     disable_tokenizer_parallelism,
     set_up_debug_logging,
 )
+from proof_flow.src.search.proof_search import Status
+from loguru import logger
 
 
 # relative to this file (proof_flow/scripts/gfn_tuning/train.py)
@@ -31,7 +37,28 @@ def main(config: DictConfig):
     disable_tokenizer_parallelism()
     pl.seed_everything(config.seed, workers=True)
 
-    model, tokenizer = get_model(config)
+    # model, tokenizer = get_model(config)
+    if config.task.training.use_4bit:
+        # bnb_config = BitsAndBytesConfig(
+        #     load_in_4bit=True,
+        #     bnb_4bit_quant_type="nf4",
+        #     bnb_4bit_compute_dtype="float16",
+        #     bnb_4bit_use_double_quant=True,
+        # )
+        # config has all the same options as above
+        # EXCEPT bnb_4bit_compute_dtype is "bfloat16" instead of "float16"
+        bnb_config = hydra.utils.instantiate(config.task.model.bnb)
+    else:
+        bnb_config = None
+
+    tokenizer = AutoTokenizer.from_pretrained(config.task.model.name)
+    model = AutoModelForCausalLM.from_pretrained(
+        config.task.model.name, 
+        torch_dtype="auto", # defer to torch_dtype from model config.json
+        device_map="auto", 
+        quantization_config=bnb_config,
+    )
+    
     reward = get_reward(config, model, tokenizer)
     reward_buffer = ReplayBuffer(
         buffer_size=config.task.reward.buffer_size,
@@ -68,7 +95,10 @@ def main(config: DictConfig):
         branch_only_at_root=config.task.training.branch_only_at_root,
         dojo_timeout=config.task.training.dojo_timeout,
         search_eval_probes=val_probes,
+        search_eval_cfg=hydra.utils.instantiate(config.task.search_eval_cfg),
         ckpt_dest=config.task.training.ckpt_dest,
+        save_ckpt_on_val=config.task.training.save_ckpt_on_val,
+        sanity_check_probes=config.task.search_eval.sanity_check_probe_count,
         debug_log_level=debug_log_level,
         tac_gen_prompt_template=DEEPSEEK_RM_ST_PROMPT_TEMPLATE_V2,
     )
@@ -93,9 +123,21 @@ def main(config: DictConfig):
 
     # trainer.fit(model=task, datamodule=data)
     model.eval()
-    task.run_proof_search_eval()
-    model.train()
-
+    results = task.run_proof_search_eval()
+    name_to_idx = {
+        thm_dict["full_name"]: thm_idx
+        for thm_idx, thm_dict in enumerate(val_probes)
+    }
+    for r in results:
+        if r is None:
+            print("Discarded")
+            continue
+        # r is a SearchResult object
+        proved = (r.status == Status.PROVED)
+        thm_dict = val_probes[name_to_idx[r.theorem.full_name]]
+        proof_len = len(thm_dict["traced_tactics"])
+        logger.info(f"proved: {proved}, thm: {thm_dict['full_name']}, proof_len: {proof_len}")
+        
 
 if __name__ == "__main__":
     cfg = get_config()

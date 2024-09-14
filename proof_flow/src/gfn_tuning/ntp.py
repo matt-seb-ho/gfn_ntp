@@ -360,9 +360,9 @@ class NeuralTheoremProvingTask(LightningModule):
         )
     
 
-    def run_proof_search_eval(self):
+    def run_proof_search_eval(self) -> list:
         probes = self.hparams.search_eval_probes
-        if self.trainer.sanity_checking:
+        if self._is_sanity_checking():
             if self.hparams.sanity_check_probes == 0:
                 return
             probes = probes[:self.hparams.sanity_check_probes]
@@ -404,6 +404,7 @@ class NeuralTheoremProvingTask(LightningModule):
                 num_proved += 1
         self._debug_log(f"search eval: {num_proved} proved out of {len(thms)}")
         self.log("val/num_proved", num_proved, sync_dist=True, batch_size=1)
+        return results
     
 
     def on_train_batch_start(self, theorem, batch_idx):
@@ -433,7 +434,7 @@ class NeuralTheoremProvingTask(LightningModule):
         self.model.train()
         # save model
         if self.hparams.save_ckpt_on_val:
-            save_dir = repo_root() / self.hparams.ckpt_dest / self.global_step
+            save_dir = repo_root() / f"{self.hparams.ckpt_dest}/{self.global_step}"
             save_dir.mkdir(parents=True, exist_ok=True)
             # TODO: make this not depend on a constant
             self.model.save_pretrained(
@@ -710,6 +711,15 @@ class NeuralTheoremProvingTask(LightningModule):
         # return the batch as-is, without moving it to the device
         # assuming batch has type list[Theorem]
         return batch
+
+    
+    def _is_sanity_checking(self) -> bool:
+        try:
+            return self.trainer.sanity_checking
+        except RuntimeError:
+            # if trainer is not attached, self.trainer will raise a RuntimeError
+            # only reason trainer is not attached is that we're in a sanity check
+            return True
 
 
 def generate_step_hf(
