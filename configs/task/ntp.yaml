@@ -138,5 +138,6 @@ search_eval_cfg:
   max_input_seq_len: 280
   max_output_seq_len: null
   max_new_tokens: 30
+  save_search_tree: data/search_trees/val20/
   length_penalty: 0.0
 

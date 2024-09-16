@@ -36,6 +36,7 @@ class SearchEvalConfig:
     max_input_seq_len: int = 130
     max_output_seq_len: int = 170
     max_new_tokens: int = 30
+    save_search_tree: Optional[str] = None
     length_penalty: float = 0.0
         
 

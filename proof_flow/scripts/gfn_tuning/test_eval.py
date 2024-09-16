@@ -37,27 +37,27 @@ def main(config: DictConfig):
     disable_tokenizer_parallelism()
     pl.seed_everything(config.seed, workers=True)
 
-    # model, tokenizer = get_model(config)
-    if config.task.training.use_4bit:
-        # bnb_config = BitsAndBytesConfig(
-        #     load_in_4bit=True,
-        #     bnb_4bit_quant_type="nf4",
-        #     bnb_4bit_compute_dtype="float16",
-        #     bnb_4bit_use_double_quant=True,
-        # )
-        # config has all the same options as above
-        # EXCEPT bnb_4bit_compute_dtype is "bfloat16" instead of "float16"
-        bnb_config = hydra.utils.instantiate(config.task.model.bnb)
-    else:
-        bnb_config = None
+    model, tokenizer = get_model(config)
+    # if config.task.training.use_4bit:
+    #     # bnb_config = BitsAndBytesConfig(
+    #     #     load_in_4bit=True,
+    #     #     bnb_4bit_quant_type="nf4",
+    #     #     bnb_4bit_compute_dtype="float16",
+    #     #     bnb_4bit_use_double_quant=True,
+    #     # )
+    #     # config has all the same options as above
+    #     # EXCEPT bnb_4bit_compute_dtype is "bfloat16" instead of "float16"
+    #     bnb_config = hydra.utils.instantiate(config.task.model.bnb)
+    # else:
+    #     bnb_config = None
 
-    tokenizer = AutoTokenizer.from_pretrained(config.task.model.name)
-    model = AutoModelForCausalLM.from_pretrained(
-        config.task.model.name, 
-        torch_dtype="auto", # defer to torch_dtype from model config.json
-        device_map="auto", 
-        quantization_config=bnb_config,
-    )
+    # tokenizer = AutoTokenizer.from_pretrained(config.task.model.name)
+    # model = AutoModelForCausalLM.from_pretrained(
+    #     config.task.model.name, 
+    #     torch_dtype="auto", # defer to torch_dtype from model config.json
+    #     device_map="auto", 
+    #     quantization_config=bnb_config,
+    # )
     
     reward = get_reward(config, model, tokenizer)
     reward_buffer = ReplayBuffer(

@@ -391,6 +391,7 @@ class NeuralTheoremProvingTask(LightningModule):
             max_depth=self.search_eval_cfg.max_depth,
             num_sampled_tactics=self.search_eval_cfg.num_sampled_tactics,
             max_new_tokens=self.search_eval_cfg.max_new_tokens,
+            save_search_tree=self.search_eval_cfg.save_search_tree,
             model=self.model,
             tokenizer=self.tokenizer,
             prompt_template=self.hparams.tac_gen_prompt_template,
