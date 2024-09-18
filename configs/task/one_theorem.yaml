@@ -3,8 +3,8 @@ name: "ntp"
 data:
   path: null
   train_size: 1
-  train_path: "data/single_thm.json"
-  val_path: "data/single_thm.json"
+  train_data_path: "data/single_thm.json"
+  val_data_path: "data/single_thm.json"
 
 model:
   # test with llemma, run later with dsp
@@ -69,6 +69,7 @@ training:
   dojo_timeout: 60 # in seconds (LeanDojo's default is 600)
   ckpt_dest: "checkpoints"
   save_ckpt_on_val: true
+  gradient_clip_val: 0.5 # default is 0 (no clipping)
   
   # validation loop frequency control
   # val_check_interval: float in [0, 1]: frequency per train epoch

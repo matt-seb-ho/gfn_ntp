@@ -216,6 +216,7 @@ def train_setup(
         logger=trainer_logger,
         callbacks=[hydra.utils.instantiate(c) for c in config.task.callbacks],
         val_check_interval=config.task.training.val_check_interval,
+        gradient_clip_val=config.task.training.gradient_clip_val,
     )
 
     # Fix a bug that arises when using 4-bit quantized models.
