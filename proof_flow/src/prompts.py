@@ -196,3 +196,7 @@ RM_TEMPLATES = {
         },
     },
 }
+
+PROMPT_DICT = {
+    "ds_rm_st_v2": DEEPSEEK_RM_ST_PROMPT_TEMPLATE_V2,
+}

@@ -139,3 +139,6 @@ search_eval:
     max_output_seq_len: 260
     max_new_tokens: 30
     length_penalty: 0.0
+
+prompts:
+  tac_gen: "ds_rm_st_v2"

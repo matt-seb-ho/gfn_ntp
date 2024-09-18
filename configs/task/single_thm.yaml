@@ -126,3 +126,6 @@ search_eval:
   probe_count: null # null for all
   sanity_check_probe_count: 0
   probe_file: data/val20.json
+
+prompts:
+  tac_gen: "ds_rm_st_v2"
