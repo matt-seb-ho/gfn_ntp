@@ -156,10 +156,12 @@ def train_setup(
     data = NTPDataModule(
         data_path=config.task.data.path,
         train_size=config.task.data.train_size,
+        train_data_path=config.task.data.train_data_path,
+        val_data_path=config.task.data.val_data_path,
     )
     data.setup("fit")
     val_probes = get_val_probes(config)
-    search_params = hydra.utils.instantiate(config.task.search_eval)
+    search_params = hydra.utils.instantiate(config.task.search_eval.search_params)
 
     # set up model, reward, and task
     model, tokenizer = get_model(config)

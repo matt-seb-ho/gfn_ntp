@@ -18,6 +18,9 @@ from proof_flow.src.utils import (
 from proof_flow.src.prompts import RM_TEMPLATES
 
 
+BINARY_REWARD_VALUE = -100
+
+
 def build_reward_inputs(
     state: str,
     tactic: str,
@@ -123,6 +126,7 @@ class NTPReward:
             elif self._is_tactic_result_an_error(_states[-1]):
                 log_r[i] = -100
             else:
+                # log_r[i] = -100
                 # queue prompt-completion logp jobs
                 for step_idx in range(len(_tactics)):
                     rm_inputs = build_reward_inputs(
@@ -159,6 +163,52 @@ class NTPReward:
 
         # clip reward to -100
         log_r = torch.clamp(log_r, min=-100)
+        return log_r
+    
+
+    def compute_binary_log_reward(
+        self,
+        states: list[list[str]],
+        tactics: list[list[str]],
+        model: PeftModel,
+        tokenizer: AutoTokenizer,
+        batch_size: int = 8,
+        use_sts_format: bool = False,
+        prompts_for_model: Optional[str] = "llemma",
+        device: Optional[str | torch.device] = None,
+        length_penalty: bool = True,
+    ) -> torch.Tensor:
+        """
+        Computes reward for a batch of trajectores (states, tactics) using heuristics and model.
+
+        New Formulation (Pseudo-code):
+        if trajectory_correct:
+            return 0
+        elif trajectory has bad tactic:
+            return -100
+        else:
+            return max(reward_model_scores, -100)
+        
+        Arguments
+            states: 2D list of shape (batch_size, trajectory_length) containing states
+            tactics: 2D list of shape (batch_size, trajectory_length - 1) containing tactics
+            model: verifier for scoring the generated text
+            tokenizer: AutoTokenizer for encoding the input
+        """
+        assert len(states) == len(tactics) # batch_size
+        
+        log_r = torch.zeros(len(states), device=device)
+        for i, (_states, _tactics) in enumerate(zip(states, tactics)):
+            # _states: list[str]: represents states for this trajectory
+            # _tactics: list[str]: represents tactics for this trajectory
+            if _states[-1] == PROOF_COMPLETE_MESSAGE:
+                # log_r[i] = 0
+                continue
+            else:
+                log_r[i] = BINARY_REWARD_VALUE
+
+        # clip reward to -100
+        log_r = torch.clamp(log_r, min=BINARY_REWARD_VALUE)
         return log_r
 
 

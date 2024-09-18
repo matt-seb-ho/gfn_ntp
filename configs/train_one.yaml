@@ -1,6 +1,6 @@
 defaults:
   - _self_
-  - task: single_thm
+  - task: one_theorem
   - device: gpu
   - hydra: default
   - paths: eddie
