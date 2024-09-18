@@ -23,22 +23,7 @@ DEFAULT_PAD_TOKEN = "<pad>"
 # - internlm math: <s>, </s>
 CUSTOM_LOG_LEVEL = "GFN_DEBUG"
 
-
-@dataclass
-class SearchEvalConfig:
-    step_interval: int = 250
-    num_sampled_tactics: int = 8
-    timeout: int = 30
-    max_expansions: Optional[int] = None
-    max_depth: Optional[int] = 6
-    num_workers: int = 1
-    num_gpus: int = 1
-    max_input_seq_len: int = 130
-    max_output_seq_len: int = 170
-    max_new_tokens: int = 30
-    length_penalty: float = 0.0
         
-
 @cache
 def get_config(
     config_path: str = "../../configs", 
@@ -270,6 +255,7 @@ def set_up_debug_logging(cfg: OmegaConf):
     else:
         # between DEBUG (10) and INFO (20)
         logger.level(CUSTOM_LOG_LEVEL, no=15)
+        level = CUSTOM_LOG_LEVEL
     if cfg.log_debug_to_stdout:
         logger.add(sys.stdout, level=level)
     if cfg.write_to_file:

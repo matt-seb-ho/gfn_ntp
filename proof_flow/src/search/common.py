@@ -21,14 +21,12 @@ from peft import AutoPeftModelForSeq2SeqLM, AutoPeftModelForCausalLM
 from deepspeed.ops.adam import FusedAdam, DeepSpeedCPUAdam
 from typing import Optional, List, Dict, Any, Tuple, Generator, Union
 from pytorch_lightning.strategies.deepspeed import DeepSpeedStrategy
-
 from proof_flow.src.utils import prepare_environment_for_lean_dojo
-
 
 prepare_environment_for_lean_dojo()
 from lean_dojo import Pos # isort: skip
 
-
+# custom type annotations
 Example = Dict[str, Any]
 Batch = Dict[str, Any]
 _HuggingFaceLM = Union[
@@ -38,13 +36,23 @@ _HuggingFaceLM = Union[
     AutoPeftModelForCausalLM,
 ]
 
+# constants
 MARK_START_SYMBOL = "<a>"
 MARK_END_SYMBOL = "</a>"
 
-
-def remove_marks(s: str) -> str:
-    """Remove all :code:`<a>` and :code:`</a>` from ``s``."""
-    return s.replace(MARK_START_SYMBOL, "").replace(MARK_END_SYMBOL, "")
+# class definitions
+@dataclass
+class ProofSearchParams:
+    num_sampled_tactics: int = 8 # branching factor of search tree
+    timeout: int = 30 # total search time in seconds
+    max_expansions: Optional[int] = None
+    max_depth: Optional[int] = 6
+    num_workers: int = 1
+    num_gpus: int = 1
+    max_input_seq_len: int = 230 # 200 (state) + 30 (prompt)
+    max_output_seq_len: int = 260
+    max_new_tokens: int = 30
+    length_penalty: float = 0.0
 
 
 @dataclass(unsafe_hash=True)
@@ -352,6 +360,11 @@ class IndexedCorpus:
     def __post_init__(self):
         assert self.embeddings.device == torch.device("cpu")
         assert len(self.embeddings) == len(self.corpus)
+
+
+def remove_marks(s: str) -> str:
+    """Remove all :code:`<a>` and :code:`</a>` from ``s``."""
+    return s.replace(MARK_START_SYMBOL, "").replace(MARK_END_SYMBOL, "")
 
 
 def get_all_pos_premises(annot_tac, corpus: Corpus) -> List[Premise]:

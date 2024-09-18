@@ -39,10 +39,21 @@ CONFIG_DIR = "../../../configs/"
 
 @hydra.main(version_base=None, config_path=CONFIG_DIR, config_name="train")
 def train(config: DictConfig):
-    debug_log_level = set_up_debug_logging(config.task.debug_logger)
-    disable_tokenizer_parallelism()
+    # misc setup
     pl.seed_everything(config.seed, workers=True)
+    disable_tokenizer_parallelism()
+    debug_log_level = set_up_debug_logging(config.task.debug_logger)
 
+    # load data
+    data = NTPDataModule(
+        data_path=config.task.data.path,
+        train_size=config.task.data.train_size,
+    )
+    data.setup("fit")
+    val_probes = get_val_probes(config)
+    search_params = hydra.utils.instantiate(config.task.search_eval)
+
+    # set up model, reward, and task
     model, tokenizer = get_model(config)
     reward = get_reward(config, model, tokenizer)
     reward_buffer = ReplayBuffer(
@@ -51,13 +62,6 @@ def train(config: DictConfig):
         pad_token_id=tokenizer.pad_token_id,
         sim_tolerance=config.task.reward.buffer_sim_tolerance,
     )
-    data = NTPDataModule(
-        data_path=config.task.data.path,
-        train_size=config.task.data.train_size,
-    )
-    data.setup("fit")
-    val_probes = get_val_probes(config)
-
     task = NeuralTheoremProvingTask(
         model=model,
         tokenizer=tokenizer,
@@ -85,8 +89,10 @@ def train(config: DictConfig):
         sanity_check_probes=config.task.search_eval.sanity_check_probe_count,
         debug_log_level=debug_log_level,
         tac_gen_prompt_template=DEEPSEEK_RM_ST_PROMPT_TEMPLATE_V2,
+        search_eval_params=search_params,
     )
 
+    # set up trainer
     trainer_logger = (
         config.logger 
         if isinstance(config.logger, bool) 

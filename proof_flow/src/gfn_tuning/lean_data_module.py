@@ -44,7 +44,10 @@ class NTPDataModule(LightningDataModule):
             thm = Theorem(repo, thm_dict["file_path"], thm_dict["full_name"])
             theorems.append(thm)
         # split theorems into train and val
-        num_train = int(len(theorems) * self.hparams.train_size)
+        if isinstance(self.hparams.train_size, float):
+            num_train = int(len(theorems) * self.hparams.train_size)
+        else:
+            num_train = self.hparams.train_size
         self.train_data = TheoremDataset(theorems[:num_train])
         self.val_data = TheoremDataset(theorems[num_train:])
 

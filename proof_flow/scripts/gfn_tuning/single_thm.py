@@ -1,34 +1,49 @@
 import hydra
+import json
 import pytorch_lightning as pl
+import torch
+from loguru import logger
 from omegaconf import DictConfig
+from peft import (
+    PeftModelForCausalLM,
+    get_peft_model, 
+    prepare_model_for_kbit_training,
+)
+from transformers import (
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    BitsAndBytesConfig
+)
 from types import MethodType
 from proof_flow.scripts.gfn_tuning.train import (
     get_model, 
     get_reward,
     get_val_probes,
 )
+from proof_flow.src.constants import (
+    GFN_POLICY_ADAPTER_NAME,
+)
 from proof_flow.src.prompts import (
     DEEPSEEK_RM_ST_PROMPT_TEMPLATE_V2,
-    DEEPSEEK_RM_ST_PROMPT_TEMPLATE_V3,
 )
 from proof_flow.src.gfn_tuning.reward import NTPReward
 from proof_flow.src.gfn_tuning.replay_buffer import ReplayBuffer
 from proof_flow.src.gfn_tuning.lean_data_module import NTPDataModule
 from proof_flow.src.gfn_tuning.ntp import NeuralTheoremProvingTask
 from proof_flow.src.utils import (
-    get_config,
     disable_tokenizer_parallelism,
+    repo_root,
+    set_up_padding,
     set_up_debug_logging,
 )
-from proof_flow.src.search.proof_search import Status
-from loguru import logger
 
 
 # relative to this file (proof_flow/scripts/gfn_tuning/train.py)
 CONFIG_DIR = "../../../configs/"
 
 
-def main(config: DictConfig):
+@hydra.main(version_base=None, config_path=CONFIG_DIR, config_name="train1thm")
+def train(config: DictConfig):
     debug_log_level = set_up_debug_logging(config.task.debug_logger)
     disable_tokenizer_parallelism()
     pl.seed_everything(config.seed, workers=True)
@@ -47,6 +62,7 @@ def main(config: DictConfig):
     )
     data.setup("fit")
     val_probes = get_val_probes(config)
+    search_params = hydra.utils.instantiate(config.task.search_eval)
 
     task = NeuralTheoremProvingTask(
         model=model,
@@ -75,16 +91,23 @@ def main(config: DictConfig):
         sanity_check_probes=config.task.search_eval.sanity_check_probe_count,
         debug_log_level=debug_log_level,
         tac_gen_prompt_template=DEEPSEEK_RM_ST_PROMPT_TEMPLATE_V2,
+        search_eval_params=search_params,
     )
 
+    trainer_logger = (
+        config.logger 
+        if isinstance(config.logger, bool) 
+        else hydra.utils.instantiate(config.logger)
+    )
     trainer = pl.Trainer(
         accelerator=config.device.accelerator,
         max_epochs=config.task.training.epochs,
         accumulate_grad_batches=config.task.training.accumulate_grad_batches,
-        logger=config.logger
-        if isinstance(config.logger, bool)
-        else hydra.utils.instantiate(config.logger),
+        logger=trainer_logger,
         callbacks=[hydra.utils.instantiate(c) for c in config.task.callbacks],
+        # val_check_interval=config.task.training.val_check_interval,
+        # trainer = pl.Trainer(check_val_every_n_epoch=5)  # runs validation every 5 epochs
+        check_val_every_n_epoch=20,
     )
 
     # Fix a bug that arises when using 4-bit quantized models.
@@ -95,24 +118,8 @@ def main(config: DictConfig):
         task.to = MethodType(lambda s, _: s, task)
         task.cuda = MethodType(lambda s: s, task)
 
-    # trainer.fit(model=task, datamodule=data)
-    model.eval()
-    results = task.run_proof_search_eval()
-    name_to_idx = {
-        thm_dict["full_name"]: thm_idx
-        for thm_idx, thm_dict in enumerate(val_probes)
-    }
-    for r in results:
-        if r is None:
-            print("Discarded")
-            continue
-        # r is a SearchResult object
-        proved = (r.status == Status.PROVED)
-        thm_dict = val_probes[name_to_idx[r.theorem.full_name]]
-        proof_len = len(thm_dict["traced_tactics"])
-        logger.info(f"proved: {proved}, thm: {thm_dict['full_name']}, proof_len: {proof_len}")
-        
+    trainer.fit(model=task, datamodule=data)
+
 
 if __name__ == "__main__":
-    cfg = get_config()
-    main(cfg)
+    train()

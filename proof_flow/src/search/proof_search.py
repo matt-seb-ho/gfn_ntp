@@ -533,7 +533,7 @@ class DistributedProver:
             for thm, pos in tqdm(
                 zip_strict(theorems, positions),
                 total=len(theorems),
-                desc="proof search eval",
+                desc="best first proof search",
             ):
                 results.append(self.prover.search(repo, thm, pos))
             return results

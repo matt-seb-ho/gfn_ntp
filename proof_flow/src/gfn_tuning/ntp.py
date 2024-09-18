@@ -24,10 +24,10 @@ from proof_flow.src.prompts import (
     INSTRUCTION_PROMPT_TEMPLATE,
     DEEPSEEK_RM_ST_PROMPT_TEMPLATE_V2,
 )
+from proof_flow.src.search.common import ProofSearchParams
 from proof_flow.src.search.proof_search import Status, DistributedProver
 from proof_flow.src.utils import (
     CUSTOM_LOG_LEVEL,
-    SearchEvalConfig,
     prepare_environment_for_lean_dojo,
     batch_iterator_zip,
     repo_root,
@@ -73,7 +73,7 @@ class NeuralTheoremProvingTask(LightningModule):
         debug_log_level: str = CUSTOM_LOG_LEVEL,
         tac_gen_prompt_template: str = DEEPSEEK_RM_ST_PROMPT_TEMPLATE_V2,
         search_eval_probes: Optional[list[dict]] = None,
-        search_eval_cfg: Optional[SearchEvalConfig] = None,
+        search_eval_params: Optional[ProofSearchParams] = None,
         ckpt_dest: str = "checkpoints",
         save_ckpt_on_val: bool = False,
         sanity_check_probes: int = 1,
@@ -107,7 +107,11 @@ class NeuralTheoremProvingTask(LightningModule):
         self.end_of_step_token_id = tokenizer.encode("assumption\n", add_special_tokens=False)[-1]
         
         # proof search evaluation configuration
-        self.search_eval_cfg = search_eval_cfg or SearchEvalConfig()
+        if search_eval_params is None:
+            self._debug_log("search_eval_params is None")
+            self.search_eval_params = ProofSearchParams()
+        else:
+            self.search_eval_params = search_eval_params
     
 
     def forward(
@@ -360,9 +364,9 @@ class NeuralTheoremProvingTask(LightningModule):
         )
     
 
-    def run_proof_search_eval(self):
+    def run_proof_search_eval(self) -> list:
         probes = self.hparams.search_eval_probes
-        if self.trainer.sanity_checking:
+        if self._is_sanity_checking():
             if self.hparams.sanity_check_probes == 0:
                 return
             probes = probes[:self.hparams.sanity_check_probes]
@@ -379,18 +383,18 @@ class NeuralTheoremProvingTask(LightningModule):
             gen_ckpt_path="", # gen_ckpt_path (needs to be not None)
             ret_ckpt_path=None, # ret_ckpt_path
             indexed_corpus_path=None, # indexed_corpus_path
-            max_inp_seq_len=self.search_eval_cfg.max_input_seq_len,
-            max_oup_seq_len=self.search_eval_cfg.max_output_seq_len,
-            length_penalty=self.search_eval_cfg.length_penalty,
+            max_inp_seq_len=self.search_eval_params.max_input_seq_len,
+            max_oup_seq_len=self.search_eval_params.max_output_seq_len,
+            length_penalty=self.search_eval_params.length_penalty,
             tactic=None, # tactic
             module=None, # module
-            num_workers=self.search_eval_cfg.num_workers,
-            num_gpus=self.search_eval_cfg.num_gpus,
-            timeout=self.search_eval_cfg.timeout,
-            max_expansions=self.search_eval_cfg.max_expansions,
-            max_depth=self.search_eval_cfg.max_depth,
-            num_sampled_tactics=self.search_eval_cfg.num_sampled_tactics,
-            max_new_tokens=self.search_eval_cfg.max_new_tokens,
+            num_workers=self.search_eval_params.num_workers,
+            num_gpus=self.search_eval_params.num_gpus,
+            timeout=self.search_eval_params.timeout,
+            max_expansions=self.search_eval_params.max_expansions,
+            max_depth=self.search_eval_params.max_depth,
+            num_sampled_tactics=self.search_eval_params.num_sampled_tactics,
+            max_new_tokens=self.search_eval_params.max_new_tokens,
             model=self.model,
             tokenizer=self.tokenizer,
             prompt_template=self.hparams.tac_gen_prompt_template,
@@ -404,6 +408,7 @@ class NeuralTheoremProvingTask(LightningModule):
                 num_proved += 1
         self._debug_log(f"search eval: {num_proved} proved out of {len(thms)}")
         self.log("val/num_proved", num_proved, sync_dist=True, batch_size=1)
+        return results
     
 
     def on_train_batch_start(self, theorem, batch_idx):
@@ -433,7 +438,7 @@ class NeuralTheoremProvingTask(LightningModule):
         self.model.train()
         # save model
         if self.hparams.save_ckpt_on_val:
-            save_dir = repo_root() / self.hparams.ckpt_dest / self.global_step
+            save_dir = repo_root() / f"{self.hparams.ckpt_dest}/{self.global_step}"
             save_dir.mkdir(parents=True, exist_ok=True)
             # TODO: make this not depend on a constant
             self.model.save_pretrained(
@@ -710,6 +715,15 @@ class NeuralTheoremProvingTask(LightningModule):
         # return the batch as-is, without moving it to the device
         # assuming batch has type list[Theorem]
         return batch
+
+    
+    def _is_sanity_checking(self) -> bool:
+        try:
+            return self.trainer.sanity_checking
+        except RuntimeError:
+            # if trainer is not attached, self.trainer will raise a RuntimeError
+            # only reason trainer is not attached is that we're in a sanity check
+            return True
 
 
 def generate_step_hf(

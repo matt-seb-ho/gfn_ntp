@@ -1,8 +1,8 @@
 name: "ntp"
 
 data:
-  path: "data/long1k_train.json"
-  train_size: 0.95
+  path: "data/two_thms.json"
+  train_size: 1
 
 model:
   # test with llemma, run later with dsp
@@ -62,7 +62,7 @@ training:
   branch_only_at_root: true
   lr: 0.0001
   accumulate_grad_batches: 25
-  epochs: 1 # next_sentence task had 300
+  epochs: 100 # next_sentence task had 300
   use_4bit: true 
   dojo_timeout: 60 # in seconds (LeanDojo's default is 600)
   ckpt_dest: "checkpoints"
@@ -120,22 +120,9 @@ debug_logger:
   include_lean_dojo_debug: true
   log_debug_to_stdout: false
   write_to_file: true
-  debug_log_file: "logs/debug1.log"
+  debug_log_file: "logs/single_thm.log"
   
 search_eval:
   probe_count: null # null for all
-  sanity_check_probe_count: 20
+  sanity_check_probe_count: 0
   probe_file: data/val20.json
-  
-  search_params:
-    _target_: proof_flow.src.search.common.ProofSearchParams
-    num_sampled_tactics: 8
-    timeout: 30
-    max_expansions: null
-    max_depth: 6
-    num_workers: 1
-    num_gpus: 1
-    max_input_seq_len: 230 # 200 (state) + 30 (prompt)
-    max_output_seq_len: 260
-    max_new_tokens: 30
-    length_penalty: 0.0
