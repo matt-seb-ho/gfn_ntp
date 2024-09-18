@@ -133,7 +133,7 @@ debug_logger:
 search_eval:
   probe_count: null # null for all
   sanity_check_probe_count: 0
-  probe_file: data/val20.json
+  probe_file: data/single_thm.json
 
   search_params:
     _target_: proof_flow.src.search.common.ProofSearchParams
