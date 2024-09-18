@@ -112,6 +112,10 @@ class NeuralTheoremProvingTask(LightningModule):
             self.search_eval_params = ProofSearchParams()
         else:
             self.search_eval_params = search_eval_params
+        
+        # trade ram to remove dojo startup time
+        # - maps theorem.uid -> (dojo object, initial state)
+        self.dojo_cache = {}
     
 
     def forward(
@@ -138,62 +142,69 @@ class NeuralTheoremProvingTask(LightningModule):
                 n_samples = [n_samples] + ([1] * (max_depth - 1))
             else:
                 n_samples = [n_samples or self.hparams.n_samples] * max_depth
-        with Dojo(
-            theorem, 
-            timeout=self.hparams.dojo_timeout
-        ) as (dojo, initial_state):
-            root = ProofTreeNode(state=initial_state)
-            trajectory_logpf: list[torch.Tensor] = []
-            stack = [(root, False)]
-            while stack:
-                node, visited = stack.pop()
-                # node should not be terminal
-                # assert node.depth < max_depth and isinstance(node, TacticState)
-                if visited:
-                    # backing out: clean up this node's element from the trajectory
-                    # node.tactic_logpf is None for the root node, so trajectory_logpf is empty
-                    if node.tactic_logpf is not None:
-                        trajectory_logpf.pop()
-                    continue
-                # backtracking purposes
-                stack.append((node, True))
+        
+        # use cached dojo if available
+        # TODO: add mechanism for clearing cache/releasing resources
+        if theorem.uid in self.dojo_cache:
+            dojo, initial_state = self.dojo_cache[theorem.uid]
+        else:
+            self._debug_log(f"loading dojo for {theorem.full_name}")
+            dojo = Dojo(theorem, timeout=self.hparams.dojo_timeout)
+            dojo, initial_state = dojo.__enter__()
+            self.dojo_cache[theorem.uid] = (dojo, initial_state)
+            
+        root = ProofTreeNode(state=initial_state)
+        trajectory_logpf: list[torch.Tensor] = []
+        stack = [(root, False)]
+        while stack:
+            node, visited = stack.pop()
+            # node should not be terminal
+            # assert node.depth < max_depth and isinstance(node, TacticState)
+            if visited:
+                # backing out: clean up this node's element from the trajectory
+                # node.tactic_logpf is None for the root node, so trajectory_logpf is empty
                 if node.tactic_logpf is not None:
-                    trajectory_logpf.append(node.tactic_logpf)
-                self.expand_node(
-                    node, 
-                    dojo,
-                    n_samples=n_samples[node.depth], 
-                    pf_temperature=pf_temperature,
-                    max_depth=max_depth,
-                    generate_func=generate_func,
-                    device=self.model_device,
-                )
-                new_stack_items = []
-                if node.children is None or len(node.children) == 0:
-                    # node is terminal
-                    if len(trajectory_logpf) == 0:
-                        # found that root node is terminal, 
-                        # no trajectories were generated
-                        self._debug_log("root node is terminal.")
-                        return None, None, None
-                    trajectories_logpf.append(torch.cat(trajectory_logpf))
-                else:
-                    for child in node.children:
-                        if (
-                            node.depth + 1 < max_depth 
-                            and isinstance(child.state, TacticState)
-                        ):
-                            new_stack_items.append((child, False))
-                        else:
-                            # child is terminal
-                            trajectories_logpf.append(torch.cat(
-                                trajectory_logpf + [child.tactic_logpf]
-                            ))
-                # add new stack items in reverse order for depth-first traversal
-                # - why not iterate reversed(node.children)?
-                #   we want to handle the terminal outputs in the correct order
-                if new_stack_items:
-                    stack.extend(reversed(new_stack_items))
+                    trajectory_logpf.pop()
+                continue
+            # backtracking purposes
+            stack.append((node, True))
+            if node.tactic_logpf is not None:
+                trajectory_logpf.append(node.tactic_logpf)
+            self.expand_node(
+                node, 
+                dojo,
+                n_samples=n_samples[node.depth], 
+                pf_temperature=pf_temperature,
+                max_depth=max_depth,
+                generate_func=generate_func,
+                device=self.model_device,
+            )
+            new_stack_items = []
+            if node.children is None or len(node.children) == 0:
+                # node is terminal
+                if len(trajectory_logpf) == 0:
+                    # found that root node is terminal, 
+                    # no trajectories were generated
+                    self._debug_log("root node is terminal.")
+                    return None, None, None
+                trajectories_logpf.append(torch.cat(trajectory_logpf))
+            else:
+                for child in node.children:
+                    if (
+                        node.depth + 1 < max_depth 
+                        and isinstance(child.state, TacticState)
+                    ):
+                        new_stack_items.append((child, False))
+                    else:
+                        # child is terminal
+                        trajectories_logpf.append(torch.cat(
+                            trajectory_logpf + [child.tactic_logpf]
+                        ))
+            # add new stack items in reverse order for depth-first traversal
+            # - why not iterate reversed(node.children)?
+            #   we want to handle the terminal outputs in the correct order
+            if new_stack_items:
+                stack.extend(reversed(new_stack_items))
                 
         
         # redundant check for no trajectories
@@ -899,4 +910,3 @@ def generate_step(
 
     log_pf = torch.stack(log_pf, dim=1)
     return state, log_pf
-
