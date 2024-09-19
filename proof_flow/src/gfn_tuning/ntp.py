@@ -322,10 +322,10 @@ class NeuralTheoremProvingTask(LightningModule):
         # add ground truth trajectory before computing loss
         if self.ground_truth_trajectories:
             gt_tlpf, gt_lr = self.replay_trajectories(
-                [self.seed_trajectories[theorem_id]],
+                [self.ground_truth_trajectories[theorem_id]],
                 model_inf_batch_size=1,
             )
-            t_logpf = torch.cat([t_logpf, gt_tlpf])
+            t_logpf = self._append_tensor_and_pad(t_logpf, gt_tlpf)
             log_r = torch.cat([log_r, gt_lr])
 
         # get gfn loss
@@ -749,6 +749,27 @@ class NeuralTheoremProvingTask(LightningModule):
             # if trainer is not attached, self.trainer will raise a RuntimeError
             # only reason trainer is not attached is that we're in a sanity check
             return True
+    
+
+    def _append_tensor_and_pad(
+        self, 
+        t1: torch.Tensor, 
+        t2: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        adds t2 of shape (m,) to t1 of shape (batch_size, n)
+        such that resulting tensor has shape (batch_size + 1, max(m, n))
+        """
+        n = t1.shape[1]
+        m = t2.shape[1]
+        # match the inner dimension
+        if m > n:
+            padding = (0, m - n)  # (left_pad, right_pad) along the last dimension
+            t1 = torch.nn.functional.pad(t1, padding)
+        if n > m:
+            t2 = torch.nn.functional.pad(t2, (0, n - m))
+        # concatenate along the batch dimension (0-th dimension)
+        return torch.cat([t1, t2], dim=0)
 
 
 def generate_step_hf(

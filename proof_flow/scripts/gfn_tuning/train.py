@@ -154,7 +154,7 @@ def get_ground_truth_trajectories(
         with open(cfg.task.data.path or cfg.task.data.train_data_path) as f:
             thm_dicts = json.load(f)
         trajectories = {}
-        for thm_dict in thm_dicts:
+        for thm_dict in thm_dicts.values():
             gtt = extract_ground_truth_trajectory(
                 thm_dict,
                 tokenizer,
