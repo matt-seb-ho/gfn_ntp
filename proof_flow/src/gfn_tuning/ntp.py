@@ -280,6 +280,7 @@ class NeuralTheoremProvingTask(LightningModule):
         
         if replay_ts is not None:
             # using sample from replay buffer
+            # self._debug_log(f"replaying trajectories for {theorem.full_name}")
             t_logpf, log_r, = self.replay_trajectories(
                 replay_ts,
                 model_inf_batch_size=self.hparams.model_inference_batch_size,
@@ -618,7 +619,8 @@ class NeuralTheoremProvingTask(LightningModule):
         # collect log_r from replay buffer
         log_r = torch.tensor(
             [t["log_r"] for t in trajectories], 
-            device=self.model_device
+            dtype=step_logpfs.dtype,
+            device=self.model_device,
         )
         return step_logpfs, log_r
         # eager sum version
