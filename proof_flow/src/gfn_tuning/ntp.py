@@ -267,7 +267,6 @@ class NeuralTheoremProvingTask(LightningModule):
         self, 
         theorem: list[Theorem], 
         batch_idx: int,              # required by PyTorch Lightning(?)
-        force_replay: bool = False,  # for testing purposes
     ):
         theorem = theorem[0]
         theorem_id = theorem.uid
@@ -277,7 +276,7 @@ class NeuralTheoremProvingTask(LightningModule):
         # uses buffer if:
         #   (1) random() < hparams.use_buffer_prob 
         #   (2) the theorem has trajectories in the buffer
-        replay_ts = self._sample_replay_trajectories(theorem_id, force_replay=force_replay)
+        replay_ts = self._sample_replay_trajectories(theorem_id)
         
         if replay_ts is not None:
             # using sample from replay buffer
@@ -698,13 +697,11 @@ class NeuralTheoremProvingTask(LightningModule):
 
     def _sample_replay_trajectories(
         self, 
-        theorem_id: str,
-        force_replay: bool = False,
+        theorem_id: str
     ) -> Optional[list[dict]]:
-        # if force replay is True, this random check is skipped
-        if (not force_replay and random.random() >= self.hparams.use_buffer_prob):
-            return None
-        return self.reward_buffer.sample(theorem_id, self.hparams.n_samples)
+        if random.random() < self.hparams.use_buffer_prob:
+            return self.reward_buffer.sample(theorem_id, self.hparams.n_samples)
+        return None
 
 
     def format_prompt(self, state: str):

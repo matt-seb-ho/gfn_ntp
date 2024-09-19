@@ -70,7 +70,8 @@ class NTPReward:
             or DEFAULT_VERIFIER_BATCH_SIZE
         )
         with self._compute_reward_ctx():
-            log_reward = self.compute_log_reward(
+            # log_reward = self.compute_log_reward(
+            log_reward = self.compute_binary_log_reward(
                 states, 
                 tactics, 
                 self.model, 

@@ -85,6 +85,7 @@ reward:
   sentence_validator: null
   buffer_size: 50
   buffer_sim_tolerance: 0.25
+  buffer_seed_trajectory_file: null
   verifier_batch_size: 16 # TODO: figure out if we can go higher
   # TODO: get dsp adapters
   # reward_model_hf_id: "msho/llemma_sft"

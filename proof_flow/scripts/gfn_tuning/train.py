@@ -35,12 +35,6 @@ from proof_flow.src.utils import (
 CONFIG_DIR = "../../../configs/"
 
 
-@hydra.main(version_base=None, config_path=CONFIG_DIR, config_name="train")
-def train(config: DictConfig):
-    task, data, trainer = train_setup(config)
-    trainer.fit(model=task, datamodule=data)
-
-
 def get_model(config: DictConfig):
     """
     loads the model and tokenizer and do some setup work
@@ -163,7 +157,7 @@ def train_setup(
     val_probes = get_val_probes(config)
     search_params = hydra.utils.instantiate(config.task.search_eval.search_params)
 
-    # set up model, reward, and task
+    # set up model, reward, and replay buffer
     model, tokenizer = get_model(config)
     reward = get_reward(config, model, tokenizer)
     reward_buffer = ReplayBuffer(
@@ -172,6 +166,22 @@ def train_setup(
         pad_token_id=tokenizer.pad_token_id,
         sim_tolerance=config.task.reward.buffer_sim_tolerance,
     )
+    # - optionally load seed trajectories
+    if config.task.reward.buffer_seed_trajectory_file is not None:
+        with open(repo_root() / config.task.reward.buffer_seed_trajectory_file) as f:
+            seed_trajectories = json.load(f)
+        # to make the trajectories serializable,
+        # we converted state_tactic_tokens tensor -> list.
+        # we should convert them back to tensor here
+        for thm_trajectories in seed_trajectories.values():
+            for t in thm_trajectories:
+                t["state_tactic_tokens"] = [
+                    torch.tensor(stt) for stt in t["state_tactic_tokens"]
+                ]
+        for thm_uid, trajectories in seed_trajectories.items():
+            reward_buffer.add_batch(thm_uid, trajectories)
+
+    # set up task
     tac_gen_prompt_template = PROMPT_DICT[config.task.prompts.tac_gen]
     task = NeuralTheoremProvingTask(
         model=model,
@@ -229,6 +239,13 @@ def train_setup(
         task.cuda = MethodType(lambda s: s, task)
 
     return task, data, trainer
+    
+    
+
+@hydra.main(version_base=None, config_path=CONFIG_DIR, config_name="train")
+def train(config: DictConfig):
+    task, data, trainer = train_setup(config)
+    trainer.fit(model=task, datamodule=data)
 
 
 if __name__ == "__main__":
