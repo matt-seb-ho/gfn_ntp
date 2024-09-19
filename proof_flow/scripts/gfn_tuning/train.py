@@ -4,6 +4,7 @@ import pytorch_lightning as pl
 import torch
 from loguru import logger
 from omegaconf import DictConfig
+from typing import Optional
 from peft import (
     PeftModelForCausalLM,
     get_peft_model, 
@@ -12,7 +13,6 @@ from peft import (
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
-    BitsAndBytesConfig
 )
 from types import MethodType
 from proof_flow.src.constants import (
@@ -20,7 +20,10 @@ from proof_flow.src.constants import (
 )
 from proof_flow.src.prompts import PROMPT_DICT
 from proof_flow.src.gfn_tuning.reward import NTPReward
-from proof_flow.src.gfn_tuning.replay_buffer import ReplayBuffer
+from proof_flow.src.gfn_tuning.replay_buffer import (
+    ReplayBuffer,
+    extract_ground_truth_trajectory,
+)
 from proof_flow.src.gfn_tuning.lean_data_module import NTPDataModule
 from proof_flow.src.gfn_tuning.ntp import NeuralTheoremProvingTask
 from proof_flow.src.utils import (
@@ -138,6 +141,41 @@ def get_val_probes(cfg: DictConfig):
     return probes
 
 
+def get_ground_truth_trajectories(
+    cfg: DictConfig, 
+    tokenizer: AutoTokenizer, 
+    prompt_template: str,
+) -> Optional[dict]:
+    if cfg.task.gtt.file_path is None:
+        return None
+    
+    gtt_file_path = repo_root() / cfg.task.gtt.file_path
+    if cfg.task.gtt.write_to_file:
+        with open(cfg.task.data.path or cfg.task.data.train_data_path) as f:
+            thm_dicts = json.load(f)
+        trajectories = {}
+        for thm_dict in thm_dicts:
+            gtt = extract_ground_truth_trajectory(
+                thm_dict,
+                tokenizer,
+                prompt_template,
+                make_json_serializable=True,
+            )
+            trajectories[gtt["theorem_id"]] = gtt
+
+        with open(gtt_file_path, "w") as f:
+            json.dump(trajectories, f, indent=2)
+    else:
+        with open(gtt_file_path) as f:
+            trajectories = json.load(f)
+
+    # convert state_tactic_tokens back to tensor
+    for t in trajectories.values():
+        for i, stt in enumerate(t["state_tactic_tokens"]):
+            t["state_tactic_tokens"][i] = torch.tensor(stt)
+    return trajectories
+
+
 def train_setup(
     config: DictConfig
 ) -> tuple[NeuralTheoremProvingTask, NTPDataModule, pl.Trainer]:
@@ -155,8 +193,7 @@ def train_setup(
     )
     data.setup("fit")
     val_probes = get_val_probes(config)
-    search_params = hydra.utils.instantiate(config.task.search_eval.search_params)
-
+            
     # set up model, reward, and replay buffer
     model, tokenizer = get_model(config)
     reward = get_reward(config, model, tokenizer)
@@ -165,6 +202,13 @@ def train_setup(
         termination_token_id=tokenizer.eos_token_id,
         pad_token_id=tokenizer.pad_token_id,
         sim_tolerance=config.task.reward.buffer_sim_tolerance,
+    )
+    tac_gen_prompt_template = PROMPT_DICT[config.task.prompts.tac_gen]
+    # - optionally load ground truth trajectories
+    ground_truth_trajectories = get_ground_truth_trajectories(
+        config,
+        tokenizer,
+        tac_gen_prompt_template,
     )
     # - optionally load seed trajectories
     if config.task.reward.buffer_seed_trajectory_file is not None:
@@ -182,7 +226,7 @@ def train_setup(
             reward_buffer.add_batch(thm_uid, trajectories)
 
     # set up task
-    tac_gen_prompt_template = PROMPT_DICT[config.task.prompts.tac_gen]
+    search_params = hydra.utils.instantiate(config.task.search_eval.search_params)
     task = NeuralTheoremProvingTask(
         model=model,
         tokenizer=tokenizer,
@@ -211,6 +255,7 @@ def train_setup(
         debug_log_level=debug_log_level,
         tac_gen_prompt_template=tac_gen_prompt_template,
         search_eval_params=search_params,
+        ground_truth_trajectories=ground_truth_trajectories,
     )
 
     # set up trainer
@@ -219,6 +264,7 @@ def train_setup(
         if isinstance(config.logger, bool) 
         else hydra.utils.instantiate(config.logger)
     )
+    # san_steps = config.task.training.num_sanity_val_steps or 2
     trainer = pl.Trainer(
         accelerator=config.device.accelerator,
         max_epochs=config.task.training.epochs,
@@ -228,6 +274,8 @@ def train_setup(
         val_check_interval=config.task.training.val_check_interval,
         check_val_every_n_epoch=config.task.training.check_val_every_n_epoch,
         gradient_clip_val=config.task.training.gradient_clip_val,
+        # num_sanity_val_steps=san_steps,
+        num_sanity_val_steps=0,
     )
 
     # Fix a bug that arises when using 4-bit quantized models.

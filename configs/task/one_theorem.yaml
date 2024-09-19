@@ -59,7 +59,8 @@ training:
   pf_temp_high: 2.0
   pf_temp_low: 0.5
   pf_temp_prob: 0.666
-  use_buffer_prob: 2 # guarantees buffer usage (random() < 2)
+  # use_buffer_prob: 1 # guarantees buffer usage (offline training)
+  use_buffer_prob: 0 # guarantees online training
   n_samples: 2  # next_sentence task had 20
   branch_only_at_root: true
   lr: 0.0001
@@ -70,6 +71,7 @@ training:
   ckpt_dest: "checkpoints"
   save_ckpt_on_val: true
   gradient_clip_val: 0.5 # default is 0 (no clipping)
+  num_sanity_val_steps: 0
   
   # validation loop frequency control
   # val_check_interval: float in [0, 1]: frequency per train epoch
@@ -151,3 +153,8 @@ search_eval:
 
 prompts:
   tac_gen: "ds_rm_st_v2"
+
+# ground truth trajectories
+gtt:
+  file_path: data/single_theorem_gtt.json
+  write_to_file: true

@@ -2,15 +2,21 @@ import gzip
 import heapq
 import pickle
 from collections import deque
+from functools import cache
 from typing import Optional
 
 import editdistance
 import numpy as np
 import torch
 from torch.nn.utils.rnn import pad_sequence
+from transformers import AutoTokenizer
 
 from proof_flow.src.constants import TACTIC_DELIMITER
 from proof_flow.src.gfn_tuning.proof_tree import ProofTreeNode
+from proof_flow.src.utils import prepare_environment_for_lean_dojo
+
+prepare_environment_for_lean_dojo()
+from lean_dojo import LeanGitRepo, Theorem
 
 
 BUFFER_ENTRY_KEYS = ["log_r", "proof", "state_tactic_tokens", "prompt_lengths", "states"]
@@ -224,3 +230,54 @@ class ReplayBuffer:
 
     def _buffer_item_get(self, item: tuple, key: str):
         return item[BUFFER_ENTRY_KEY_IDXS[key]]
+
+
+def extract_ground_truth_trajectory(
+    thm_dict: dict, 
+    tokenizer: AutoTokenizer,
+    prompt_template: str,
+    make_json_serializable: bool = False,
+) -> dict:
+    states = []
+    tactics = []
+    state_tactic_tokens = []
+    prompt_lengths = []
+
+    for tt in thm_dict["traced_tactics"]:
+        state = tt["state_before"]
+        tactic = tt["tactic"]
+        prompt_text = prompt_template.format(state=state)
+        st_text = prompt_text + tactic
+        batch_enc = tokenizer(st_text, return_tensors="pt")
+        stt = batch_enc.input_ids.cpu().squeeze(0)
+        prompt_length = batch_enc.char_to_token(0, len(prompt_text))
+
+        states.append(state)
+        tactics.append(tactic)
+        state_tactic_tokens.append(
+            stt.tolist() if make_json_serializable else stt
+        )
+        prompt_lengths.append(prompt_length)
+
+    states.append(thm_dict["traced_tactics"][-1]["state_after"])
+
+    return {
+        "theorem_id": _get_thm_uid_from_dict(thm_dict),
+        "states": states,
+        "tactics": tactics,
+        "proof": TACTIC_DELIMITER.join(tactics),
+        "state_tactic_tokens": state_tactic_tokens,
+        "prompt_lengths": prompt_lengths,
+        "log_r": 0,
+    }
+
+
+def _get_thm_uid_from_dict(thm_dict: dict) -> str:
+    repo = _get_lean_git_repo(thm_dict["url"], thm_dict["commit"])
+    thm = Theorem(repo, thm_dict["file_path"], thm_dict["full_name"])
+    return thm.uid
+
+
+@cache
+def _get_lean_git_repo(url, commit):
+    return LeanGitRepo(url, commit)

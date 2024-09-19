@@ -21,7 +21,6 @@ from proof_flow.src.gfn_tuning.proof_tree import (
 from proof_flow.src.gfn_tuning.replay_buffer import ReplayBuffer
 from proof_flow.src.gfn_tuning.reward import NTPReward
 from proof_flow.src.prompts import (
-    INSTRUCTION_PROMPT_TEMPLATE,
     DEEPSEEK_RM_ST_PROMPT_TEMPLATE_V2,
 )
 from proof_flow.src.search.common import ProofSearchParams
@@ -78,6 +77,7 @@ class NeuralTheoremProvingTask(LightningModule):
         save_ckpt_on_val: bool = False,
         sanity_check_probes: int = 1,
         device: Optional[str | torch.device] = None,
+        ground_truth_trajectories: Optional[dict] = None,
     ):
         super().__init__()
         self.save_hyperparameters(ignore=[
@@ -86,6 +86,7 @@ class NeuralTheoremProvingTask(LightningModule):
             "reward", 
             "reward_buffer",
             "search_eval_cfg",
+            "ground_truth_trajectories",
         ])
 
         self.model = model
@@ -116,6 +117,9 @@ class NeuralTheoremProvingTask(LightningModule):
         # trade ram to remove dojo startup time
         # - maps theorem.uid -> (dojo object, initial state)
         self.dojo_cache = {}
+
+        # for adding ground truth trajectories to online training
+        self.ground_truth_trajectories = ground_truth_trajectories
     
 
     def forward(
@@ -257,9 +261,11 @@ class NeuralTheoremProvingTask(LightningModule):
         # log_r has shape (batch_size,)
         # https://arxiv.org/pdf/2302.05446
         trajectory_log_pf = log_pf.sum(dim=-1)
+        print(trajectory_log_pf)
         batch_zeta = log_r - trajectory_log_pf
-        expectation = batch_zeta.mean()
-        loss = ((batch_zeta - expectation) ** 2).sum()
+        # expectation = batch_zeta.mean().detach()
+        expectation = 0
+        loss = ((batch_zeta - expectation) ** 2).mean()
         return loss
 
 
@@ -312,6 +318,15 @@ class NeuralTheoremProvingTask(LightningModule):
                 self._debug_log("forward returned None (0 trajectories generated)")
                 return None
             self.reward_buffer.add_batch(theorem_id, extracted_ts)
+
+        # add ground truth trajectory before computing loss
+        if self.ground_truth_trajectories:
+            gt_tlpf, gt_lr = self.replay_trajectories(
+                [self.seed_trajectories[theorem_id]],
+                model_inf_batch_size=1,
+            )
+            t_logpf = torch.cat([t_logpf, gt_tlpf])
+            log_r = torch.cat([log_r, gt_lr])
 
         # get gfn loss
         # - sub tb requires estimating flow (possible impl: scalar head over RM)

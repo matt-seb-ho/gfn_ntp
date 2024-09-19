@@ -18,7 +18,7 @@ from proof_flow.src.utils import (
 from proof_flow.src.prompts import RM_TEMPLATES
 
 
-BINARY_REWARD_VALUE = -100
+BINARY_REWARD_VALUE = -30
 
 
 def build_reward_inputs(

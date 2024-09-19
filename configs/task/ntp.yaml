@@ -70,6 +70,7 @@ training:
   ckpt_dest: "checkpoints"
   save_ckpt_on_val: true
   gradient_clip_val: 0.5 # default is 0 (no clipping)
+  num_sanity_val_steps: null
 
   # validation loop frequency control
   # val_check_interval: float in [0, 1]: frequency per train epoch
@@ -151,3 +152,8 @@ search_eval:
 
 prompts:
   tac_gen: "ds_rm_st_v2"
+
+# ground truth trajectories
+gtt:
+  file_path: null
+  write_to_file: true
