@@ -86,7 +86,19 @@ def format_sft_dataset(
         dataset = Dataset.from_dict(dataset_dict)
     else:
         dataset = Dataset.from_dict({"prompt": prompts, "completion": completions})
-    dataset = dataset.train_test_split(train_size=train_size, seed=42)
+    
+    if train_size == 1:
+        # convert to datasetdict with empty test split
+        empty_test_dataset = Dataset.from_dict({
+            column: [] for column in dataset.column_names
+        })
+        dataset = DatasetDict({
+            "train": dataset,
+            "test": empty_test_dataset,
+        })
+    else:
+        dataset = dataset.train_test_split(train_size=train_size, seed=42)
+    
     for split in dataset.keys():
         logger.info(f"{split}: {len(dataset[split])} examples")
     if output_path is not None:
