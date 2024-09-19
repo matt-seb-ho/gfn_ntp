@@ -112,12 +112,17 @@ class ReplayBuffer:
         if theorem_id not in self._buffer:
             return None
         theorem_buffer = self._buffer[theorem_id]["proofs"]
-        idxs = np.random.choice(
-            len(theorem_buffer),
-            batch_size,
-            replace=True,
-        )
-        selected_items = [theorem_buffer[idx] for idx in idxs]
+        if len(theorem_buffer) == 0:
+            return None
+        elif len(theorem_buffer) > batch_size:
+            idxs = np.random.choice(
+                len(theorem_buffer),
+                batch_size,
+                # replace=True,
+            )
+            selected_items = [theorem_buffer[idx] for idx in idxs]
+        else:
+            selected_items = theorem_buffer
         if dict_format:
             return [self._recover_buffer_dict(item) for item in selected_items]
         return selected_items
