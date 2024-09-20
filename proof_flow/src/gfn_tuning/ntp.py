@@ -1,4 +1,5 @@
 import random
+from collections import namedtuple
 from typing import Optional
 
 import torch
@@ -43,7 +44,21 @@ from lean_dojo import ( # isort: skip
     DojoTacticTimeoutError,
     LeanGitRepo,
     TacticState,
+    TacticResult,
     Theorem,
+)
+
+
+ParallelForwardStepResult = namedtuple(
+    "ParallelForwardStepResult",
+    [
+        "next_states", 
+        "tactic_logpf", 
+        "tactics", 
+        "state_tactic_tokens", 
+        "prompt_lengths", 
+        "idx_map", 
+    ]
 )
 
 
@@ -157,25 +172,28 @@ class NeuralTheoremProvingTask(LightningModule):
         
         for _ in range(max_depth):
             # generate tactics for active sequences
-            next_states, tlpf, tacs, stt, pl, idx_map = self.parallel_forward_step(
+            r = self.parallel_forward_step(
                 n_samples,
                 active_trajectories,
                 tactic_states,
                 pf_temperature,
                 dojo,
             )
+            if r is None:
+                break
+
             # update states and tactics
-            for i, next_state in enumerate(next_states):
-                ti = idx_map[i]
+            for i, next_state in enumerate(r.next_states):
+                ti = r.idx_map[i]
                 tactic_states[ti].append(next_state)
-                tactics[ti].append(tacs[i])
+                tactics[ti].append(r.tactics[i])
                 active_trajectories[ti] = isinstance(next_state, TacticState)
-                state_tactic_tokens[ti].append(stt[i])
-                prompt_lengths[ti].append(pl[i])
+                state_tactic_tokens[ti].append(r.state_tactic_tokens[i])
+                prompt_lengths[ti].append(r.prompt_lengths[i])
 
             # update trajectory logpf
             tactics_logpf = torch.zeros(n_samples, device=self.model_device)
-            tactics_logpf[idx_map] = tlpf
+            tactics_logpf[r.idx_map] = r.tactic_logpf
             trajectory_logpf.append(tactics_logpf)
 
             # early exit if all trajectories are inactive
@@ -220,12 +238,12 @@ class NeuralTheoremProvingTask(LightningModule):
         
     def parallel_forward_step(
         self,
-        n_samples,
-        active_trajectories,
-        tactic_states,
-        pf_temperature,
-        lean_env,
-    ):
+        n_samples: int,
+        active_trajectories: list[bool],
+        tactic_states: list[list[TacticResult]],
+        pf_temperature: float,
+        lean_env: Dojo,
+    ) -> Optional[ParallelForwardStepResult]:
         # first construct input_ids
         i2t_idx_map = []
         input_texts = []
@@ -243,6 +261,10 @@ class NeuralTheoremProvingTask(LightningModule):
             i2t_idx_map.append(i)
             prompt_lengths.append(token_length)
         
+        # early exit if no active trajectories
+        if len(input_texts) == 0:
+            return None
+
         # build input_ids tensor
         batch_enc = self.tokenizer(
             input_texts, 
@@ -460,7 +482,7 @@ class NeuralTheoremProvingTask(LightningModule):
         self, 
         theorem: list[Theorem], 
         batch_idx: int,
-    ):
+    ) -> tuple:
         theorem = theorem[0]
         theorem_id = theorem.uid
 
@@ -1051,6 +1073,7 @@ def generate_step(
     log_pf = []
     token_ids = state  # For caching hidden states during generation
     # past_key_values = None  # For caching hidden states during generation
+
     if use_quantized_cache:
         kv_cache = QuantizedCache(
             QuantizedCacheConfig(
@@ -1060,6 +1083,7 @@ def generate_step(
         )
     else:
         kv_cache = DynamicCache()
+    
     for i in range(max_len + 1):
         output = model(
             input_ids=token_ids,
@@ -1108,6 +1132,15 @@ def generate_step(
                 modified_logits[:, vocab_naughty_mask] += vocab_alpha
             prob = (modified_logits / temperature).softmax(dim=-1)
             token_ids = torch.multinomial(prob, num_samples=1)
+            # https://huggingface.co/docs/transformers/main/en/kv_cache#under-the-hood-how-cache-object-works-in-attention-mechanism
+            # attn_mask shape SHOULD BE (batch_size, past_kv_length + new_tokens_length)
+            attention_mask = torch.cat(
+                [
+                    attention_mask, 
+                    attention_mask.new_ones((attention_mask.shape[0], 1))
+                ],
+                dim=-1
+            )
 
         token_ids = torch.where(
             active_seqs.unsqueeze(-1),
