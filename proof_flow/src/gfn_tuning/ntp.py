@@ -14,9 +14,11 @@ from transformers import (
 )
 from torch.nn.utils.rnn import pad_sequence
 
-from proof_flow.src.constants import GFN_POLICY_ADAPTER_NAME
+from proof_flow.src.constants import GFN_POLICY_ADAPTER_NAME, TACTIC_DELIMITER
 from proof_flow.src.gfn_tuning.proof_tree import (
-    ProofTreeNode, extract_trajectories
+    ProofTreeNode, 
+    convert_tactic_result_to_state_string,
+    extract_trajectories,
 )
 from proof_flow.src.gfn_tuning.replay_buffer import ReplayBuffer
 from proof_flow.src.gfn_tuning.reward import NTPReward
@@ -119,7 +121,191 @@ class NeuralTheoremProvingTask(LightningModule):
 
         # for adding ground truth trajectories to online training
         self.ground_truth_trajectories = ground_truth_trajectories
+
     
+    def parallel_forward(
+        self,
+        theorem: Theorem,
+        n_samples: Optional[int] = None,
+        pf_temperature: float = 1.0,
+        max_depth: int = 3,
+    ) -> tuple[Optional[torch.Tensor], Optional[torch.Tensor], Optional[list]]:
+        """
+        generates trajectories in parallel for a given theorem
+        - trajectories_logpf: (n_samples, max_depth) tensor of log probabilities of each tactic
+        - log_r: (n_samples,) tensor of log rewards for complete trajectories
+        - extracted_trajectories: list of trajectories for the replay buffer
+        """
+        n_samples = n_samples or self.hparams.n_samples
+
+        # use cached dojo if available
+        # TODO: add mechanism for clearing cache/releasing resources
+        if theorem.uid in self.dojo_cache:
+            dojo, initial_state = self.dojo_cache[theorem.uid]
+        else:
+            self._debug_log(f"loading dojo for {theorem.full_name}")
+            dojo = Dojo(theorem, timeout=self.hparams.dojo_timeout)
+            dojo, initial_state = dojo.__enter__()
+            self.dojo_cache[theorem.uid] = (dojo, initial_state)
+        
+        active_trajectories = [True] * n_samples
+        tactics = [[] for _ in range(n_samples)]
+        state_tactic_tokens = [[] for _ in range(n_samples)]
+        prompt_lengths = [[] for _ in range(n_samples)]
+        trajectory_logpf = []
+        tactic_states = [[initial_state] for _ in range(n_samples)]
+        
+        for _ in range(max_depth):
+            # generate tactics for active sequences
+            next_states, tlpf, tacs, stt, pl, idx_map = self.parallel_forward_step(
+                n_samples,
+                active_trajectories,
+                tactic_states,
+                pf_temperature,
+                dojo,
+            )
+            # update states and tactics
+            for i, next_state in enumerate(next_states):
+                ti = idx_map[i]
+                tactic_states[ti].append(next_state)
+                tactics[ti].append(tacs[i])
+                active_trajectories[ti] = isinstance(next_state, TacticState)
+                state_tactic_tokens[ti].append(stt[i])
+                prompt_lengths[ti].append(pl[i])
+
+            # update trajectory logpf
+            tactics_logpf = torch.zeros(n_samples, device=self.model_device)
+            tactics_logpf[idx_map] = tlpf
+            trajectory_logpf.append(tactics_logpf)
+
+            # early exit if all trajectories are inactive
+            if not any(active_trajectories):
+                break
+        
+        # combine trajectory logpf tensors into a single tensor
+        # currently have a list of tensors of shape (n_samples,)
+        # want to concatenate along dim=1 to get (n_samples, max_depth)
+        trajectory_logpf = torch.stack(trajectory_logpf, dim=1)
+        
+        # compute log_r for each trajectory
+        # - need to assemble list[list[str]] for states
+        state_strings = []
+        for i in range(n_samples):
+            trajectory_states = [
+                convert_tactic_result_to_state_string(s)
+                for s in tactic_states[i]
+            ]
+            state_strings.append(trajectory_states)
+        log_r = self.reward.score(
+            state_strings,
+            tactics,
+            batch_size=n_samples,
+            device=self.model_device,
+        )
+
+        # reformat for replay buffer storage
+        extracted_trajectories = []
+        for i in range(n_samples):
+            extracted_trajectories.append({
+                "theorem_id": theorem.uid,
+                "states": state_strings[i],
+                "tactics": tactics[i],
+                "proof": TACTIC_DELIMITER.join(tactics[i]),
+                "log_r": log_r[i].item(),
+                "state_tactic_tokens": state_tactic_tokens[i],
+                "prompt_lengths": prompt_lengths[i],
+            })
+        return trajectory_logpf, log_r, extracted_trajectories
+            
+        
+    def parallel_forward_step(
+        self,
+        n_samples,
+        active_trajectories,
+        tactic_states,
+        pf_temperature,
+        lean_env,
+    ):
+        # first construct input_ids
+        i2t_idx_map = []
+        input_texts = []
+        prompt_lengths = []
+        state_tactic_tokens = []
+        for i in range(n_samples):
+            if not active_trajectories[i]:
+                continue
+            state = tactic_states[i][-1]
+            input_text = self.format_prompt(state.pp)
+            token_length = len(self.tokenizer.encode(input_text))
+            if token_length > self.hparams.max_input_length:
+                continue
+            input_texts.append(input_text)
+            i2t_idx_map.append(i)
+            prompt_lengths.append(token_length)
+        
+        # build input_ids tensor
+        batch_enc = self.tokenizer(
+            input_texts, 
+            return_tensors="pt", 
+            padding=True,
+        )
+        if self.model_device:
+            batch_enc = batch_enc.to(self.model_device)
+
+        tokens, log_pf = generate_step(
+            self.model,
+            encoded_prompt=batch_enc.input_ids,
+            termination_token_id=self.end_of_step_token_id,
+            pad_token_id=self.tokenizer.pad_token_id,
+            temperature=pf_temperature,
+            max_len=self.hparams.max_tactic_tokens,
+            attention_mask=batch_enc.attention_mask,
+        )
+
+        # log_pf outputted by generate_step is at token-level granularity
+        # NOTE: this assumes that padded tokens have a log_pf of 0
+        tactic_logpf = log_pf.sum(dim=1)
+
+        # get non-padded length of each sequence in the batch
+        # NOTE: this implementation excludes the end of step token 
+        #       (eos token omitted in replay buffer's state_tactic_tokens)
+        prompt_length = batch_enc.input_ids.shape[1]
+        is_end_of_step = (tokens[:, prompt_length:]).eq(
+            self.end_of_step_token_id
+        )
+        pre_pad_length = is_end_of_step.float().argmax(dim=-1) + prompt_length
+        # need to get state_tactic_tokens tensors
+        for i in range(len(i2t_idx_map)):
+            start = batch_enc.char_to_token(i, 0)
+            stt = tokens[i, start:pre_pad_length[i]].cpu()
+            state_tactic_tokens.append(stt)
+
+        generated_tactics = self.tokenizer.batch_decode(
+            tokens[:, prompt_length:],
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=True,
+        )
+        self._debug_log(f"// forward gen tacs: {generated_tactics}")
+        next_states = []
+        for i, tactic in enumerate(generated_tactics):
+            try:
+                prev_state = tactic_states[i2t_idx_map[i]][-1]
+                next_state = lean_env.run_tac(prev_state, tactic.rstrip())
+            except (DojoTacticTimeoutError, DojoCrashError) as e:
+                self._debug_log(f"run_tac error ({e}) on tactic: {tactic}")
+                next_state = None # this gets converted to timeout
+            next_states.append(next_state)
+        
+        tactics = [t.strip() for t in generated_tactics]
+        return (
+            next_states, 
+            tactic_logpf, 
+            tactics,
+            state_tactic_tokens,
+            prompt_lengths,
+            i2t_idx_map
+        )
+                
 
     def forward(
         self, 
@@ -260,7 +446,7 @@ class NeuralTheoremProvingTask(LightningModule):
         # log_r has shape (batch_size,)
         # https://arxiv.org/pdf/2302.05446
         trajectory_log_pf = log_pf.sum(dim=-1)
-        print(trajectory_log_pf)
+        # print("tlogpf in var grad loss:", trajectory_log_pf)
         batch_zeta = log_r - trajectory_log_pf
         expectation = batch_zeta.mean().detach()
         # set expectation to 0 means we regress log_pf -> log_r (unnormalized)
@@ -306,7 +492,7 @@ class NeuralTheoremProvingTask(LightningModule):
                 pf_temp = 1.0
 
             try:
-                t_logpf, log_r, extracted_ts = self.forward(
+                t_logpf, log_r, extracted_ts = self.parallel_forward(
                     theorem, 
                     pf_temperature=pf_temp
                 )
@@ -332,6 +518,7 @@ class NeuralTheoremProvingTask(LightningModule):
         # get gfn loss
         # - sub tb requires estimating flow (possible impl: scalar head over RM)
         # - for the proof of concept, we'll just use vanilla TB
+        print("tlogpf before loss:", t_logpf, sep="\n")
         loss = self.tb_loss(log_pf=t_logpf, log_r=log_r)
         # loss = self.log_z_variance_loss(t_logpf, log_r)
         self.log(
@@ -362,7 +549,7 @@ class NeuralTheoremProvingTask(LightningModule):
         theorem = theorem[0]
         try:
             with torch.no_grad():
-                log_pf, log_r, _ = self.forward(theorem)
+                log_pf, log_r, _ = self.parallel_forward(theorem)
         except (DojoInitError, DojoCrashError) as e:
             self._debug_log(f"val_step forward hit dojo error: {e}")
             return 
@@ -844,6 +1031,7 @@ def generate_step(
     top_k: int = 999999,
     top_p: float = 1.0,
     use_quantized_cache: bool = False,
+    attention_mask: Optional[torch.Tensor] = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     alternate implementation to HuggingFace's .generate() WITH GRADIENTS
@@ -874,7 +1062,8 @@ def generate_step(
         kv_cache = DynamicCache()
     for i in range(max_len + 1):
         output = model(
-            input_ids=token_ids, 
+            input_ids=token_ids,
+            attention_mask=attention_mask,
             past_key_values=kv_cache,
             use_cache=True,
             return_dict=True,

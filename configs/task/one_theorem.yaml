@@ -56,12 +56,15 @@ model:
 
 training:
   # subtb_lambda: 1.0
-  pf_temp_high: 2.0
-  pf_temp_low: 0.5
+  # from gfn+llm paper:
+  # pf_temp_high: 2.0
+  # pf_temp_low: 0.5
+  pf_temp_high: 1.0
+  pf_temp_low: 0.25
   pf_temp_prob: 0.666
   # use_buffer_prob: 1 # guarantees buffer usage (offline training)
   use_buffer_prob: 0 # guarantees online training
-  n_samples: 2  # next_sentence task had 20
+  n_samples: 2 # next_sentence task had 20
   branch_only_at_root: true
   lr: 0.0001
   accumulate_grad_batches: 25
@@ -87,7 +90,8 @@ reward:
   sentence_validator: null
   buffer_size: 50
   buffer_sim_tolerance: 0.25
-  buffer_seed_trajectory_file: "data/single_theorem_seed_trajectories.json"
+  # buffer_seed_trajectory_file: "data/single_theorem_seed_trajectories.json"
+  buffer_seed_trajectory_file: "data/t0_seed_gtt_only.json"
   verifier_batch_size: 16 # TODO: figure out if we can go higher
   # TODO: get dsp adapters
   # reward_model_hf_id: "msho/llemma_sft"
@@ -131,7 +135,7 @@ debug_logger:
   include_lean_dojo_debug: true
   log_debug_to_stdout: false
   write_to_file: true
-  debug_log_file: "logs/single_thm.log"
+  debug_log_file: "logs/single_thm_low_temp.log"
   
 search_eval:
   probe_count: null # null for all
