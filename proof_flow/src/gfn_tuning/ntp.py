@@ -98,7 +98,6 @@ class NeuralTheoremProvingTask(LightningModule):
             torch.tensor(0.0, requires_grad=True, device=self.model_device)
         )
 
-
         self.get_lr_at_step = lambda step: min(step / 20 * lr, lr)
         self.get_reward_temp_at_step = lambda step: reward_temp_start + (
             reward_temp_end - reward_temp_start
@@ -248,7 +247,7 @@ class NeuralTheoremProvingTask(LightningModule):
             batch_loss: scalar tensor
         """
         loss = (log_pf.sum(dim=-1) + self.log_z - log_r) ** 2
-        batch_loss = loss.sum()
+        batch_loss = loss.mean()
         return batch_loss
 
     
@@ -263,8 +262,10 @@ class NeuralTheoremProvingTask(LightningModule):
         trajectory_log_pf = log_pf.sum(dim=-1)
         print(trajectory_log_pf)
         batch_zeta = log_r - trajectory_log_pf
-        # expectation = batch_zeta.mean().detach()
-        expectation = 0
+        expectation = batch_zeta.mean().detach()
+        # set expectation to 0 means we regress log_pf -> log_r (unnormalized)
+        # - before, we're trying to regress log_pf -> log_r - z
+        # expectation = 0
         loss = ((batch_zeta - expectation) ** 2).mean()
         return loss
 
@@ -272,7 +273,7 @@ class NeuralTheoremProvingTask(LightningModule):
     def training_step(
         self, 
         theorem: list[Theorem], 
-        batch_idx: int,              # required by PyTorch Lightning(?)
+        batch_idx: int,
     ):
         theorem = theorem[0]
         theorem_id = theorem.uid
@@ -331,8 +332,8 @@ class NeuralTheoremProvingTask(LightningModule):
         # get gfn loss
         # - sub tb requires estimating flow (possible impl: scalar head over RM)
         # - for the proof of concept, we'll just use vanilla TB
-        # loss = self.tb_loss(log_pf=t_logpf, log_r=log_r)
-        loss = self.log_z_variance_loss(t_logpf, log_r)
+        loss = self.tb_loss(log_pf=t_logpf, log_r=log_r)
+        # loss = self.log_z_variance_loss(t_logpf, log_r)
         self.log(
             "train/loss",
             loss,
