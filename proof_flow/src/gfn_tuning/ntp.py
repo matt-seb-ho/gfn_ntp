@@ -97,6 +97,7 @@ class NeuralTheoremProvingTask(LightningModule):
         ground_truth_trajectories: Optional[dict] = None,
         accumulate_grad_batches: int = 1,
         conditional_log_z: bool = True,
+        use_log_z_cache: bool = True,
     ):
         super().__init__()
         self.save_hyperparameters(ignore=[
@@ -116,6 +117,8 @@ class NeuralTheoremProvingTask(LightningModule):
         if conditional_log_z:
             self.log_z = None
             self.log_z_head = torch.nn.Linear(model.config.hidden_size, 1)
+            if self.model_device:
+                self.log_z_head = self.log_z_head.to(self.model_device)
         else:
             # unconditional log_z (single theorem)
             self.log_z = torch.nn.Parameter(
@@ -551,7 +554,7 @@ class NeuralTheoremProvingTask(LightningModule):
         # for tb_loss: estimate log_z
         if not self.hparams.conditional_log_z:
             log_z = self.log_z
-        elif theorem.uid in self.log_z_cache:
+        elif self.hparams.use_log_z_cache and theorem.uid in self.log_z_cache:
             log_z = self.log_z_cache[theorem.uid]
         else:
             input_ids = self.tokenizer(initial_state, return_tensors="pt").input_ids

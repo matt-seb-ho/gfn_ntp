@@ -80,6 +80,7 @@ training:
 
   # whether to learn the log_z prediction head or unconditional parameter
   conditional_log_z: true
+  use_log_z_cache: false
 
 reward:
   temp_start: 1.0

@@ -18,7 +18,7 @@ from proof_flow.src.utils import (
 from proof_flow.src.prompts import RM_TEMPLATES
 
 
-BINARY_REWARD_VALUE = -30
+MIN_REWARD = -30
 
 
 def build_reward_inputs(
@@ -70,8 +70,8 @@ class NTPReward:
             or DEFAULT_VERIFIER_BATCH_SIZE
         )
         with self._compute_reward_ctx():
-            # log_reward = self.compute_log_reward(
-            log_reward = self.compute_binary_log_reward(
+            log_reward = self.compute_log_reward(
+            # log_reward = self.compute_binary_log_reward(
                 states, 
                 tactics, 
                 self.model, 
@@ -125,9 +125,8 @@ class NTPReward:
                 # log_r[i] = 0
                 continue
             elif self._is_tactic_result_an_error(_states[-1]):
-                log_r[i] = -100
+                log_r[i] = MIN_REWARD
             else:
-                # log_r[i] = -100
                 # queue prompt-completion logp jobs
                 for step_idx in range(len(_tactics)):
                     rm_inputs = build_reward_inputs(
@@ -162,8 +161,8 @@ class NTPReward:
                 stepwise_scores                                  # values
             )
 
-        # clip reward to -100
-        log_r = torch.clamp(log_r, min=-100)
+        # clip reward
+        log_r = torch.clamp(log_r, min=MIN_REWARD)
         return log_r
     
 
@@ -197,7 +196,6 @@ class NTPReward:
             tokenizer: AutoTokenizer for encoding the input
         """
         assert len(states) == len(tactics) # batch_size
-        
         log_r = torch.zeros(len(states), device=device)
         for i, (_states, _tactics) in enumerate(zip(states, tactics)):
             # _states: list[str]: represents states for this trajectory
@@ -206,10 +204,9 @@ class NTPReward:
                 # log_r[i] = 0
                 continue
             else:
-                log_r[i] = BINARY_REWARD_VALUE
-
-        # clip reward to -100
-        log_r = torch.clamp(log_r, min=BINARY_REWARD_VALUE)
+                log_r[i] = MIN_REWARD
+        # clip reward
+        log_r = torch.clamp(log_r, min=MIN_REWARD)
         return log_r
 
 

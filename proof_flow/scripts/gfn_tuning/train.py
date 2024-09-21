@@ -258,6 +258,7 @@ def train_setup(
         search_eval_params=search_params,
         ground_truth_trajectories=ground_truth_trajectories,
         accumulate_grad_batches=config.task.training.accumulate_grad_batches,
+        use_log_z_cache=config.task.training.use_log_z_cache,
     )
 
     # set up trainer
