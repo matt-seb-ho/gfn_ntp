@@ -28,11 +28,13 @@ class NTPDataModule(LightningDataModule):
         train_size: float = 0.95,
         train_data_path: Optional[str] = None,
         val_data_path: Optional[str] = None,
+        repeat_theorem_n_times: int = 1,
     ):
         super().__init__()
         self.save_hyperparameters()
         self.train_data = None
         self.val_data = None
+        self.repeat_n_times = repeat_theorem_n_times
 
     def setup(self, stage: str):
         assert (
@@ -50,28 +52,18 @@ class NTPDataModule(LightningDataModule):
                 num_train = int(len(theorems) * self.hparams.train_size)
             else:
                 num_train = self.hparams.train_size
-            self.train_data = TheoremDataset(theorems[:num_train])
+            train_theorems = self._repeat_theorems(theorems[:num_train])
+            self.train_data = TheoremDataset(train_theorems)
             self.val_data = TheoremDataset(theorems[num_train:])
         else:
             # case 2: train_data_path and val_data_path are provided
-            self.train_data = TheoremDataset(
+            train_theorems = self._repeat_theorems(
                 self._get_theorems_from_file(self.hparams.train_data_path)
             )
+            self.train_data = TheoremDataset(train_theorems)
             self.val_data = TheoremDataset(
                 self._get_theorems_from_file(self.hparams.val_data_path)
             )
-    
-
-    def _get_theorems_from_file(self, path: str) -> list[Theorem]:
-        with open(repo_root() / path) as f:
-            thm_dicts = json.load(f)
-        thm0 = next(iter(thm_dicts.values()))
-        repo = LeanGitRepo(thm0["url"], thm0["commit"])
-        theorems = []
-        for thm_dict in thm_dicts.values():
-            thm = Theorem(repo, thm_dict["file_path"], thm_dict["full_name"])
-            theorems.append(thm)
-        return theorems
 
 
     def train_dataloader(self):
@@ -79,7 +71,7 @@ class NTPDataModule(LightningDataModule):
         # - batch_size=None (no batching), num_workers=0 (no new threads)
         return DataLoader(
             self.train_data, 
-            shuffle=True, 
+            shuffle=False, 
             batch_size=1, 
             num_workers=0,
             collate_fn=custom_theorem_collate_fn,
@@ -93,6 +85,28 @@ class NTPDataModule(LightningDataModule):
             num_workers=0,
             collate_fn=custom_theorem_collate_fn,
         )
+
+    
+    def _get_theorems_from_file(self, path: str) -> list[Theorem]:
+        with open(repo_root() / path) as f:
+            thm_dicts = json.load(f)
+        thm0 = next(iter(thm_dicts.values()))
+        repo = LeanGitRepo(thm0["url"], thm0["commit"])
+        theorems = []
+        for thm_dict in thm_dicts.values():
+            thm = Theorem(repo, thm_dict["file_path"], thm_dict["full_name"])
+            theorems.append(thm)
+        return theorems
+    
+
+    def _repeat_theorems(self, theorems: list[Theorem]) -> list[Theorem]:
+        if self.repeat_n_times == 1:
+            return theorems
+        repeated = []
+        for t in theorems:
+            for _ in range(self.repeat_n_times):
+                repeated.append(t)
+        return repeated
 
 
 class TheoremDataset(Dataset):

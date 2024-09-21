@@ -95,6 +95,8 @@ class NeuralTheoremProvingTask(LightningModule):
         sanity_check_probes: int = 1,
         device: Optional[str | torch.device] = None,
         ground_truth_trajectories: Optional[dict] = None,
+        accumulate_grad_batches: int = 1,
+        conditional_log_z: bool = True,
     ):
         super().__init__()
         self.save_hyperparameters(ignore=[
@@ -111,9 +113,15 @@ class NeuralTheoremProvingTask(LightningModule):
         self.reward = reward
         self.reward_buffer = reward_buffer
         self.model_device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.log_z = torch.nn.Parameter(
-            torch.tensor(0.0, requires_grad=True, device=self.model_device)
-        )
+        if conditional_log_z:
+            self.log_z = None
+            self.log_z_head = torch.nn.Linear(model.config.hidden_size, 1)
+        else:
+            # unconditional log_z (single theorem)
+            self.log_z = torch.nn.Parameter(
+                torch.tensor(0.0, requires_grad=True, device=self.model_device)
+            )
+            self.log_z_head = None
 
         self.get_lr_at_step = lambda step: min(step / 20 * lr, lr)
         self.get_reward_temp_at_step = lambda step: reward_temp_start + (
@@ -136,6 +144,11 @@ class NeuralTheoremProvingTask(LightningModule):
 
         # for adding ground truth trajectories to online training
         self.ground_truth_trajectories = ground_truth_trajectories
+
+        # gradient accumulation is currently implemented by duplicating data
+        # in the train data loader. We only need to estimate log_z
+        # once per accumulation loop
+        self.log_z_cache = {}
 
     
     def parallel_forward(
@@ -319,13 +332,13 @@ class NeuralTheoremProvingTask(LightningModule):
             next_states.append(next_state)
         
         tactics = [t.strip() for t in generated_tactics]
-        return (
-            next_states, 
-            tactic_logpf, 
-            tactics,
-            state_tactic_tokens,
-            prompt_lengths,
-            i2t_idx_map
+        return ParallelForwardStepResult(
+            next_states=next_states, 
+            tactic_logpf=tactic_logpf, 
+            tactics=tactics,
+            state_tactic_tokens=state_tactic_tokens,
+            prompt_lengths=prompt_lengths,
+            idx_map=i2t_idx_map,
         )
                 
 
@@ -443,7 +456,12 @@ class NeuralTheoremProvingTask(LightningModule):
         return trajectories_logpf, log_reward, trajectories
 
 
-    def tb_loss(self, log_pf: torch.Tensor, log_r: torch.Tensor) -> torch.Tensor:
+    def tb_loss(
+        self,
+        log_pf: torch.Tensor,
+        log_r: torch.Tensor,
+        log_z: torch.Tensor,
+    ) -> torch.Tensor:
         """
         Computes the batch loss using the Trajectory Balance objective
 
@@ -454,7 +472,7 @@ class NeuralTheoremProvingTask(LightningModule):
         Returns:
             batch_loss: scalar tensor
         """
-        loss = (log_pf.sum(dim=-1) + self.log_z - log_r) ** 2
+        loss = (log_pf.sum(dim=-1) + log_z - log_r) ** 2
         batch_loss = loss.mean()
         return batch_loss
 
@@ -500,6 +518,7 @@ class NeuralTheoremProvingTask(LightningModule):
                 replay_ts,
                 model_inf_batch_size=self.hparams.model_inference_batch_size,
             )
+            initial_state = replay_ts[0]["states"][0]
             log_r *= 1 / self.reward.temperature  # redo the effect of reward tempering
         else:
             # Using the forward policy
@@ -527,21 +546,47 @@ class NeuralTheoremProvingTask(LightningModule):
                 self._debug_log("forward returned None (0 trajectories generated)")
                 return None
             self.reward_buffer.add_batch(theorem_id, extracted_ts)
+            initial_state = extracted_ts[0]["states"][0]
 
-        # add ground truth trajectory before computing loss
-        if self.ground_truth_trajectories:
-            gt_tlpf, gt_lr = self.replay_trajectories(
-                [self.ground_truth_trajectories[theorem_id]],
-                model_inf_batch_size=1,
+        # for tb_loss: estimate log_z
+        if not self.hparams.conditional_log_z:
+            log_z = self.log_z
+        elif theorem.uid in self.log_z_cache:
+            log_z = self.log_z_cache[theorem.uid]
+        else:
+            input_ids = self.tokenizer(initial_state, return_tensors="pt").input_ids
+            if self.model_device:
+                input_ids = input_ids.to(self.model_device)
+            output = self.model(
+                input_ids, 
+                output_hidden_states=True,
+                return_dict=True,
             )
-            t_logpf = self._append_tensor_and_pad(t_logpf, gt_tlpf)
-            log_r = torch.cat([log_r, gt_lr])
+            # output.hidden_states is a tuple of tensors (embedding + each layer)
+            # each tensor has shape (batch_size, seq_len, hidden_size)
+            final_hidden_state = output.hidden_states[-1][:, -1, :]
+            log_z = self.log_z_head(final_hidden_state)
+            self.log_z_cache[theorem.uid] = log_z
+
+        # once per accumulation batch
+        if (batch_idx + 1) % self.hparams.accumulate_grad_batches == 0:
+            # add ground truth trajectory before computing loss
+            if self.ground_truth_trajectories:
+                gt_tlpf, gt_lr = self.replay_trajectories(
+                    [self.ground_truth_trajectories[theorem_id]],
+                    model_inf_batch_size=1,
+                )
+                t_logpf = self._append_tensor_and_pad(t_logpf, gt_tlpf)
+                log_r = torch.cat([log_r, gt_lr])
+            
+            # remove log_z from cache
+            self.log_z_cache.pop(theorem.uid, None)
 
         # get gfn loss
         # - sub tb requires estimating flow (possible impl: scalar head over RM)
         # - for the proof of concept, we'll just use vanilla TB
         print("tlogpf before loss:", t_logpf, sep="\n")
-        loss = self.tb_loss(log_pf=t_logpf, log_r=log_r)
+        loss = self.tb_loss(log_pf=t_logpf, log_r=log_r, log_z=log_z)
         # loss = self.log_z_variance_loss(t_logpf, log_r)
         self.log(
             "train/loss",

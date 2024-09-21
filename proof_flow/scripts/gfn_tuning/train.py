@@ -190,6 +190,7 @@ def train_setup(
         train_size=config.task.data.train_size,
         train_data_path=config.task.data.train_data_path,
         val_data_path=config.task.data.val_data_path,
+        repeat_theorem_n_times=config.task.training.accumulate_grad_batches,
     )
     data.setup("fit")
     val_probes = get_val_probes(config)
@@ -256,6 +257,7 @@ def train_setup(
         tac_gen_prompt_template=tac_gen_prompt_template,
         search_eval_params=search_params,
         ground_truth_trajectories=ground_truth_trajectories,
+        accumulate_grad_batches=config.task.training.accumulate_grad_batches,
     )
 
     # set up trainer
