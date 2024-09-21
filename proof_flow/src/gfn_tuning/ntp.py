@@ -5,7 +5,11 @@ from typing import Optional
 import torch
 from icecream import ic
 from loguru import logger
-from peft import PeftModel, PeftModelForCausalLM
+from peft import (
+    PeftModel,
+    PeftModelForCausalLM,
+    PeftModelForSeq2SeqLM,
+)
 from pytorch_lightning import LightningModule
 from transformers import (
     AutoTokenizer, 
@@ -26,7 +30,7 @@ from proof_flow.src.gfn_tuning.reward import NTPReward
 from proof_flow.src.prompts import (
     DEEPSEEK_RM_ST_PROMPT_TEMPLATE_V2,
 )
-from proof_flow.src.search.common import ProofSearchParams
+from proof_flow.src.search.common import ProofSearchParams, _HuggingFaceLM
 from proof_flow.src.search.proof_search import Status, DistributedProver
 from proof_flow.src.utils import (
     CUSTOM_LOG_LEVEL,
@@ -55,8 +59,6 @@ ParallelForwardStepResult = namedtuple(
         "next_states", 
         "tactic_logpf", 
         "tactics", 
-        "state_tactic_tokens", 
-        "prompt_lengths", 
         "idx_map", 
     ]
 )
@@ -65,7 +67,7 @@ ParallelForwardStepResult = namedtuple(
 class NeuralTheoremProvingTask(LightningModule):
     def __init__(
         self,
-        model: PeftModel,
+        model: _HuggingFaceLM,
         tokenizer: AutoTokenizer,
         reward: NTPReward,
         reward_buffer: ReplayBuffer,
@@ -98,6 +100,7 @@ class NeuralTheoremProvingTask(LightningModule):
         accumulate_grad_batches: int = 1,
         conditional_log_z: bool = True,
         use_log_z_cache: bool = True,
+        seq2seq: bool = False,
     ):
         super().__init__()
         self.save_hyperparameters(ignore=[
@@ -153,6 +156,11 @@ class NeuralTheoremProvingTask(LightningModule):
         # once per accumulation loop
         self.log_z_cache = {}
 
+        if self.hparams.seq2seq:
+            self.generate_step = generate_step_seq2seq
+        else:
+            self.generate_step = generate_step
+
     
     def parallel_forward(
         self,
@@ -181,8 +189,6 @@ class NeuralTheoremProvingTask(LightningModule):
         
         active_trajectories = [True] * n_samples
         tactics = [[] for _ in range(n_samples)]
-        state_tactic_tokens = [[] for _ in range(n_samples)]
-        prompt_lengths = [[] for _ in range(n_samples)]
         trajectory_logpf = []
         tactic_states = [[initial_state] for _ in range(n_samples)]
         
@@ -204,8 +210,6 @@ class NeuralTheoremProvingTask(LightningModule):
                 tactic_states[ti].append(next_state)
                 tactics[ti].append(r.tactics[i])
                 active_trajectories[ti] = isinstance(next_state, TacticState)
-                state_tactic_tokens[ti].append(r.state_tactic_tokens[i])
-                prompt_lengths[ti].append(r.prompt_lengths[i])
 
             # update trajectory logpf
             tactics_logpf = torch.zeros(n_samples, device=self.model_device)
@@ -238,18 +242,16 @@ class NeuralTheoremProvingTask(LightningModule):
         )
 
         # reformat for replay buffer storage
-        extracted_trajectories = []
+        trajectories = []
         for i in range(n_samples):
-            extracted_trajectories.append({
+            trajectories.append({
                 "theorem_id": theorem.uid,
                 "states": state_strings[i],
                 "tactics": tactics[i],
                 "proof": TACTIC_DELIMITER.join(tactics[i]),
                 "log_r": log_r[i].item(),
-                "state_tactic_tokens": state_tactic_tokens[i],
-                "prompt_lengths": prompt_lengths[i],
             })
-        return trajectory_logpf, log_r, extracted_trajectories
+        return trajectory_logpf, log_r, trajectories
             
         
     def parallel_forward_step(
@@ -290,7 +292,7 @@ class NeuralTheoremProvingTask(LightningModule):
         if self.model_device:
             batch_enc = batch_enc.to(self.model_device)
 
-        tokens, log_pf = generate_step(
+        tokens, log_pf = self.generate_step(
             self.model,
             encoded_prompt=batch_enc.input_ids,
             termination_token_id=self.end_of_step_token_id,
@@ -304,22 +306,13 @@ class NeuralTheoremProvingTask(LightningModule):
         # NOTE: this assumes that padded tokens have a log_pf of 0
         tactic_logpf = log_pf.sum(dim=1)
 
-        # get non-padded length of each sequence in the batch
-        # NOTE: this implementation excludes the end of step token 
-        #       (eos token omitted in replay buffer's state_tactic_tokens)
-        prompt_length = batch_enc.input_ids.shape[1]
-        is_end_of_step = (tokens[:, prompt_length:]).eq(
-            self.end_of_step_token_id
-        )
-        pre_pad_length = is_end_of_step.float().argmax(dim=-1) + prompt_length
-        # need to get state_tactic_tokens tensors
-        for i in range(len(i2t_idx_map)):
-            start = batch_enc.char_to_token(i, 0)
-            stt = tokens[i, start:pre_pad_length[i]].cpu()
-            state_tactic_tokens.append(stt)
-
+        # decode tokens to get tactics
+        if self.hparams.seq2seq:
+            tactic_tokens = tokens
+        else:
+            tactic_tokens = tokens[:, batch_enc.input_ids.shape[1]:]
         generated_tactics = self.tokenizer.batch_decode(
-            tokens[:, prompt_length:],
+            tactic_tokens,
             skip_special_tokens=True,
             clean_up_tokenization_spaces=True,
         )
@@ -339,8 +332,6 @@ class NeuralTheoremProvingTask(LightningModule):
             next_states=next_states, 
             tactic_logpf=tactic_logpf, 
             tactics=tactics,
-            state_tactic_tokens=state_tactic_tokens,
-            prompt_lengths=prompt_lengths,
             idx_map=i2t_idx_map,
         )
                 
@@ -1030,65 +1021,8 @@ class NeuralTheoremProvingTask(LightningModule):
         return torch.cat([t1, t2], dim=0)
 
 
-def generate_step_hf(
-    model: PeftModel,
-    input_ids: torch.Tensor,
-    termination_token_id: int,
-    temperature: float = 1.0,
-    top_k: int = 999999,
-    top_p: float = 1.0,
-    prompt_length: Optional[int] = None,
-    max_new_tokens: int = 30,
-    **generation_kwargs,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """
-    forward pass for a single state
-    returns:
-    1. token id tensor of (state, tactic)
-    2. log probability tensor for the tactics
-    """
-    # model.generate notes
-    # - do_sample=True turns off greedy decoding
-    # - begin_suppress_tokens: prevents the first token from being the termination token
-    #   - this prevents empty tactics from being generated (reward current cannot handle empty tactics)
-    # - passing in a different eos_token_id acts as a stopping criteria 
-    #   - (attention computations are not affected)
-    # - choosing to output logits instead of scores to get behaviour more similar
-    #   to the replay computation (scores are different because of suppress)
-    outputs = model.generate(
-        input_ids=input_ids,
-        max_new_tokens=max_new_tokens,
-        eos_token_id=termination_token_id,
-        forced_eos_token_id=termination_token_id,
-        begin_suppress_tokens=[termination_token_id],
-        return_dict_in_generate=True,
-        output_logits=True,
-        temperature=temperature,
-        top_k=top_k,
-        top_p=top_p,
-        do_sample=True,
-        **generation_kwargs
-    )
-    scores = model.compute_transition_scores(
-        outputs.sequences,
-        outputs.logits,
-        normalize_logits=True,
-    )
-    # the original generate_and_return_termination_logprob returned (state, log_pf, ...)
-    # where state includes the prompt and the generated tokens, 
-    # while log_pf included only the generated tokens' log probabilities.
-    prompt_length = prompt_length or input_ids.shape[1]
-    # fix padding:
-    # - pad out scores from term token onwards (first term token after prompt)
-    pad_mask = (
-        outputs.sequences[:, prompt_length:] == termination_token_id
-    ).cumsum(dim=1) > 0
-    scores[pad_mask] = 0
-    return outputs.sequences, scores
-
-
 def generate_step(
-    model: PeftModelForCausalLM,
+    model: _HuggingFaceLM,
     encoded_prompt: torch.Tensor,
     termination_token_id: int,
     pad_token_id: int,
@@ -1216,3 +1150,136 @@ def generate_step(
 
     log_pf = torch.stack(log_pf, dim=1)
     return state, log_pf
+
+
+def generate_step_seq2seq(
+    model: _HuggingFaceLM,
+    input_ids: torch.Tensor,
+    termination_token_id: int,
+    pad_token_id: int,
+    vocab_nice_mask: Optional[torch.Tensor] = None,
+    vocab_naughty_mask: Optional[torch.Tensor] = None,
+    vocab_alpha: int = -99,
+    max_len: int = 30,
+    min_len: int = 1,
+    temperature: float = 1.0,
+    top_k: int = 999999,
+    top_p: float = 1.0,
+    attention_mask: Optional[torch.Tensor] = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    simplified implementation of seq2seq LM generation WITH GRADIENTS
+    why does the token_ids have shape (batch_size, max_len + 1)?
+    - decoder has its own BOS token (decoder_start_token_id)
+
+    args (required)
+        model
+        encoded_prompt: input_ids tensor shape (batch_size, input_seq_len)
+        termination_token_id
+        pad_token_id
+    returns
+        token_ids: tensor of sampled tokens with shape (batch_size, max_len + 1)
+        log_pf: tensor of log_pf for sampled tokens (batch_size, max_new_tokens)
+    """
+    batch_size = input_ids.size(0)
+    active_seqs = torch.ones(batch_size).bool().to(input_ids.device)
+
+    # encode prompt
+    encoder = model.get_encoder()
+    encoder_outputs = encoder(input_ids=input_ids, attention_mask=attention_mask)
+    
+    # initialize decoder input
+    decoder_start_token_id = model.config.decoder_start_token_id
+    decoder_input_ids = torch.full(
+        (batch_size, 1), 
+        decoder_start_token_id, 
+        dtype=torch.long, 
+        device=input_ids.device
+    )
+
+    # https://huggingface.co/docs/transformers/v4.44.2/en/model_doc/t5#transformers.T5ForConditionalGeneration
+    # - past_key_values apparently doesn't support cache classes for seq2seq models
+    past_key_values = None  # For caching hidden states during generation
+    
+    # prepare tensor to store log probabilities
+    log_pf = torch.zeros(batch_size, max_len, device=input_ids.device)
+    
+    for i in range(max_len + 1):
+        output = model(
+            input_ids=None,
+            attention_mask=None,
+            encoder_outputs=encoder_outputs,
+            # last token of the decoder input (using cache)
+            decoder_input_ids=decoder_input_ids[:, -1:],
+            past_key_values=past_key_values,
+            use_cache=True,
+            return_dict=True,
+        )
+        past_key_values = output.past_key_values
+        logits = output.logits[:, -1, :]
+        
+        # sample out a token from logits
+        with torch.no_grad():
+            prob = logits.softmax(dim=-1)
+            modified_logits = logits.clone().detach()
+            # implement top-k by getting the top-k largest values and setting the rest to 0
+            if top_k < 999999:
+                modified_logits[prob >= prob.topk(top_k)] = -torch.inf
+            # implement top-p by getting indices in the top-p prob mass and setting the rest to 0
+            if top_p < 1.0:
+                sorted_probs, _ = torch.sort(prob, dim=-1, descending=True)
+                cumsum_prob = torch.cumsum(sorted_probs, dim=-1)
+                nucleus = cumsum_prob < top_p
+                nucleus = torch.cat(
+                    [
+                        nucleus.new_ones(nucleus.shape[:-1] + (1,)),
+                        nucleus[..., :-1],
+                    ],
+                    dim=-1,
+                )
+                modified_logits[~nucleus] = -torch.inf
+            if i < min_len:
+                # if we haven't reach the minimum length, set the probability of terminating to 0
+                modified_logits[:, termination_token_id] = -torch.inf
+            elif i >= max_len:
+                # if we've reached the maximum length, set the probability of terminating to 1
+                mask = [True] * modified_logits.shape[1]
+                mask[termination_token_id] = False
+                modified_logits[:, mask] = -torch.inf
+            if vocab_nice_mask is not None:
+                # add vocab_alpha to the logits of the unmasked vocab items
+                modified_logits[:, ~vocab_nice_mask] += vocab_alpha
+            if vocab_naughty_mask is not None:
+                # add vocab_alpha to the logits of the masked vocab items
+                modified_logits[:, vocab_naughty_mask] += vocab_alpha
+            prob = (modified_logits / temperature).softmax(dim=-1)
+            next_tokens = torch.multinomial(prob, num_samples=1)
+
+        next_tokens = torch.where(
+            active_seqs.unsqueeze(-1),
+            next_tokens,
+            # termination_token_id,
+            pad_token_id,
+        )
+        if vocab_nice_mask is not None:
+            logits[:, ~vocab_nice_mask] += vocab_alpha
+        if vocab_naughty_mask is not None:
+            logits[:, vocab_naughty_mask] += vocab_alpha
+        log_prob_distributions = logits.log_softmax(dim=-1)
+        
+        active_seqs = active_seqs * (next_tokens != termination_token_id).squeeze(-1)
+        log_pf[:, i] = (
+            torch.where(
+                active_seqs,
+                log_prob_distributions.gather(-1, next_tokens).squeeze(-1),
+                0,
+            )
+        )
+        # add sampled token to decoder input
+        decoder_input_ids = torch.cat([decoder_input_ids, next_tokens], dim=-1)
+        # check if all sequences have terminated
+        if torch.all(~active_seqs):
+            break
+
+    log_pf = torch.stack(log_pf, dim=1)
+    return decoder_input_ids, log_pf
