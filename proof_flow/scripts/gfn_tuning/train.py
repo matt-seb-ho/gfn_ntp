@@ -23,6 +23,7 @@ from proof_flow.src.constants import (
 from proof_flow.src.prompts import PROMPT_DICT
 from proof_flow.src.gfn_tuning.reward import NTPReward
 from proof_flow.src.gfn_tuning.replay_buffer import (
+    BufferEntry,
     ReplayBuffer,
     extract_ground_truth_trajectory,
 )
@@ -204,25 +205,19 @@ def train_setup(
     )
     tac_gen_prompt_template = PROMPT_DICT[config.task.prompts.tac_gen]
     # - optionally load ground truth trajectories
-    ground_truth_trajectories = get_ground_truth_trajectories(
-        config,
-        tokenizer,
-        tac_gen_prompt_template,
-    )
+    ground_truth_trajectories = get_ground_truth_trajectories(config)
     # - optionally load seed trajectories
     if config.task.reward.buffer_seed_trajectory_file is not None:
         with open(repo_root() / config.task.reward.buffer_seed_trajectory_file) as f:
             seed_trajectories = json.load(f)
-        # to make the trajectories serializable,
-        # we converted state_tactic_tokens tensor -> list.
-        # we should convert them back to tensor here
-        for thm_trajectories in seed_trajectories.values():
-            for t in thm_trajectories:
-                t["state_tactic_tokens"] = [
-                    torch.tensor(stt) for stt in t["state_tactic_tokens"]
-                ]
+        # expect seed_trajectories to be dict[str, list[list]]
+        # where the innermost list is really a BufferEntry tuple
+        # (json serializes BufferEntry named tuple as a list)
         for thm_uid, trajectories in seed_trajectories.items():
-            reward_buffer.add_batch(thm_uid, trajectories)
+            trajectory_batch = [
+                BufferEntry(*t) for t in trajectories
+            ]
+            reward_buffer.add_batch(thm_uid, trajectory_batch)
 
     # set up task
     search_params = hydra.utils.instantiate(config.task.search_eval.search_params)
@@ -245,15 +240,16 @@ def train_setup(
         min_tactic_tokens=config.task.constraints.min_tactic_tokens,
         max_tactic_tokens=config.task.constraints.max_tactic_tokens,
         model_inference_batch_size=config.task.model.inf_batch_size,
-        branch_only_at_root=config.task.training.branch_only_at_root,
         dojo_timeout=config.task.training.dojo_timeout,
+        max_input_length=config.task.constraints.max_input_length,
+        branch_only_at_root=config.task.training.branch_only_at_root,
         search_eval_probes=val_probes,
+        search_eval_params=search_params,
         ckpt_dest=config.task.training.ckpt_dest,
         save_ckpt_on_val=config.task.training.save_ckpt_on_val,
         sanity_check_probes=config.task.search_eval.sanity_check_probe_count,
         debug_log_level=debug_log_level,
         tac_gen_prompt_template=tac_gen_prompt_template,
-        search_eval_params=search_params,
         ground_truth_trajectories=ground_truth_trajectories,
         accumulate_grad_batches=config.task.training.accumulate_grad_batches,
         use_log_z_cache=config.task.training.use_log_z_cache,

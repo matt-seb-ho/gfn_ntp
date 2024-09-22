@@ -39,6 +39,7 @@ class ReplayBuffer:
         self.buffer_size = buffer_size
         self.termination_token_id = termination_token_id
         self.pad_token_id = pad_token_id
+        self.tokenizer = tokenizer
         self.sim_tolerance = sim_tolerance
         self.reset()
 
@@ -55,7 +56,7 @@ class ReplayBuffer:
         if item.proof in self._buffer[theorem_id]["exists"]:
             return
         # if the edit distance between item and any item in the buffer is small, skip it
-        proof_tokens = self._get_tactic_tokens_list(item=item)
+        proof_tokens = self.tokenizer.encode(item.proof)
         for buffer_item in self._buffer[theorem_id]["proofs"]:
             existing_proof_tokens = self.tokenizer.encode(buffer_item.proof)
             if (

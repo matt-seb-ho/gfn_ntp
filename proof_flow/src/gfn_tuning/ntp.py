@@ -88,21 +88,21 @@ class NeuralTheoremProvingTask(LightningModule):
         max_tactic_tokens: int = 30,
         model_inference_batch_size: int = 4,
         dojo_timeout: int = 600, # default comes from LeanDojo
-        max_input_length: int = 130,
+        max_input_length: int = 640,
         branch_only_at_root: bool = True,
-        debug_log_level: str = CUSTOM_LOG_LEVEL,
-        tac_gen_prompt_template: str = DEEPSEEK_RM_ST_PROMPT_TEMPLATE_V2,
         search_eval_probes: Optional[list[dict]] = None,
         search_eval_params: Optional[ProofSearchParams] = None,
         ckpt_dest: str = "checkpoints",
         save_ckpt_on_val: bool = False,
         sanity_check_probes: int = 1,
-        device: Optional[str | torch.device] = None,
+        debug_log_level: str = CUSTOM_LOG_LEVEL,
+        tac_gen_prompt_template: str = DEEPSEEK_RM_ST_PROMPT_TEMPLATE_V2,
         ground_truth_trajectories: Optional[dict] = None,
         accumulate_grad_batches: int = 1,
-        conditional_log_z: bool = True,
         use_log_z_cache: bool = True,
         seq2seq: bool = False,
+        conditional_log_z: bool = True,
+        device: Optional[str | torch.device] = None,
     ):
         super().__init__()
         self.save_hyperparameters(ignore=[
@@ -121,7 +121,12 @@ class NeuralTheoremProvingTask(LightningModule):
         self.model_device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
         if conditional_log_z:
             self.log_z = None
-            self.log_z_head = torch.nn.Linear(model.config.hidden_size, 1)
+            log_z_head_input_size = (
+                model.config.d_model
+                if seq2seq else
+                model.config.hidden_size
+            )
+            self.log_z_head = torch.nn.Linear(log_z_head_input_size, 1)
             if self.model_device:
                 self.log_z_head = self.log_z_head.to(self.model_device)
         else:
@@ -274,6 +279,7 @@ class NeuralTheoremProvingTask(LightningModule):
             input_text = self.format_prompt(state.pp)
             token_length = len(self.tokenizer.encode(input_text))
             if token_length > self.hparams.max_input_length:
+                self._debug_log(f"input state too long: {input_text}. Stopping trajectory.")
                 continue
             input_texts.append(input_text)
             i2t_idx_map.append(i)
@@ -295,6 +301,7 @@ class NeuralTheoremProvingTask(LightningModule):
             self.model,
             encoded_prompt=batch_enc.input_ids,
             termination_token_id=self.end_of_step_token_id,
+            eos_token_id=self.tokenizer.eos_token_id,
             pad_token_id=self.tokenizer.pad_token_id,
             temperature=pf_temperature,
             max_len=self.hparams.max_tactic_tokens,
@@ -552,16 +559,28 @@ class NeuralTheoremProvingTask(LightningModule):
             input_ids = self.tokenizer(initial_tac_state, return_tensors="pt").input_ids
             if self.model_device:
                 input_ids = input_ids.to(self.model_device)
-            output = self.model(
-                input_ids, 
-                output_hidden_states=True,
-                return_dict=True,
-            )
-            # output.hidden_states is a tuple of tensors (embedding + each layer)
-            # each tensor has shape (batch_size, seq_len, hidden_size)
-            final_hidden_state = output.hidden_states[-1][:, -1, :]
-            log_z = self.log_z_head(final_hidden_state)
-            self.log_z_cache[theorem.uid] = log_z
+            if self.hparams.seq2seq:
+                encoder = self.model.get_encoder()
+                enc_out = encoder(input_ids)
+                # get last hidden state (batch_size, seq_length, hidden_size)
+                hidden_states = enc_out.last_hidden_state
+                # aggregate hidden states (mean pooling)
+                # shape: (batch_size, hidden_size)
+                pooled_output = hidden_states.mean(dim=1)
+                # pass through the regression head to get scalar output
+                # shape: (batch_size, 1)
+                log_z = self.log_z_head(pooled_output)
+            else:
+                output = self.model(
+                    input_ids, 
+                    output_hidden_states=True,
+                    return_dict=True,
+                )
+                # output.hidden_states is a tuple of tensors (embedding + each layer)
+                # each tensor has shape (batch_size, seq_len, hidden_size)
+                final_hidden_state = output.hidden_states[-1][:, -1, :]
+                log_z = self.log_z_head(final_hidden_state)
+                # self.log_z_cache[theorem.uid] = log_z
 
         # once per accumulation batch
         if (batch_idx + 1) % self.hparams.accumulate_grad_batches == 0:
@@ -841,24 +860,28 @@ class NeuralTheoremProvingTask(LightningModule):
 
         # queue up jobs
         prompts = []
+        completions = []
         batch_idxs = []
         step_idxs = []
         for b_idx, trajectory in enumerate(trajectories):
-            for s_idx, state in enumerate(trajectory.states[:-1]):
-                prompts.append(self.hparams.tac_gen_prompt_template.format(state))
+            for s_idx, (state, tactic) in enumerate(
+                zip(trajectory.states, tactics[b_idx])
+            ):
+                prompts.append(self.format_prompt(state))
+                completions.append(tactic)
                 batch_idxs.append(b_idx)
                 step_idxs.append(s_idx)
         
         # compute tactic log_pfs in batches
-        for _prompts, _tactics, b_idxs, s_idxs in batch_iterator_zip(
-            (prompts, tactics, batch_idxs, step_idxs), 
+        for _prompts, _completions, b_idxs, s_idxs in batch_iterator_zip(
+            (prompts, completions, batch_idxs, step_idxs), 
             batch_size=model_inf_batch_size
         ):
             log_pfs, _ = self.conditional_log_p(
                 self.model,
                 self.tokenizer,
                 _prompts,
-                _tactics,
+                _completions,
                 device=self.model_device,
             )
             step_logpfs[b_idxs, s_idxs] = log_pfs
@@ -875,7 +898,7 @@ class NeuralTheoremProvingTask(LightningModule):
         
         # collect log_r from replay buffer
         log_r = torch.tensor(
-            [t["log_r"] for t in trajectories], 
+            [t.log_r for t in trajectories], 
             dtype=step_logpfs.dtype,
             device=self.model_device,
         )
@@ -1150,6 +1173,7 @@ def generate_step_seq2seq(
     encoded_prompt: torch.Tensor,
     termination_token_id: int,
     pad_token_id: int,
+    eos_token_id: int,
     vocab_nice_mask: Optional[torch.Tensor] = None,
     vocab_naughty_mask: Optional[torch.Tensor] = None,
     vocab_alpha: int = -99,
@@ -1195,12 +1219,12 @@ def generate_step_seq2seq(
     past_key_values = None  # For caching hidden states during generation
     
     # prepare tensor to store log probabilities
-    log_pf = torch.zeros(batch_size, max_len, device=encoded_prompt.device)
+    log_pf = torch.zeros(batch_size, max_len + 1, device=encoded_prompt.device)
     
     for i in range(max_len + 1):
         output = model(
             input_ids=None,
-            attention_mask=None,
+            attention_mask=attention_mask,
             encoder_outputs=encoder_outputs,
             # last token of the decoder input (using cache)
             decoder_input_ids=decoder_input_ids[:, -1:],
@@ -1260,7 +1284,14 @@ def generate_step_seq2seq(
             logits[:, vocab_naughty_mask] += vocab_alpha
         log_prob_distributions = logits.log_softmax(dim=-1)
         
-        active_seqs = active_seqs * (next_tokens != termination_token_id).squeeze(-1)
+        # update active sequences
+        next_token_active = (
+            (next_tokens != termination_token_id).squeeze(-1)
+            & (next_tokens != eos_token_id).squeeze(-1)
+        )
+
+        # update log_pf
+        active_seqs = active_seqs * next_token_active
         log_pf[:, i] = (
             torch.where(
                 active_seqs,
@@ -1268,11 +1299,12 @@ def generate_step_seq2seq(
                 0,
             )
         )
+
         # add sampled token to decoder input
         decoder_input_ids = torch.cat([decoder_input_ids, next_tokens], dim=-1)
+
         # check if all sequences have terminated
         if torch.all(~active_seqs):
             break
 
-    log_pf = torch.stack(log_pf, dim=1)
     return decoder_input_ids, log_pf

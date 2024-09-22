@@ -270,6 +270,14 @@ class HuggingFaceGenerator(TacticGenerator):
         # state = self.template % state
         state = self.template.format(state=state)
         logger.debug(state)
+        if (
+            self.decoder_only 
+            and self.tokenizer.encode(state) > self.max_inp_seq_len
+        ):
+            # decoder only models won't generate tactics with truncated prompt
+            # - it just tries to complete the prompt
+            # - instead, just stop here
+            return []
         tokenized_state = self.tokenizer(
             state, 
             max_length=self.max_inp_seq_len, 

@@ -284,11 +284,15 @@ def seq2seq_conditional_log_prob(
         return_tensors='pt',
     )
     # with tokenizer.as_target_tokenizer():
+    # exclude term token for consistency (add_special_tokens=False)
     labels = tokenizer(
         completions,
         padding=True,
-        truncation=True,
+        # asking to truncate to max_length but no maximum length is provided 
+        # and the model has no predefined maximum length. Default to no truncation.
+        # truncation=True,
         return_tensors='pt',
+        add_special_tokens=False, 
     )
     # move tensors to the specified device
     input_ids = encoder_inputs.input_ids.to(device)

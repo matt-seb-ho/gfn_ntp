@@ -9,7 +9,8 @@ data:
 model:
   # test with llemma, run later with dsp
   # name: "EleutherAI/llemma_7b"
-  name: "deepseek-ai/DeepSeek-Prover-V1"
+  # name: "deepseek-ai/DeepSeek-Prover-V1"
+  name: "kaiyuy/leandojo-lean4-tacgen-byt5-small"
   seq2seq: true 
   # seq2seq: false
 
@@ -25,6 +26,11 @@ model:
 
     # adjusted settings for OOM issues
     target_modules: "all-linear"
+    # target_modules:
+    #   - q
+    #   - k
+    #   - v
+    #   - o
     r: 16
     lora_alpha: 32
     lora_dropout: 0.05
@@ -51,7 +57,8 @@ model:
   
   # specify a huggingface model id to initialize the policy adapter from
   # e.g. "msho/llemma_sft"
-  initialize_policy_adapter_from_pretrained: "msho/dspv1_policy_sft"
+  # initialize_policy_adapter_from_pretrained: "msho/dspv1_policy_sft"
+  initialize_policy_adapter_from_pretrained: null
 
   # currently just used for replay
   inf_batch_size: 8
@@ -97,15 +104,16 @@ reward:
   buffer_size: 50
   buffer_sim_tolerance: 0.25
   # buffer_seed_trajectory_file: "data/single_theorem_seed_trajectories.json"
-  buffer_seed_trajectory_file: "data/t0_seed_gtt_only.json"
+  # buffer_seed_trajectory_file: "data/t0_seed_gtt_only.json"
+  buffer_seed_trajectory_file: data/t0_seed_t_updated_fmt.json
   verifier_batch_size: 16 # TODO: figure out if we can go higher
   # TODO: get dsp adapters
   # reward_model_hf_id: "msho/llemma_sft"
   # reward_model_adapter_name: "reward"
-  reward_model_hf_id: "msho/dspv1_sft"
-  reward_model_adapter_name: "reward"
-  # reward_model_hf_id: null
-  # reward_model_adapter_name: null
+  # reward_model_hf_id: "msho/dspv1_sft"
+  # reward_model_adapter_name: "reward"
+  reward_model_hf_id: null
+  reward_model_adapter_name: null
 
 callbacks:
   - _target_: pytorch_lightning.callbacks.ModelCheckpoint
@@ -134,14 +142,17 @@ callbacks:
 
 constraints:
   max_tactics: 3
-  min_tactic_tokens: 1
-  max_tactic_tokens: 30
+  # min_tactic_tokens: 1
+  min_tactic_tokens: 3
+  # max_tactic_tokens: 30
+  max_tactic_tokens: 90
+  max_input_length: 640
 
 debug_logger:
   include_lean_dojo_debug: true
   log_debug_to_stdout: false
   write_to_file: true
-  debug_log_file: "logs/single_thm_low_temp.log"
+  debug_log_file: "logs/t5_runs.log"
   
 search_eval:
   probe_count: null # null for all
@@ -156,9 +167,11 @@ search_eval:
     max_depth: 6
     num_workers: 1
     num_gpus: 1
-    max_input_seq_len: 230 # 200 (state) + 30 (prompt)
-    max_output_seq_len: 260
-    max_new_tokens: 30
+    # max_input_seq_len: 230 # 200 (state) + 30 (prompt)
+    max_input_seq_len: 640 # reprover
+    max_output_seq_len: 730
+    # max_new_tokens: 30
+    max_new_tokens: 90 # reprover
     length_penalty: 0.0
 
 prompts:

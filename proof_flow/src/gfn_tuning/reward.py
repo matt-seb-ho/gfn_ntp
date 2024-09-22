@@ -98,7 +98,8 @@ class NTPReward:
         use_sts_format: bool = False,
         prompts_for_model: Optional[str] = "llemma",
         device: Optional[str | torch.device] = None,
-        length_penalty: bool = True,
+        normalize_tactic_length: bool = True,
+        normalize_trajectory_length: bool = True,
     ) -> torch.Tensor:
         """
         Computes reward for a batch of trajectores (states, tactics) using heuristics and model.
@@ -125,6 +126,7 @@ class NTPReward:
         trajectory_groups = []
         prompts = []
         completions = []
+        partial_trajectory_idxs = set()
         for i, (_states, _tactics) in enumerate(zip(states, tactics)):
             # _states: list[str]: represents states for this trajectory
             # _tactics: list[str]: represents tactics for this trajectory
@@ -135,6 +137,7 @@ class NTPReward:
                 log_r[i] = MIN_REWARD
             else:
                 # queue prompt-completion logp jobs
+                partial_trajectory_idxs.add(i)
                 for step_idx in range(len(_tactics)):
                     prompt, completion = build_reward_inputs(
                         _states[step_idx], 
@@ -161,7 +164,7 @@ class NTPReward:
                     _completions,
                     device=device,
                 )
-                if length_penalty:
+                if normalize_tactic_length:
                     stepwise_scores.append(log_ps / lengths)
                 else:
                     stepwise_scores.append(log_ps)
@@ -172,6 +175,18 @@ class NTPReward:
                 torch.tensor(trajectory_groups, device=device),  # indices
                 stepwise_scores                                  # values
             )
+
+        # normalize partial trajectory scores by trajectory length
+        if normalize_trajectory_length:
+            lengths = torch.tensor(
+                [
+                    len(t) if i in partial_trajectory_idxs else 1
+                    for i, t in enumerate(tactics)
+                ], 
+                device=device, 
+                dtype=torch.float32
+            )
+            log_r = log_r / lengths
 
         # clip reward
         log_r = torch.clamp(log_r, min=MIN_REWARD)
