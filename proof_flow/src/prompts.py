@@ -172,7 +172,16 @@ DEEPSEEK_RM_ST_PROMPT_TEMPLATE_V3 = """Given the following Lean 4 tactic state:
 Suggest a next tactic.
 ```lean4
 """
-
+REPROVER_TACGEN_PROMPT_TEMPLATE = "{state}"
+REPROVER_TACGEN_COMPLETION_TEMPLATE = "{tactic}"
+REPROVER_RM_STS_PROMPT_TEMPLATE = """-- state
+{state}
+-- tactic
+{tactic}
+-- next state
+{next_state}
+-- question
+Does the tactic make progress towards completing the proof (y/n)?"""
 
 RM_TEMPLATES = {
     "llemma": {
@@ -195,8 +204,19 @@ RM_TEMPLATES = {
             "completion": DEEPSEEK_RM_STS_COMPLETION_TEMPLATE,
         },
     },
+    "reprover": {
+        "st": {
+            "prompt": REPROVER_TACGEN_PROMPT_TEMPLATE,
+            "completion": REPROVER_TACGEN_COMPLETION_TEMPLATE,
+        },
+        "sts": {
+            "prompt": REPROVER_RM_STS_PROMPT_TEMPLATE,
+            "completion": "y",
+        }
+    }
 }
 
 PROMPT_DICT = {
     "ds_rm_st_v2": DEEPSEEK_RM_ST_PROMPT_TEMPLATE_V2,
+    "rp_tacgen": REPROVER_TACGEN_PROMPT_TEMPLATE,
 }

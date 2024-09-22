@@ -26,7 +26,7 @@ from proof_flow.src.gfn_tuning.proof_tree import (
     extract_trajectories,
 )
 from proof_flow.src.gfn_tuning.replay_buffer import ReplayBuffer, BufferEntry
-from proof_flow.src.gfn_tuning.reward import NTPReward, build_reward_inputs
+from proof_flow.src.gfn_tuning.reward import NTPReward
 from proof_flow.src.prompts import (
     DEEPSEEK_RM_ST_PROMPT_TEMPLATE_V2,
 )
@@ -267,8 +267,6 @@ class NeuralTheoremProvingTask(LightningModule):
         # first construct input_ids
         i2t_idx_map = []
         input_texts = []
-        prompt_lengths = []
-        state_tactic_tokens = []
         for i in range(n_samples):
             if not active_trajectories[i]:
                 continue
@@ -279,7 +277,6 @@ class NeuralTheoremProvingTask(LightningModule):
                 continue
             input_texts.append(input_text)
             i2t_idx_map.append(i)
-            prompt_lengths.append(token_length)
         
         # early exit if no active trajectories
         if len(input_texts) == 0:
@@ -517,15 +514,16 @@ class NeuralTheoremProvingTask(LightningModule):
             initial_tac_state = replay_ts[0].states[0]
             log_r *= 1 / self.reward.temperature  # redo the effect of reward tempering
         else:
-            # Using the forward policy
-            if random.random() < self.hparams.pf_temp_prob:  # With tempering
+            # using the forward policy
+            if random.random() < self.hparams.pf_temp_prob:  
+                # with tempering
                 pf_temp = (
                     random.random()
                     * (self.hparams.pf_temp_high - self.hparams.pf_temp_low)
                     + self.hparams.pf_temp_low
                 )
             else:
-                # Without tempering
+                # without tempering
                 pf_temp = 1.0
 
             try:
@@ -676,7 +674,7 @@ class NeuralTheoremProvingTask(LightningModule):
             model=self.model,
             tokenizer=self.tokenizer,
             prompt_template=self.hparams.tac_gen_prompt_template,
-            is_decoder_only=True,
+            is_decoder_only=(not self.hparams.seq2seq),
         )
         with torch.no_grad():
             results = prover.search_unordered(repo, thms, positions)
@@ -856,7 +854,7 @@ class NeuralTheoremProvingTask(LightningModule):
             (prompts, tactics, batch_idxs, step_idxs), 
             batch_size=model_inf_batch_size
         ):
-            log_pfs, completion_lengths = self.conditional_log_p(
+            log_pfs, _ = self.conditional_log_p(
                 self.model,
                 self.tokenizer,
                 _prompts,
@@ -1149,7 +1147,7 @@ def generate_step(
 
 def generate_step_seq2seq(
     model: _HuggingFaceLM,
-    input_ids: torch.Tensor,
+    encoded_prompt: torch.Tensor,
     termination_token_id: int,
     pad_token_id: int,
     vocab_nice_mask: Optional[torch.Tensor] = None,
@@ -1176,12 +1174,12 @@ def generate_step_seq2seq(
         token_ids: tensor of sampled tokens with shape (batch_size, max_len + 1)
         log_pf: tensor of log_pf for sampled tokens (batch_size, max_new_tokens)
     """
-    batch_size = input_ids.size(0)
-    active_seqs = torch.ones(batch_size).bool().to(input_ids.device)
+    batch_size = encoded_prompt.size(0)
+    active_seqs = torch.ones(batch_size).bool().to(encoded_prompt.device)
 
     # encode prompt
     encoder = model.get_encoder()
-    encoder_outputs = encoder(input_ids=input_ids, attention_mask=attention_mask)
+    encoder_outputs = encoder(input_ids=encoded_prompt, attention_mask=attention_mask)
     
     # initialize decoder input
     decoder_start_token_id = model.config.decoder_start_token_id
@@ -1189,7 +1187,7 @@ def generate_step_seq2seq(
         (batch_size, 1), 
         decoder_start_token_id, 
         dtype=torch.long, 
-        device=input_ids.device
+        device=encoded_prompt.device
     )
 
     # https://huggingface.co/docs/transformers/v4.44.2/en/model_doc/t5#transformers.T5ForConditionalGeneration
@@ -1197,7 +1195,7 @@ def generate_step_seq2seq(
     past_key_values = None  # For caching hidden states during generation
     
     # prepare tensor to store log probabilities
-    log_pf = torch.zeros(batch_size, max_len, device=input_ids.device)
+    log_pf = torch.zeros(batch_size, max_len, device=encoded_prompt.device)
     
     for i in range(max_len + 1):
         output = model(

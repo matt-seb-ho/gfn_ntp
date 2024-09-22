@@ -10,6 +10,8 @@ model:
   # test with llemma, run later with dsp
   # name: "EleutherAI/llemma_7b"
   name: "deepseek-ai/DeepSeek-Prover-V1"
+  seq2seq: true 
+  # seq2seq: false
 
   bnb:
     _target_: transformers.BitsAndBytesConfig
@@ -160,7 +162,8 @@ search_eval:
     length_penalty: 0.0
 
 prompts:
-  tac_gen: "ds_rm_st_v2"
+  # tac_gen: "ds_rm_st_v2"
+  tac_gen: "rp_tacgen" # reprover template ("{state}")
 
 # ground truth trajectories
 gtt:

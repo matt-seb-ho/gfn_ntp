@@ -10,6 +10,8 @@ model:
   # test with llemma, run later with dsp
   # name: "EleutherAI/llemma_7b"
   name: "deepseek-ai/DeepSeek-Prover-V1"
+  # seq2seq: true 
+  seq2seq: false
 
   bnb:
     _target_: transformers.BitsAndBytesConfig

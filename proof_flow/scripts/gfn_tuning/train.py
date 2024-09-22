@@ -7,11 +7,13 @@ from omegaconf import DictConfig
 from typing import Optional
 from peft import (
     PeftModelForCausalLM,
+    PeftModelForSeq2SeqLM,
     get_peft_model, 
     prepare_model_for_kbit_training,
 )
 from transformers import (
     AutoModelForCausalLM,
+    AutoModelForSeq2SeqLM,
     AutoTokenizer,
 )
 from types import MethodType
@@ -69,7 +71,15 @@ def get_model(config: DictConfig):
         # from original code, not sure if needed
         # add_bos_token=False,
     )
-    model = AutoModelForCausalLM.from_pretrained(
+    
+    if config.task.model.seq2seq:
+        auto_model_cls = AutoModelForSeq2SeqLM
+        peft_model_cls = PeftModelForSeq2SeqLM
+    else:
+        auto_model_cls = AutoModelForCausalLM
+        peft_model_cls = PeftModelForCausalLM
+        
+    model = auto_model_cls.from_pretrained(
         config.task.model.name, 
         torch_dtype="auto", # defer to torch_dtype from model config.json
         device_map="auto", 
@@ -78,7 +88,8 @@ def get_model(config: DictConfig):
 
     # padding is needed for batch processing (e.g. reward computation)
     # llemma and deepseek models don't have padding tokens by default
-    set_up_padding(model, tokenizer)
+    pad_side = "right" if config.task.model.seq2seq else "left"
+    set_up_padding(model, tokenizer, padding_side=pad_side)
 
     # Prepare model for k-bit training
     if config.task.training.use_4bit:
@@ -97,7 +108,7 @@ def get_model(config: DictConfig):
         )
     else:
         # otherwise, load the specified adapter
-        model = PeftModelForCausalLM.from_pretrained(
+        model = peft_model_cls.from_pretrained(
             model=model,
             model_id=config.task.model.initialize_policy_adapter_from_pretrained,
             adapter_name=GFN_POLICY_ADAPTER_NAME,
@@ -126,6 +137,7 @@ def get_reward(config: DictConfig, model: AutoModelForCausalLM, tokenizer: AutoT
         # temperature=config.task.reward.temperature, 
         verifier_batch_size=config.task.reward.verifier_batch_size,
         verifier_adapter_name=config.task.reward.reward_model_adapter_name,
+        seq2seq=config.task.model.seq2seq,
     )
     return reward
 
@@ -151,8 +163,8 @@ def get_ground_truth_trajectories(cfg: DictConfig) -> Optional[dict]:
             thm_dicts = json.load(f)
         trajectories = {}
         for thm_dict in thm_dicts.values():
-            gtt = extract_ground_truth_trajectory(thm_dict)
-            trajectories[gtt["theorem_id"]] = gtt
+            tuid, gtt = extract_ground_truth_trajectory(thm_dict)
+            trajectories[tuid] = gtt
         with open(gtt_file_path, "w") as f:
             json.dump(trajectories, f, indent=2)
     else:
@@ -188,6 +200,7 @@ def train_setup(
         termination_token_id=tokenizer.eos_token_id,
         pad_token_id=tokenizer.pad_token_id,
         sim_tolerance=config.task.reward.buffer_sim_tolerance,
+        tokenizer=tokenizer,
     )
     tac_gen_prompt_template = PROMPT_DICT[config.task.prompts.tac_gen]
     # - optionally load ground truth trajectories
@@ -244,6 +257,7 @@ def train_setup(
         ground_truth_trajectories=ground_truth_trajectories,
         accumulate_grad_batches=config.task.training.accumulate_grad_batches,
         use_log_z_cache=config.task.training.use_log_z_cache,
+        seq2seq=config.task.model.seq2seq,
     )
 
     # set up trainer

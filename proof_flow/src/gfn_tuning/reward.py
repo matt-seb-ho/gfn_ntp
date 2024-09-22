@@ -12,8 +12,9 @@ from proof_flow.src.constants import (
     TACTIC_ERROR_STRINGS
 )
 from proof_flow.src.utils import (
-    batch_completion_probabilities,
-    batch_iterator
+    batch_iterator_zip,
+    causal_conditional_log_prob,
+    seq2seq_conditional_log_prob,
 )
 from proof_flow.src.prompts import RM_TEMPLATES
 
@@ -48,14 +49,19 @@ class NTPReward:
         temperature: float = 1.0, 
         verifier_batch_size: Optional[int] = None,
         verifier_adapter_name: Optional[str] = None,
+        seq2seq: bool = False,
     ):
         self.model = model
         self.tokenizer = tokenizer
         self.temperature = temperature
         self.verifier_batch_size = verifier_batch_size
         self.verifier_adapter_name = verifier_adapter_name
+        if seq2seq:
+            self.conditional_log_p = seq2seq_conditional_log_prob
+        else:
+            self.conditional_log_p = causal_conditional_log_prob
+            
 
-    
     def score(
         self,
         states: list[list[str]],
@@ -117,7 +123,8 @@ class NTPReward:
         # - either assign heuristic score or queue prompt-completion job
         log_r = torch.zeros(len(states), device=device)
         trajectory_groups = []
-        prompt_completion_pairs = []
+        prompts = []
+        completions = []
         for i, (_states, _tactics) in enumerate(zip(states, tactics)):
             # _states: list[str]: represents states for this trajectory
             # _tactics: list[str]: represents tactics for this trajectory
@@ -129,7 +136,7 @@ class NTPReward:
             else:
                 # queue prompt-completion logp jobs
                 for step_idx in range(len(_tactics)):
-                    rm_inputs = build_reward_inputs(
+                    prompt, completion = build_reward_inputs(
                         _states[step_idx], 
                         _tactics[step_idx], 
                         _states[step_idx + 1],
@@ -137,16 +144,21 @@ class NTPReward:
                         prompts_for_model=prompts_for_model,
                     )
                     trajectory_groups.append(i)
-                    prompt_completion_pairs.append(rm_inputs)
+                    prompts.append(prompt)
+                    completions.append(completion)
                 
         # run queued prompt-completion jobs
-        if prompt_completion_pairs:
+        if prompts:
             stepwise_scores = []
-            for batch in batch_iterator(prompt_completion_pairs, batch_size):
-                log_ps, lengths = batch_completion_probabilities(
+            for _prompts, _completions in batch_iterator_zip(
+                (prompts, completions), 
+                batch_size=batch_size,
+            ):
+                log_ps, lengths = self.conditional_log_p(
                     model, 
                     tokenizer, 
-                    batch,
+                    _prompts,
+                    _completions,
                     device=device,
                 )
                 if length_penalty:

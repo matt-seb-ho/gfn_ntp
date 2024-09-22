@@ -140,7 +140,7 @@ class ReplayBuffer:
             pickle.dump(self._buffer, f)
 
 
-def extract_ground_truth_trajectory(thm_dict: dict) -> BufferEntry:
+def extract_ground_truth_trajectory(thm_dict: dict) -> tuple[str, BufferEntry]:
     states = []
     tactics = []
     for tt in thm_dict["traced_tactics"]:
@@ -148,7 +148,8 @@ def extract_ground_truth_trajectory(thm_dict: dict) -> BufferEntry:
         tactics.append(tt["tactic"])
     states.append(thm_dict["traced_tactics"][-1]["state_after"])
 
-    return BufferEntry(
+    thm_uid = _get_thm_uid_from_dict(thm_dict)   
+    return thm_uid, BufferEntry(
         log_r=0,
         proof=TACTIC_DELIMITER.join(tactics),
         states=states,
