@@ -141,11 +141,7 @@ def get_val_probes(cfg: DictConfig):
     return probes
 
 
-def get_ground_truth_trajectories(
-    cfg: DictConfig, 
-    tokenizer: AutoTokenizer, 
-    prompt_template: str,
-) -> Optional[dict]:
+def get_ground_truth_trajectories(cfg: DictConfig) -> Optional[dict]:
     if cfg.task.gtt.file_path is None:
         return None
     
@@ -155,24 +151,13 @@ def get_ground_truth_trajectories(
             thm_dicts = json.load(f)
         trajectories = {}
         for thm_dict in thm_dicts.values():
-            gtt = extract_ground_truth_trajectory(
-                thm_dict,
-                tokenizer,
-                prompt_template,
-                make_json_serializable=True,
-            )
+            gtt = extract_ground_truth_trajectory(thm_dict)
             trajectories[gtt["theorem_id"]] = gtt
-
         with open(gtt_file_path, "w") as f:
             json.dump(trajectories, f, indent=2)
     else:
         with open(gtt_file_path) as f:
             trajectories = json.load(f)
-
-    # convert state_tactic_tokens back to tensor
-    for t in trajectories.values():
-        for i, stt in enumerate(t["state_tactic_tokens"]):
-            t["state_tactic_tokens"][i] = torch.tensor(stt)
     return trajectories
 
 

@@ -1,7 +1,9 @@
 # GFN tuning
 GFN_POLICY_ADAPTER_NAME = "gfn_policy"
 REWARD_ADAPTER_NAME = "reward"
-TACTIC_DELIMITER = "\n" 
+# TACTIC_DELIMITER = "\n" 
+# making this so there's no chance of it being in the tactic string
+TACTIC_DELIMITER = "\n<tactic_delimiter>\n" 
 PROOF_COMPLETE_MESSAGE = "no goals"
 LEAN_DOJO_RANDOM_DATA_PATH = "data/leandojo_benchmark_4/random/"
 DEFAULT_VERIFIER_BATCH_SIZE = 1

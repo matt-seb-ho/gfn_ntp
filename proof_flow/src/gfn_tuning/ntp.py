@@ -25,8 +25,8 @@ from proof_flow.src.gfn_tuning.proof_tree import (
     convert_tactic_result_to_state_string,
     extract_trajectories,
 )
-from proof_flow.src.gfn_tuning.replay_buffer import ReplayBuffer
-from proof_flow.src.gfn_tuning.reward import NTPReward
+from proof_flow.src.gfn_tuning.replay_buffer import ReplayBuffer, BufferEntry
+from proof_flow.src.gfn_tuning.reward import NTPReward, build_reward_inputs
 from proof_flow.src.prompts import (
     DEEPSEEK_RM_ST_PROMPT_TEMPLATE_V2,
 )
@@ -34,9 +34,11 @@ from proof_flow.src.search.common import ProofSearchParams, _HuggingFaceLM
 from proof_flow.src.search.proof_search import Status, DistributedProver
 from proof_flow.src.utils import (
     CUSTOM_LOG_LEVEL,
-    prepare_environment_for_lean_dojo,
     batch_iterator_zip,
+    causal_conditional_log_prob,
+    prepare_environment_for_lean_dojo,
     repo_root,
+    seq2seq_conditional_log_prob,
 )
 
 
@@ -158,8 +160,10 @@ class NeuralTheoremProvingTask(LightningModule):
 
         if self.hparams.seq2seq:
             self.generate_step = generate_step_seq2seq
+            self.conditional_log_p = seq2seq_conditional_log_prob
         else:
             self.generate_step = generate_step
+            self.conditional_log_p = causal_conditional_log_prob
 
     
     def parallel_forward(
@@ -244,13 +248,11 @@ class NeuralTheoremProvingTask(LightningModule):
         # reformat for replay buffer storage
         trajectories = []
         for i in range(n_samples):
-            trajectories.append({
-                "theorem_id": theorem.uid,
-                "states": state_strings[i],
-                "tactics": tactics[i],
-                "proof": TACTIC_DELIMITER.join(tactics[i]),
-                "log_r": log_r[i].item(),
-            })
+            trajectories.append(BufferEntry(
+                log_r=log_r[i].item(),
+                proof=TACTIC_DELIMITER.join(tactics[i]),
+                states=state_strings[i],
+            ))
         return trajectory_logpf, log_r, trajectories
             
         
@@ -512,7 +514,7 @@ class NeuralTheoremProvingTask(LightningModule):
                 replay_ts,
                 model_inf_batch_size=self.hparams.model_inference_batch_size,
             )
-            initial_state = replay_ts[0]["states"][0]
+            initial_tac_state = replay_ts[0].states[0]
             log_r *= 1 / self.reward.temperature  # redo the effect of reward tempering
         else:
             # Using the forward policy
@@ -527,7 +529,7 @@ class NeuralTheoremProvingTask(LightningModule):
                 pf_temp = 1.0
 
             try:
-                t_logpf, log_r, extracted_ts = self.parallel_forward(
+                t_logpf, log_r, trajectories = self.parallel_forward(
                     theorem, 
                     pf_temperature=pf_temp
                 )
@@ -539,8 +541,8 @@ class NeuralTheoremProvingTask(LightningModule):
                 # no trajectories were generated
                 self._debug_log("forward returned None (0 trajectories generated)")
                 return None
-            self.reward_buffer.add_batch(theorem_id, extracted_ts)
-            initial_state = extracted_ts[0]["states"][0]
+            self.reward_buffer.add_batch(theorem_id, trajectories)
+            initial_tac_state = trajectories[0].states[0]
 
         # for tb_loss: estimate log_z
         if not self.hparams.conditional_log_z:
@@ -548,7 +550,8 @@ class NeuralTheoremProvingTask(LightningModule):
         elif self.hparams.use_log_z_cache and theorem.uid in self.log_z_cache:
             log_z = self.log_z_cache[theorem.uid]
         else:
-            input_ids = self.tokenizer(initial_state, return_tensors="pt").input_ids
+            # TODO: encoder decoder state
+            input_ids = self.tokenizer(initial_tac_state, return_tensors="pt").input_ids
             if self.model_device:
                 input_ids = input_ids.to(self.model_device)
             output = self.model(
@@ -814,7 +817,7 @@ class NeuralTheoremProvingTask(LightningModule):
 
     def replay_trajectories(
         self,
-        trajectories: list[dict],
+        trajectories: list[BufferEntry],
         model_inf_batch_size: int,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
@@ -828,7 +831,8 @@ class NeuralTheoremProvingTask(LightningModule):
         # with the current tb loss formulation, we can actually get away with
         # preemptively summing the tactic log_pfs to get the trajectory's log_pf
         # but for now, we'll keep the trajectory log_pf separate
-        max_depth = max(len(t["state_tactic_tokens"]) for t in trajectories)
+        max_depth = max(len(t.states) for t in trajectories) - 1
+        tactics = [t.proof.split(TACTIC_DELIMITER) for t in trajectories]
         step_logpfs = torch.zeros(
             # (len(trajectories), self.hparams.max_tactics), 
             (len(trajectories), max_depth),
@@ -838,37 +842,28 @@ class NeuralTheoremProvingTask(LightningModule):
         # t_logpfs = torch.zeros(len(trajectories), device=self.model_device)
 
         # queue up jobs
-        input_ids = []
-        prompt_lengths = []
+        prompts = []
         batch_idxs = []
         step_idxs = []
         for b_idx, trajectory in enumerate(trajectories):
-            for s_idx, (tokens, prompt_length) in enumerate(zip(
-                trajectory["state_tactic_tokens"],
-                trajectory["prompt_lengths"],
-            )):
-                input_ids.append(tokens)
-                prompt_lengths.append(prompt_length)
+            for s_idx, state in enumerate(trajectory.states[:-1]):
+                prompts.append(self.hparams.tac_gen_prompt_template.format(state))
                 batch_idxs.append(b_idx)
                 step_idxs.append(s_idx)
         
         # compute tactic log_pfs in batches
-        for tokens, prefix_lengths, b_idxs, s_idxs in batch_iterator_zip(
-            (input_ids, prompt_lengths, batch_idxs, step_idxs), 
+        for _prompts, _tactics, b_idxs, s_idxs in batch_iterator_zip(
+            (prompts, tactics, batch_idxs, step_idxs), 
             batch_size=model_inf_batch_size
         ):
-            batch_input_ids = pad_sequence(
-                tokens,
-                batch_first=True,
-                padding_value=self.tokenizer.pad_token_id,
-            )
-            step_logpfs[b_idxs, s_idxs] = self._compute_replay_log_pfs(
-                batch_input_ids,
-                torch.tensor(prefix_lengths),
-                self.end_of_step_token_id,
-                self.tokenizer.pad_token_id,
+            log_pfs, completion_lengths = self.conditional_log_p(
+                self.model,
+                self.tokenizer,
+                _prompts,
+                _tactics,
                 device=self.model_device,
             )
+            step_logpfs[b_idxs, s_idxs] = log_pfs
             # eager sum version
             # batch_res = self._get_completion_log_pfs(
             #     batch_input_ids,
