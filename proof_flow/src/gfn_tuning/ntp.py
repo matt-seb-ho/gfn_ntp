@@ -592,14 +592,15 @@ class NeuralTheoremProvingTask(LightningModule):
                 )
                 t_logpf = self._append_tensor_and_pad(t_logpf, gt_tlpf)
                 log_r = torch.cat([log_r, gt_lr])
-            
+
             # remove log_z from cache
             self.log_z_cache.pop(theorem.uid, None)
+
+            self._debug_log(f"tlogpf before loss: {t_logpf}")
 
         # get gfn loss
         # - sub tb requires estimating flow (possible impl: scalar head over RM)
         # - for the proof of concept, we'll just use vanilla TB
-        print("tlogpf before loss:", t_logpf, sep="\n")
         loss = self.tb_loss(log_pf=t_logpf, log_r=log_r, log_z=log_z)
         # loss = self.log_z_variance_loss(t_logpf, log_r)
         self.log(

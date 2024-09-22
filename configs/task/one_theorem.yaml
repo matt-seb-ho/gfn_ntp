@@ -5,6 +5,7 @@ data:
   train_size: 1
   train_data_path: "data/single_thm.json"
   val_data_path: "data/single_thm.json"
+  repeat_train_theorems: 2
 
 model:
   # test with llemma, run later with dsp
@@ -123,10 +124,12 @@ callbacks:
     dirpath: ${save_dir}/checkpoints/${now:%Y-%m-%d}_${now:%H-%M-%S}
     filename: "epoch={epoch:03d}"
     auto_insert_metric_name: true
-  - _target_: pytorch_lightning.callbacks.EarlyStopping
-    monitor: "val/logR"
-    mode: "max"
-    patience: 10
+  # don't use early stopping for now
+  # - _target_: pytorch_lightning.callbacks.EarlyStopping
+  #   monitor: "val/logR"
+  #   mode: "max"
+  #   patience: 10
+
   # next_sentence settings:
   # - _target_: pytorch_lightning.callbacks.ModelCheckpoint
   #   monitor: "val/logP(s) (avg)"

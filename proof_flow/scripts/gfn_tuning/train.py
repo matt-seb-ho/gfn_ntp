@@ -188,7 +188,7 @@ def train_setup(
         train_size=config.task.data.train_size,
         train_data_path=config.task.data.train_data_path,
         val_data_path=config.task.data.val_data_path,
-        repeat_theorem_n_times=config.task.training.accumulate_grad_batches,
+        repeat_theorem_n_times=config.task.data.repeat_train_theorems,
     )
     data.setup("fit")
     val_probes = get_val_probes(config)
