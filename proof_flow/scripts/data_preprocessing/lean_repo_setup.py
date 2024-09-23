@@ -18,14 +18,16 @@ from lean_dojo import ( # isort: skip
 )
 print(f"imported from lean_dojo in {perf_counter() - start}s")
 
-benchmark_splits = "random" # {"random", "novel_premises"}
-split = "train" # {"val", "train", "test"}
-theorem_file_path = (
-    repo_root()
-    / "data/leandojo_benchmark_4"
-    / benchmark_splits
-    / f"{split}.json"
-)
+# benchmark_splits = "random" # {"random", "novel_premises"}
+# split = "train" # {"val", "train", "test"}
+# theorem_file_path = (
+#     repo_root()
+#     / "data/leandojo_benchmark_4"
+#     / benchmark_splits
+#     / f"{split}.json"
+# )
+
+theorem_file_path = repo_root() / "data/single_thm.json"
 
 
 def time_tactics(dojo, initial_state, tacs):
