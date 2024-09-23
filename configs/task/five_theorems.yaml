@@ -72,7 +72,7 @@ training:
   n_samples: 16 # next_sentence task had 20
   branch_only_at_root: true
   lr: 0.0001
-  accumulate_grad_batches: 16 # TESTING!
+  accumulate_grad_batches: 5 # TESTING!
   epochs: 200 # next_sentence task had 300
   use_4bit: true 
   dojo_timeout: 60 # in seconds (LeanDojo's default is 600)
@@ -91,7 +91,6 @@ training:
 
   # whether to learn the log_z prediction head or unconditional parameter
   conditional_log_z: true
-  use_log_z_cache: false
 
 reward:
   temp_start: 1.0

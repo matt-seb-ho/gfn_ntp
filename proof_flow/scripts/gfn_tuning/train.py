@@ -126,8 +126,7 @@ def train_setup(
         debug_log_level=debug_log_level,
         tac_gen_prompt_template=tac_gen_prompt_template,
         ground_truth_trajectories=ground_truth_trajectories,
-        accumulate_grad_batches=config.task.training.accumulate_grad_batches,
-        use_log_z_cache=config.task.training.use_log_z_cache,
+        repeats_per_accumulated_batch=config.task.data.repeat_train_theorems,
         seq2seq=config.task.model.seq2seq,
         truncate_state=config.task.training.truncate_state,
     )

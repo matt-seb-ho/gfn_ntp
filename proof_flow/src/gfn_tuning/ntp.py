@@ -99,8 +99,7 @@ class NeuralTheoremProvingTask(LightningModule):
         debug_log_level: str = CUSTOM_LOG_LEVEL,
         tac_gen_prompt_template: str = DEEPSEEK_RM_ST_PROMPT_TEMPLATE_V2,
         ground_truth_trajectories: Optional[dict] = None,
-        accumulate_grad_batches: int = 1,
-        use_log_z_cache: bool = True,
+        repeats_per_accumulated_batch: int = 1,
         seq2seq: bool = False,
         truncate_state: bool = False,
         conditional_log_z: bool = True,
@@ -159,11 +158,6 @@ class NeuralTheoremProvingTask(LightningModule):
 
         # for adding ground truth trajectories to online training
         self.ground_truth_trajectories = ground_truth_trajectories
-
-        # gradient accumulation is currently implemented by duplicating data
-        # in the train data loader. We only need to estimate log_z
-        # once per accumulation loop
-        self.log_z_cache = {}
 
         if self.hparams.seq2seq:
             self.generate_step = generate_step_seq2seq
@@ -576,13 +570,11 @@ class NeuralTheoremProvingTask(LightningModule):
             initial_tac_state = trajectories[0].states[0]
 
         # for tb_loss: estimate log_z
-        if not self.hparams.conditional_log_z:
-            log_z = self.log_z
-        elif self.hparams.use_log_z_cache and theorem.uid in self.log_z_cache:
-            log_z = self.log_z_cache[theorem.uid]
-        else:
-            # TODO: encoder decoder state
-            input_ids = self.tokenizer(initial_tac_state, return_tensors="pt").input_ids
+        if self.hparams.conditional_log_z:
+            input_ids = self.tokenizer(
+                initial_tac_state, 
+                return_tensors="pt"
+            ).input_ids
             if self.model_device:
                 input_ids = input_ids.to(self.model_device)
             if self.hparams.seq2seq:
@@ -606,10 +598,12 @@ class NeuralTheoremProvingTask(LightningModule):
                 # each tensor has shape (batch_size, seq_len, hidden_size)
                 final_hidden_state = output.hidden_states[-1][:, -1, :]
                 log_z = self.log_z_head(final_hidden_state)
-                # self.log_z_cache[theorem.uid] = log_z
+        else:
+            # unconditional log_z (single theorem)
+            log_z = self.log_z
 
         # once per accumulation batch
-        if (batch_idx + 1) % self.hparams.accumulate_grad_batches == 0:
+        if (batch_idx + 1) % self.hparams.repeats_per_accumulated_batch == 0:
             # add ground truth trajectory before computing loss
             if self.ground_truth_trajectories:
                 gt_tlpf, gt_lr = self.replay_trajectories(
