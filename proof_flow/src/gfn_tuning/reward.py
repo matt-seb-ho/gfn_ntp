@@ -148,7 +148,7 @@ class NTPReward:
         prompts = []
         completions = []
         is_partial = torch.zeros(len(states), dtype=torch.bool, device=device)
-        lengths = torch.tensor(
+        trajectory_lengths = torch.tensor(
             [len(t) for t in tactics], 
             device=device, 
             dtype=torch.float32
@@ -181,7 +181,7 @@ class NTPReward:
                 (prompts, completions), 
                 batch_size=batch_size,
             ):
-                log_ps, lengths = self.conditional_log_p(
+                log_ps, token_lengths = self.conditional_log_p(
                     model, 
                     tokenizer, 
                     _prompts,
@@ -190,7 +190,7 @@ class NTPReward:
                     device=device,
                 )
                 if normalize_tactic_length:
-                    stepwise_scores.append(log_ps / lengths)
+                    stepwise_scores.append(log_ps / token_lengths)
                 else:
                     stepwise_scores.append(log_ps)
                 
@@ -205,7 +205,7 @@ class NTPReward:
         if normalize_trajectory_length:
             scale_factor = torch.where(
                 is_partial,
-                lengths,
+                trajectory_lengths,
                 1.0
             )
             log_r /= scale_factor

@@ -303,6 +303,7 @@ class NeuralTheoremProvingTask(LightningModule):
             self.states_tokenized += 1
             if token_length > self.hparams.max_input_length:
                 self.max_input_length_exceeded += 1
+                logger.info("max_input_length exceeded (total incidents: {self.max_input_length_exceeded})")
                 if not self.hparams.truncate_state:
                     continue
             input_texts.append(input_text)
