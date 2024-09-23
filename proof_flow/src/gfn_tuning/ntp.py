@@ -613,9 +613,6 @@ class NeuralTheoremProvingTask(LightningModule):
                 t_logpf = self._append_tensor_and_pad(t_logpf, gt_tlpf)
                 log_r = torch.cat([log_r, gt_lr])
 
-            # remove log_z from cache
-            self.log_z_cache.pop(theorem.uid, None)
-
             self._debug_log(f"tlogpf before loss: {t_logpf}")
 
         # apply reward temperature
