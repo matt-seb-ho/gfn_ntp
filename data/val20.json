@@ -1,0 +1,1477 @@
+{
+  "360": {
+    "url": "https://github.com/leanprover-community/mathlib4",
+    "commit": "29dcec074de168ac2bf835a77ef68bbe069194c5",
+    "file_path": "Mathlib/Data/Finset/Card.lean",
+    "full_name": "Finset.card_insert_of_not_mem",
+    "start": [
+      108,
+      1
+    ],
+    "end": [
+      109,
+      41
+    ],
+    "traced_tactics": [
+      {
+        "tactic": "rw [\u2190 cons_eq_insert _ _ h, card_cons]",
+        "annotated_tactic": [
+          "rw [\u2190 <a>cons_eq_insert</a> _ _ h, <a>card_cons</a>]",
+          [
+            {
+              "full_name": "Finset.cons_eq_insert",
+              "def_path": "Mathlib/Data/Finset/Basic.lean",
+              "def_pos": [
+                1137,
+                9
+              ],
+              "def_end_pos": [
+                1137,
+                23
+              ]
+            },
+            {
+              "full_name": "Finset.card_cons",
+              "def_path": "Mathlib/Data/Finset/Card.lean",
+              "def_pos": [
+                99,
+                9
+              ],
+              "def_end_pos": [
+                99,
+                18
+              ]
+            }
+          ]
+        ],
+        "state_before": "\u03b1 : Type u_1\n\u03b2 : Type u_2\nR : Type u_3\ns t : Finset \u03b1\na b : \u03b1\ninst\u271d : DecidableEq \u03b1\nh : a \u2209 s\n\u22a2 (insert a s).card = s.card + 1",
+        "state_after": "no goals"
+      }
+    ],
+    "formal_statement": "theorem card_insert_of_not_mem (h : a \u2209 s) : (insert a s).card = s.card + 1 := by\n",
+    "is_tactic_proof": true,
+    "entry_time": 1.5253752079879632,
+    "entry_failed": false
+  },
+  "63": {
+    "url": "https://github.com/leanprover-community/mathlib4",
+    "commit": "29dcec074de168ac2bf835a77ef68bbe069194c5",
+    "file_path": "Mathlib/Data/Part.lean",
+    "full_name": "Part.map_map",
+    "start": [
+      558,
+      1
+    ],
+    "end": [
+      559,
+      55
+    ],
+    "traced_tactics": [
+      {
+        "tactic": "erw [\u2190 bind_some_eq_map, bind_map, bind_some_eq_map]",
+        "annotated_tactic": [
+          "erw [\u2190 <a>bind_some_eq_map</a>, <a>bind_map</a>, <a>bind_some_eq_map</a>]",
+          [
+            {
+              "full_name": "Part.bind_some_eq_map",
+              "def_path": "Mathlib/Data/Part.lean",
+              "def_pos": [
+                525,
+                9
+              ],
+              "def_end_pos": [
+                525,
+                25
+              ]
+            },
+            {
+              "full_name": "Part.bind_map",
+              "def_path": "Mathlib/Data/Part.lean",
+              "def_pos": [
+                548,
+                9
+              ],
+              "def_end_pos": [
+                548,
+                17
+              ]
+            },
+            {
+              "full_name": "Part.bind_some_eq_map",
+              "def_path": "Mathlib/Data/Part.lean",
+              "def_pos": [
+                525,
+                9
+              ],
+              "def_end_pos": [
+                525,
+                25
+              ]
+            }
+          ]
+        ],
+        "state_before": "\u03b1 : Type u_1\n\u03b2 : Type u_2\n\u03b3 : Type u_3\ng : \u03b2 \u2192 \u03b3\nf : \u03b1 \u2192 \u03b2\no : Part \u03b1\n\u22a2 map g (map f o) = map (g \u2218 f) o",
+        "state_after": "no goals"
+      }
+    ],
+    "formal_statement": "theorem map_map (g : \u03b2 \u2192 \u03b3) (f : \u03b1 \u2192 \u03b2) (o : Part \u03b1) : map g (map f o) = map (g \u2218 f) o := by\n",
+    "is_tactic_proof": true,
+    "entry_time": 1.9417354579927633,
+    "entry_failed": false
+  },
+  "15": {
+    "url": "https://github.com/leanprover-community/mathlib4",
+    "commit": "29dcec074de168ac2bf835a77ef68bbe069194c5",
+    "file_path": "Mathlib/RingTheory/Ideal/Basic.lean",
+    "full_name": "Ideal.isCompactElement_top",
+    "start": [
+      168,
+      1
+    ],
+    "end": [
+      169,
+      86
+    ],
+    "traced_tactics": [
+      {
+        "tactic": "simpa only [\u2190 span_singleton_one] using Submodule.singleton_span_isCompactElement 1",
+        "annotated_tactic": [
+          "simpa only [\u2190 <a>span_singleton_one</a>] using <a>Submodule.singleton_span_isCompactElement</a> 1",
+          [
+            {
+              "full_name": "Ideal.span_singleton_one",
+              "def_path": "Mathlib/RingTheory/Ideal/Basic.lean",
+              "def_pos": [
+                164,
+                9
+              ],
+              "def_end_pos": [
+                164,
+                27
+              ]
+            },
+            {
+              "full_name": "Submodule.singleton_span_isCompactElement",
+              "def_path": "Mathlib/LinearAlgebra/Span.lean",
+              "def_pos": [
+                732,
+                9
+              ],
+              "def_end_pos": [
+                732,
+                40
+              ]
+            }
+          ]
+        ],
+        "state_before": "\u03b1 : Type u\n\u03b2 : Type v\ninst\u271d : Semiring \u03b1\nI : Ideal \u03b1\na b : \u03b1\n\u22a2 CompleteLattice.IsCompactElement \u22a4",
+        "state_after": "no goals"
+      }
+    ],
+    "formal_statement": "theorem isCompactElement_top : CompleteLattice.IsCompactElement (\u22a4 : Ideal \u03b1) := by\n",
+    "is_tactic_proof": true,
+    "entry_time": 1.9327408329991158,
+    "entry_failed": false
+  },
+  "411": {
+    "url": "https://github.com/leanprover-community/mathlib4",
+    "commit": "29dcec074de168ac2bf835a77ef68bbe069194c5",
+    "file_path": "Mathlib/CategoryTheory/Conj.lean",
+    "full_name": "CategoryTheory.Iso.trans_conjAut",
+    "start": [
+      156,
+      1
+    ],
+    "end": [
+      158,
+      61
+    ],
+    "traced_tactics": [
+      {
+        "tactic": "simp only [conjAut_apply, Iso.trans_symm, Iso.trans_assoc]",
+        "annotated_tactic": [
+          "simp only [<a>conjAut_apply</a>, <a>Iso.trans_symm</a>, <a>Iso.trans_assoc</a>]",
+          [
+            {
+              "full_name": "CategoryTheory.Iso.conjAut_apply",
+              "def_path": "Mathlib/CategoryTheory/Conj.lean",
+              "def_pos": [
+                145,
+                9
+              ],
+              "def_end_pos": [
+                145,
+                22
+              ]
+            },
+            {
+              "full_name": "CategoryTheory.Iso.trans_symm",
+              "def_path": "Mathlib/CategoryTheory/Iso.lean",
+              "def_pos": [
+                173,
+                9
+              ],
+              "def_end_pos": [
+                173,
+                19
+              ]
+            },
+            {
+              "full_name": "CategoryTheory.Iso.trans_assoc",
+              "def_path": "Mathlib/CategoryTheory/Iso.lean",
+              "def_pos": [
+                178,
+                9
+              ],
+              "def_end_pos": [
+                178,
+                20
+              ]
+            }
+          ]
+        ],
+        "state_before": "C : Type u\ninst\u271d : Category.{v, u} C\nX Y : C\n\u03b1 : X \u2245 Y\nZ : C\n\u03b2 : Y \u2245 Z\nf : Aut X\n\u22a2 (\u03b1 \u226a\u226b \u03b2).conjAut f = \u03b2.conjAut (\u03b1.conjAut f)",
+        "state_after": "no goals"
+      }
+    ],
+    "formal_statement": "theorem trans_conjAut {Z : C} (\u03b2 : Y \u2245 Z) (f : Aut X) :\n    (\u03b1 \u226a\u226b \u03b2).conjAut f = \u03b2.conjAut (\u03b1.conjAut f) := by\n",
+    "is_tactic_proof": true,
+    "entry_time": 1.2584210000059102,
+    "entry_failed": false
+  },
+  "159": {
+    "url": "https://github.com/leanprover-community/mathlib4",
+    "commit": "29dcec074de168ac2bf835a77ef68bbe069194c5",
+    "file_path": "Mathlib/Data/List/Nodup.lean",
+    "full_name": "List.Nodup.erase_get",
+    "start": [
+      346,
+      1
+    ],
+    "end": [
+      348,
+      27
+    ],
+    "traced_tactics": [
+      {
+        "tactic": "simp [erase_getElem, hl]",
+        "annotated_tactic": [
+          "simp [<a>erase_getElem</a>, hl]",
+          [
+            {
+              "full_name": "List.Nodup.erase_getElem",
+              "def_path": "Mathlib/Data/List/Nodup.lean",
+              "def_pos": [
+                330,
+                9
+              ],
+              "def_end_pos": [
+                330,
+                28
+              ]
+            }
+          ]
+        ],
+        "state_before": "\u03b1 : Type u\n\u03b2 : Type v\nl\u271d l\u2081 l\u2082 : List \u03b1\nr : \u03b1 \u2192 \u03b1 \u2192 Prop\na b : \u03b1\ninst\u271d : DecidableEq \u03b1\nl : List \u03b1\nhl : l.Nodup\ni : Fin l.length\n\u22a2 l.erase (l.get i) = l.eraseIdx \u2191i",
+        "state_after": "no goals"
+      }
+    ],
+    "formal_statement": "theorem Nodup.erase_get [DecidableEq \u03b1] {l : List \u03b1} (hl : l.Nodup) (i : Fin l.length) :\n    l.erase (l.get i) = l.eraseIdx \u2191i := by\n",
+    "is_tactic_proof": true,
+    "entry_time": 1.8475569580041338,
+    "entry_failed": false
+  },
+  "139": {
+    "url": "https://github.com/leanprover-community/mathlib4",
+    "commit": "29dcec074de168ac2bf835a77ef68bbe069194c5",
+    "file_path": "Mathlib/Data/Nat/Dist.lean",
+    "full_name": "Nat.dist_eq_sub_of_le",
+    "start": [
+      45,
+      1
+    ],
+    "end": [
+      46,
+      49
+    ],
+    "traced_tactics": [
+      {
+        "tactic": "rw [dist, tsub_eq_zero_iff_le.mpr h, zero_add]",
+        "annotated_tactic": [
+          "rw [<a>dist</a>, tsub_eq_zero_iff_le.mpr h, <a>zero_add</a>]",
+          [
+            {
+              "full_name": "Nat.dist",
+              "def_path": "Mathlib/Data/Nat/Dist.lean",
+              "def_pos": [
+                20,
+                5
+              ],
+              "def_end_pos": [
+                20,
+                9
+              ]
+            },
+            {
+              "full_name": "zero_add",
+              "def_path": "Mathlib/Algebra/Group/Defs.lean",
+              "def_pos": [
+                476,
+                3
+              ],
+              "def_end_pos": [
+                476,
+                14
+              ]
+            }
+          ]
+        ],
+        "state_before": "n m : \u2115\nh : n \u2264 m\n\u22a2 n.dist m = m - n",
+        "state_after": "no goals"
+      }
+    ],
+    "formal_statement": "theorem dist_eq_sub_of_le {n m : \u2115} (h : n \u2264 m) : dist n m = m - n := by\n",
+    "is_tactic_proof": true,
+    "entry_time": 0.9522759590036003,
+    "entry_failed": false
+  },
+  "142": {
+    "url": "https://github.com/leanprover-community/mathlib4",
+    "commit": "29dcec074de168ac2bf835a77ef68bbe069194c5",
+    "file_path": "Mathlib/Algebra/Order/Field/Defs.lean",
+    "full_name": "div_nonneg",
+    "start": [
+      83,
+      1
+    ],
+    "end": [
+      84,
+      61
+    ],
+    "traced_tactics": [
+      {
+        "tactic": "rw [div_eq_mul_inv]",
+        "annotated_tactic": [
+          "rw [<a>div_eq_mul_inv</a>]",
+          [
+            {
+              "full_name": "div_eq_mul_inv",
+              "def_path": "Mathlib/Algebra/Group/Defs.lean",
+              "def_pos": [
+                1059,
+                9
+              ],
+              "def_end_pos": [
+                1059,
+                23
+              ]
+            }
+          ]
+        ],
+        "state_before": "\u03b1 : Type u_1\ninst\u271d : LinearOrderedSemifield \u03b1\na b : \u03b1\nha : 0 \u2264 a\nhb : 0 \u2264 b\n\u22a2 0 \u2264 a / b",
+        "state_after": "\u03b1 : Type u_1\ninst\u271d : LinearOrderedSemifield \u03b1\na b : \u03b1\nha : 0 \u2264 a\nhb : 0 \u2264 b\n\u22a2 0 \u2264 a * b\u207b\u00b9"
+      },
+      {
+        "tactic": "exact mul_nonneg ha (inv_nonneg.2 hb)",
+        "annotated_tactic": [
+          "exact <a>mul_nonneg</a> ha (<a>inv_nonneg</a>.2 hb)",
+          [
+            {
+              "full_name": "mul_nonneg",
+              "def_path": "Mathlib/Algebra/Order/GroupWithZero/Unbundled.lean",
+              "def_pos": [
+                437,
+                7
+              ],
+              "def_end_pos": [
+                437,
+                17
+              ]
+            },
+            {
+              "full_name": "inv_nonneg",
+              "def_path": "Mathlib/Algebra/Order/Field/Defs.lean",
+              "def_pos": [
+                55,
+                15
+              ],
+              "def_end_pos": [
+                55,
+                25
+              ]
+            }
+          ]
+        ],
+        "state_before": "\u03b1 : Type u_1\ninst\u271d : LinearOrderedSemifield \u03b1\na b : \u03b1\nha : 0 \u2264 a\nhb : 0 \u2264 b\n\u22a2 0 \u2264 a * b\u207b\u00b9",
+        "state_after": "no goals"
+      }
+    ],
+    "formal_statement": "lemma div_nonneg (ha : 0 \u2264 a) (hb : 0 \u2264 b) : 0 \u2264 a / b := by\n",
+    "is_tactic_proof": true,
+    "entry_time": 3.476406792004127,
+    "entry_failed": false
+  },
+  "49": {
+    "url": "https://github.com/leanprover-community/mathlib4",
+    "commit": "29dcec074de168ac2bf835a77ef68bbe069194c5",
+    "file_path": "Mathlib/Combinatorics/SimpleGraph/Basic.lean",
+    "full_name": "SimpleGraph.commonNeighbors_top_eq",
+    "start": [
+      863,
+      1
+    ],
+    "end": [
+      866,
+      42
+    ],
+    "traced_tactics": [
+      {
+        "tactic": "ext u",
+        "annotated_tactic": [
+          "ext u",
+          []
+        ],
+        "state_before": "\u03b9 : Sort u_1\nV : Type u\nG : SimpleGraph V\na b c u v\u271d w\u271d : V\ne : Sym2 V\nv w : V\n\u22a2 \u22a4.commonNeighbors v w = Set.univ \\ {v, w}",
+        "state_after": "case h\n\u03b9 : Sort u_1\nV : Type u\nG : SimpleGraph V\na b c u\u271d v\u271d w\u271d : V\ne : Sym2 V\nv w u : V\n\u22a2 u \u2208 \u22a4.commonNeighbors v w \u2194 u \u2208 Set.univ \\ {v, w}"
+      },
+      {
+        "tactic": "simp [commonNeighbors, eq_comm, not_or]",
+        "annotated_tactic": [
+          "simp [<a>commonNeighbors</a>, <a>eq_comm</a>, <a>not_or</a>]",
+          [
+            {
+              "full_name": "SimpleGraph.commonNeighbors",
+              "def_path": "Mathlib/Combinatorics/SimpleGraph/Basic.lean",
+              "def_pos": [
+                824,
+                5
+              ],
+              "def_end_pos": [
+                824,
+                20
+              ]
+            },
+            {
+              "full_name": "eq_comm",
+              "def_path": ".lake/packages/lean4/src/lean/Init/Core.lean",
+              "def_pos": [
+                811,
+                9
+              ],
+              "def_end_pos": [
+                811,
+                16
+              ]
+            },
+            {
+              "full_name": "not_or",
+              "def_path": ".lake/packages/lean4/src/lean/Init/PropLemmas.lean",
+              "def_pos": [
+                134,
+                17
+              ],
+              "def_end_pos": [
+                134,
+                23
+              ]
+            }
+          ]
+        ],
+        "state_before": "case h\n\u03b9 : Sort u_1\nV : Type u\nG : SimpleGraph V\na b c u\u271d v\u271d w\u271d : V\ne : Sym2 V\nv w u : V\n\u22a2 u \u2208 \u22a4.commonNeighbors v w \u2194 u \u2208 Set.univ \\ {v, w}",
+        "state_after": "no goals"
+      }
+    ],
+    "formal_statement": "theorem commonNeighbors_top_eq {v w : V} :\n    (\u22a4 : SimpleGraph V).commonNeighbors v w = Set.univ \\ {v, w} := by\n",
+    "is_tactic_proof": true,
+    "entry_time": 3.919373208002071,
+    "entry_failed": false
+  },
+  "25": {
+    "url": "https://github.com/leanprover-community/mathlib4",
+    "commit": "29dcec074de168ac2bf835a77ef68bbe069194c5",
+    "file_path": "Mathlib/Algebra/Order/Monoid/NatCast.lean",
+    "full_name": "zero_le_four",
+    "start": [
+      44,
+      1
+    ],
+    "end": [
+      47,
+      45
+    ],
+    "traced_tactics": [
+      {
+        "tactic": "rw [\u2190 three_add_one_eq_four]",
+        "annotated_tactic": [
+          "rw [\u2190 <a>three_add_one_eq_four</a>]",
+          [
+            {
+              "full_name": "three_add_one_eq_four",
+              "def_path": "Mathlib/Data/Nat/Cast/Defs.lean",
+              "def_pos": [
+                242,
+                9
+              ],
+              "def_end_pos": [
+                242,
+                30
+              ]
+            }
+          ]
+        ],
+        "state_before": "\u03b1 : Type u_1\ninst\u271d\u00b3 : AddMonoidWithOne \u03b1\ninst\u271d\u00b2 : Preorder \u03b1\ninst\u271d\u00b9 : ZeroLEOneClass \u03b1\ninst\u271d : CovariantClass \u03b1 \u03b1 (fun x x_1 => x + x_1) fun x x_1 => x \u2264 x_1\n\u22a2 0 \u2264 4",
+        "state_after": "\u03b1 : Type u_1\ninst\u271d\u00b3 : AddMonoidWithOne \u03b1\ninst\u271d\u00b2 : Preorder \u03b1\ninst\u271d\u00b9 : ZeroLEOneClass \u03b1\ninst\u271d : CovariantClass \u03b1 \u03b1 (fun x x_1 => x + x_1) fun x x_1 => x \u2264 x_1\n\u22a2 0 \u2264 3 + 1"
+      },
+      {
+        "tactic": "exact add_nonneg zero_le_three zero_le_one",
+        "annotated_tactic": [
+          "exact <a>add_nonneg</a> <a>zero_le_three</a> <a>zero_le_one</a>",
+          [
+            {
+              "full_name": "add_nonneg",
+              "def_path": "Mathlib/Algebra/Order/Monoid/Unbundled/Basic.lean",
+              "def_pos": [
+                1092,
+                24
+              ],
+              "def_end_pos": [
+                1092,
+                34
+              ]
+            },
+            {
+              "full_name": "zero_le_three",
+              "def_path": "Mathlib/Algebra/Order/Monoid/NatCast.lean",
+              "def_pos": [
+                38,
+                7
+              ],
+              "def_end_pos": [
+                38,
+                20
+              ]
+            },
+            {
+              "full_name": "zero_le_one",
+              "def_path": "Mathlib/Algebra/Order/ZeroLEOne.lean",
+              "def_pos": [
+                26,
+                15
+              ],
+              "def_end_pos": [
+                26,
+                26
+              ]
+            }
+          ]
+        ],
+        "state_before": "\u03b1 : Type u_1\ninst\u271d\u00b3 : AddMonoidWithOne \u03b1\ninst\u271d\u00b2 : Preorder \u03b1\ninst\u271d\u00b9 : ZeroLEOneClass \u03b1\ninst\u271d : CovariantClass \u03b1 \u03b1 (fun x x_1 => x + x_1) fun x x_1 => x \u2264 x_1\n\u22a2 0 \u2264 3 + 1",
+        "state_after": "no goals"
+      }
+    ],
+    "formal_statement": "lemma zero_le_four [Preorder \u03b1] [ZeroLEOneClass \u03b1] [CovariantClass \u03b1 \u03b1 (\u00b7+\u00b7) (\u00b7\u2264\u00b7)] :\n    (0 : \u03b1) \u2264 4 := by\n",
+    "is_tactic_proof": true,
+    "entry_time": 0.8065255830006208,
+    "entry_failed": false
+  },
+  "300": {
+    "url": "https://github.com/leanprover-community/mathlib4",
+    "commit": "29dcec074de168ac2bf835a77ef68bbe069194c5",
+    "file_path": "Mathlib/Algebra/Homology/Exact.lean",
+    "full_name": "CategoryTheory.exact_kernel_\u03b9",
+    "start": [
+      230,
+      1
+    ],
+    "end": [
+      232,
+      36
+    ],
+    "traced_tactics": [
+      {
+        "tactic": "rw [\u2190 kernelSubobject_arrow', exact_iso_comp]",
+        "annotated_tactic": [
+          "rw [\u2190 <a>kernelSubobject_arrow'</a>, <a>exact_iso_comp</a>]",
+          [
+            {
+              "full_name": "CategoryTheory.Limits.kernelSubobject_arrow'",
+              "def_path": "Mathlib/CategoryTheory/Subobject/Limits.lean",
+              "def_pos": [
+                104,
+                9
+              ],
+              "def_end_pos": [
+                104,
+                31
+              ]
+            },
+            {
+              "full_name": "CategoryTheory.exact_iso_comp",
+              "def_path": "Mathlib/Algebra/Homology/Exact.lean",
+              "def_pos": [
+                197,
+                9
+              ],
+              "def_end_pos": [
+                197,
+                23
+              ]
+            }
+          ]
+        ],
+        "state_before": "V : Type u\ninst\u271d\u00b3 : Category.{v, u} V\ninst\u271d\u00b2 : HasImages V\nA B C D : V\nf : A \u27f6 B\ng : B \u27f6 C\nh : C \u27f6 D\ninst\u271d\u00b9 : HasZeroMorphisms V\ninst\u271d : HasEqualizers V\n\u22a2 Exact (kernel.\u03b9 f) f",
+        "state_after": "V : Type u\ninst\u271d\u00b3 : Category.{v, u} V\ninst\u271d\u00b2 : HasImages V\nA B C D : V\nf : A \u27f6 B\ng : B \u27f6 C\nh : C \u27f6 D\ninst\u271d\u00b9 : HasZeroMorphisms V\ninst\u271d : HasEqualizers V\n\u22a2 Exact (kernelSubobject f).arrow f"
+      },
+      {
+        "tactic": "exact exact_kernelSubobject_arrow",
+        "annotated_tactic": [
+          "exact <a>exact_kernelSubobject_arrow</a>",
+          [
+            {
+              "full_name": "CategoryTheory.exact_kernelSubobject_arrow",
+              "def_path": "Mathlib/Algebra/Homology/Exact.lean",
+              "def_pos": [
+                224,
+                9
+              ],
+              "def_end_pos": [
+                224,
+                36
+              ]
+            }
+          ]
+        ],
+        "state_before": "V : Type u\ninst\u271d\u00b3 : Category.{v, u} V\ninst\u271d\u00b2 : HasImages V\nA B C D : V\nf : A \u27f6 B\ng : B \u27f6 C\nh : C \u27f6 D\ninst\u271d\u00b9 : HasZeroMorphisms V\ninst\u271d : HasEqualizers V\n\u22a2 Exact (kernelSubobject f).arrow f",
+        "state_after": "no goals"
+      }
+    ],
+    "formal_statement": "theorem exact_kernel_\u03b9 : Exact (kernel.\u03b9 f) f := by\n",
+    "is_tactic_proof": true,
+    "entry_time": 1.7965183749911375,
+    "entry_failed": false
+  },
+  "23": {
+    "url": "https://github.com/leanprover-community/mathlib4",
+    "commit": "29dcec074de168ac2bf835a77ef68bbe069194c5",
+    "file_path": "Mathlib/Data/Matroid/Restrict.lean",
+    "full_name": "Matroid.Restriction.finite",
+    "start": [
+      335,
+      1
+    ],
+    "end": [
+      337,
+      53
+    ],
+    "traced_tactics": [
+      {
+        "tactic": "obtain \u27e8R, hR, rfl\u27e9 := h",
+        "annotated_tactic": [
+          "obtain \u27e8R, hR, rfl\u27e9 := h",
+          []
+        ],
+        "state_before": "\u03b1 : Type u_1\nM\u271d : Matroid \u03b1\nR I J X Y : Set \u03b1\nN M : Matroid \u03b1\ninst\u271d : M.Finite\nh : N \u2264r M\n\u22a2 N.Finite",
+        "state_after": "case intro.intro\n\u03b1 : Type u_1\nM\u271d : Matroid \u03b1\nR\u271d I J X Y : Set \u03b1\nM : Matroid \u03b1\ninst\u271d : M.Finite\nR : Set \u03b1\nhR : R \u2286 M.E\n\u22a2 (M \u21be R).Finite"
+      },
+      {
+        "tactic": "exact restrict_finite <| M.ground_finite.subset hR",
+        "annotated_tactic": [
+          "exact <a>restrict_finite</a> <| M.ground_finite.subset hR",
+          [
+            {
+              "full_name": "Matroid.restrict_finite",
+              "def_path": "Mathlib/Data/Matroid/Restrict.lean",
+              "def_pos": [
+                133,
+                9
+              ],
+              "def_end_pos": [
+                133,
+                24
+              ]
+            }
+          ]
+        ],
+        "state_before": "case intro.intro\n\u03b1 : Type u_1\nM\u271d : Matroid \u03b1\nR\u271d I J X Y : Set \u03b1\nM : Matroid \u03b1\ninst\u271d : M.Finite\nR : Set \u03b1\nhR : R \u2286 M.E\n\u22a2 (M \u21be R).Finite",
+        "state_after": "no goals"
+      }
+    ],
+    "formal_statement": "theorem Restriction.finite {M : Matroid \u03b1} [M.Finite] (h : N \u2264r M) : N.Finite := by\n",
+    "is_tactic_proof": true,
+    "entry_time": 2.908625916999881,
+    "entry_failed": false
+  },
+  "340": {
+    "url": "https://github.com/leanprover-community/mathlib4",
+    "commit": "29dcec074de168ac2bf835a77ef68bbe069194c5",
+    "file_path": "Mathlib/Algebra/Ring/Parity.lean",
+    "full_name": "Even.sub_odd",
+    "start": [
+      243,
+      1
+    ],
+    "end": [
+      244,
+      47
+    ],
+    "traced_tactics": [
+      {
+        "tactic": "rw [sub_eq_add_neg]",
+        "annotated_tactic": [
+          "rw [<a>sub_eq_add_neg</a>]",
+          [
+            {
+              "full_name": "sub_eq_add_neg",
+              "def_path": "Mathlib/Algebra/Group/Defs.lean",
+              "def_pos": [
+                1057,
+                3
+              ],
+              "def_end_pos": [
+                1057,
+                14
+              ]
+            }
+          ]
+        ],
+        "state_before": "F : Type u_1\n\u03b1 : Type u_2\n\u03b2 : Type u_3\nR : Type u_4\ninst\u271d : Ring \u03b1\na b : \u03b1\nn : \u2115\nha : Even a\nhb : Odd b\n\u22a2 Odd (a - b)",
+        "state_after": "F : Type u_1\n\u03b1 : Type u_2\n\u03b2 : Type u_3\nR : Type u_4\ninst\u271d : Ring \u03b1\na b : \u03b1\nn : \u2115\nha : Even a\nhb : Odd b\n\u22a2 Odd (a + -b)"
+      },
+      {
+        "tactic": "exact ha.add_odd hb.neg",
+        "annotated_tactic": [
+          "exact ha.add_odd hb.neg",
+          []
+        ],
+        "state_before": "F : Type u_1\n\u03b1 : Type u_2\n\u03b2 : Type u_3\nR : Type u_4\ninst\u271d : Ring \u03b1\na b : \u03b1\nn : \u2115\nha : Even a\nhb : Odd b\n\u22a2 Odd (a + -b)",
+        "state_after": "no goals"
+      }
+    ],
+    "formal_statement": "lemma Even.sub_odd (ha : Even a) (hb : Odd b) : Odd (a - b) := by\n",
+    "is_tactic_proof": true,
+    "entry_time": 1.912885957994149,
+    "entry_failed": false
+  },
+  "248": {
+    "url": "https://github.com/leanprover-community/mathlib4",
+    "commit": "29dcec074de168ac2bf835a77ef68bbe069194c5",
+    "file_path": ".lake/packages/batteries/Batteries/Data/RBMap/WF.lean",
+    "full_name": "Batteries.RBNode.Ordered.setRed",
+    "start": [
+      275,
+      11
+    ],
+    "end": [
+      276,
+      42
+    ],
+    "traced_tactics": [
+      {
+        "tactic": "unfold setRed",
+        "annotated_tactic": [
+          "unfold <a>setRed</a>",
+          [
+            {
+              "full_name": "Batteries.RBNode.setRed",
+              "def_path": ".lake/packages/batteries/Batteries/Data/RBMap/Basic.lean",
+              "def_pos": [
+                331,
+                5
+              ],
+              "def_end_pos": [
+                331,
+                11
+              ]
+            }
+          ]
+        ],
+        "state_before": "\u03b1 : Type u_1\ncmp : \u03b1 \u2192 \u03b1 \u2192 Ordering\nt : RBNode \u03b1\n\u22a2 Ordered cmp t.setRed \u2194 Ordered cmp t",
+        "state_after": "\u03b1 : Type u_1\ncmp : \u03b1 \u2192 \u03b1 \u2192 Ordering\nt : RBNode \u03b1\n\u22a2 Ordered cmp\n      (match t with\n      | node c a v b => node red a v b\n      | nil => nil) \u2194\n    Ordered cmp t"
+      },
+      {
+        "tactic": "split <;> simp [Ordered]",
+        "annotated_tactic": [
+          "split <;> simp [<a>Ordered</a>]",
+          [
+            {
+              "full_name": "Batteries.RBNode.Ordered",
+              "def_path": ".lake/packages/batteries/Batteries/Data/RBMap/Basic.lean",
+              "def_pos": [
+                568,
+                5
+              ],
+              "def_end_pos": [
+                568,
+                12
+              ]
+            }
+          ]
+        ],
+        "state_before": "\u03b1 : Type u_1\ncmp : \u03b1 \u2192 \u03b1 \u2192 Ordering\nt : RBNode \u03b1\n\u22a2 Ordered cmp\n      (match t with\n      | node c a v b => node red a v b\n      | nil => nil) \u2194\n    Ordered cmp t",
+        "state_after": "no goals"
+      }
+    ],
+    "formal_statement": "protected theorem Ordered.setRed {t : RBNode \u03b1} : (setRed t).Ordered cmp \u2194 t.Ordered cmp := by\n",
+    "is_tactic_proof": true,
+    "entry_time": 2.1955090000119526,
+    "entry_failed": false
+  },
+  "32": {
+    "url": "https://github.com/leanprover-community/mathlib4",
+    "commit": "29dcec074de168ac2bf835a77ef68bbe069194c5",
+    "file_path": "Mathlib/Data/List/Sigma.lean",
+    "full_name": "List.lookupAll_length_le_one",
+    "start": [
+      311,
+      1
+    ],
+    "end": [
+      315,
+      39
+    ],
+    "traced_tactics": [
+      {
+        "tactic": "have := Nodup.sublist ((lookupAll_sublist a l).map _) h",
+        "annotated_tactic": [
+          "have := <a>Nodup.sublist</a> ((<a>lookupAll_sublist</a> a l).<a>map</a> _) h",
+          [
+            {
+              "full_name": "List.Nodup.sublist",
+              "def_path": "Mathlib/Data/List/Nodup.lean",
+              "def_pos": [
+                75,
+                19
+              ],
+              "def_end_pos": [
+                75,
+                32
+              ]
+            },
+            {
+              "full_name": "List.lookupAll_sublist",
+              "def_path": "Mathlib/Data/List/Sigma.lean",
+              "def_pos": [
+                300,
+                9
+              ],
+              "def_end_pos": [
+                300,
+                26
+              ]
+            },
+            {
+              "full_name": "List.Sublist.map",
+              "def_path": "Mathlib/Data/List/Basic.lean",
+              "def_pos": [
+                2824,
+                9
+              ],
+              "def_end_pos": [
+                2824,
+                20
+              ]
+            }
+          ]
+        ],
+        "state_before": "\u03b1 : Type u\n\u03b2 : \u03b1 \u2192 Type v\nl\u271d l\u2081 l\u2082 : List (Sigma \u03b2)\ninst\u271d : DecidableEq \u03b1\na : \u03b1\nl : List (Sigma \u03b2)\nh : l.NodupKeys\n\u22a2 (lookupAll a l).length \u2264 1",
+        "state_after": "\u03b1 : Type u\n\u03b2 : \u03b1 \u2192 Type v\nl\u271d l\u2081 l\u2082 : List (Sigma \u03b2)\ninst\u271d : DecidableEq \u03b1\na : \u03b1\nl : List (Sigma \u03b2)\nh : l.NodupKeys\nthis : (map Sigma.fst (map (Sigma.mk a) (lookupAll a l))).Nodup\n\u22a2 (lookupAll a l).length \u2264 1"
+      },
+      {
+        "tactic": "rw [map_map] at this",
+        "annotated_tactic": [
+          "rw [<a>map_map</a>] at this",
+          [
+            {
+              "full_name": "List.map_map",
+              "def_path": ".lake/packages/lean4/src/lean/Init/Data/List/Lemmas.lean",
+              "def_pos": [
+                842,
+                17
+              ],
+              "def_end_pos": [
+                842,
+                24
+              ]
+            }
+          ]
+        ],
+        "state_before": "\u03b1 : Type u\n\u03b2 : \u03b1 \u2192 Type v\nl\u271d l\u2081 l\u2082 : List (Sigma \u03b2)\ninst\u271d : DecidableEq \u03b1\na : \u03b1\nl : List (Sigma \u03b2)\nh : l.NodupKeys\nthis : (map Sigma.fst (map (Sigma.mk a) (lookupAll a l))).Nodup\n\u22a2 (lookupAll a l).length \u2264 1",
+        "state_after": "\u03b1 : Type u\n\u03b2 : \u03b1 \u2192 Type v\nl\u271d l\u2081 l\u2082 : List (Sigma \u03b2)\ninst\u271d : DecidableEq \u03b1\na : \u03b1\nl : List (Sigma \u03b2)\nh : l.NodupKeys\nthis : (map (Sigma.fst \u2218 Sigma.mk a) (lookupAll a l)).Nodup\n\u22a2 (lookupAll a l).length \u2264 1"
+      },
+      {
+        "tactic": "rwa [\u2190 nodup_replicate, \u2190 map_const]",
+        "annotated_tactic": [
+          "rwa [\u2190 <a>nodup_replicate</a>, \u2190 <a>map_const</a>]",
+          [
+            {
+              "full_name": "List.nodup_replicate",
+              "def_path": "Mathlib/Data/List/Nodup.lean",
+              "def_pos": [
+                197,
+                9
+              ],
+              "def_end_pos": [
+                197,
+                24
+              ]
+            },
+            {
+              "full_name": "List.map_const",
+              "def_path": ".lake/packages/lean4/src/lean/Init/Data/List/Lemmas.lean",
+              "def_pos": [
+                1356,
+                17
+              ],
+              "def_end_pos": [
+                1356,
+                26
+              ]
+            }
+          ]
+        ],
+        "state_before": "\u03b1 : Type u\n\u03b2 : \u03b1 \u2192 Type v\nl\u271d l\u2081 l\u2082 : List (Sigma \u03b2)\ninst\u271d : DecidableEq \u03b1\na : \u03b1\nl : List (Sigma \u03b2)\nh : l.NodupKeys\nthis : (map (Sigma.fst \u2218 Sigma.mk a) (lookupAll a l)).Nodup\n\u22a2 (lookupAll a l).length \u2264 1",
+        "state_after": "no goals"
+      }
+    ],
+    "formal_statement": "theorem lookupAll_length_le_one (a : \u03b1) {l : List (Sigma \u03b2)} (h : l.NodupKeys) :\n    length (lookupAll a l) \u2264 1 := by\n",
+    "is_tactic_proof": true,
+    "entry_time": 2.2216870419943007,
+    "entry_failed": false
+  },
+  "446": {
+    "url": "https://github.com/leanprover-community/mathlib4",
+    "commit": "29dcec074de168ac2bf835a77ef68bbe069194c5",
+    "file_path": "Mathlib/Analysis/SpecialFunctions/Log/NegMulLog.lean",
+    "full_name": "Real.hasDerivAt_negMulLog",
+    "start": [
+      113,
+      1
+    ],
+    "end": [
+      116,
+      12
+    ],
+    "traced_tactics": [
+      {
+        "tactic": "rw [\u2190 deriv_negMulLog hx, hasDerivAt_deriv_iff]",
+        "annotated_tactic": [
+          "rw [\u2190 <a>deriv_negMulLog</a> hx, <a>hasDerivAt_deriv_iff</a>]",
+          [
+            {
+              "full_name": "Real.deriv_negMulLog",
+              "def_path": "Mathlib/Analysis/SpecialFunctions/Log/NegMulLog.lean",
+              "def_pos": [
+                109,
+                7
+              ],
+              "def_end_pos": [
+                109,
+                22
+              ]
+            },
+            {
+              "full_name": "hasDerivAt_deriv_iff",
+              "def_path": "Mathlib/Analysis/Calculus/Deriv/Basic.lean",
+              "def_pos": [
+                438,
+                9
+              ],
+              "def_end_pos": [
+                438,
+                29
+              ]
+            }
+          ]
+        ],
+        "state_before": "x : \u211d\nhx : x \u2260 0\n\u22a2 HasDerivAt negMulLog (-log x - 1) x",
+        "state_after": "x : \u211d\nhx : x \u2260 0\n\u22a2 DifferentiableAt \u211d negMulLog x"
+      },
+      {
+        "tactic": "refine DifferentiableOn.differentiableAt differentiableOn_negMulLog ?_",
+        "annotated_tactic": [
+          "refine <a>DifferentiableOn.differentiableAt</a> <a>differentiableOn_negMulLog</a> ?_",
+          [
+            {
+              "full_name": "DifferentiableOn.differentiableAt",
+              "def_path": "Mathlib/Analysis/Calculus/FDeriv/Basic.lean",
+              "def_pos": [
+                564,
+                9
+              ],
+              "def_end_pos": [
+                564,
+                42
+              ]
+            },
+            {
+              "full_name": "Real.differentiableOn_negMulLog",
+              "def_path": "Mathlib/Analysis/SpecialFunctions/Log/NegMulLog.lean",
+              "def_pos": [
+                106,
+                7
+              ],
+              "def_end_pos": [
+                106,
+                33
+              ]
+            }
+          ]
+        ],
+        "state_before": "x : \u211d\nhx : x \u2260 0\n\u22a2 DifferentiableAt \u211d negMulLog x",
+        "state_after": "x : \u211d\nhx : x \u2260 0\n\u22a2 {0}\u1d9c \u2208 \ud835\udcdd x"
+      },
+      {
+        "tactic": "simp [hx]",
+        "annotated_tactic": [
+          "simp [hx]",
+          []
+        ],
+        "state_before": "x : \u211d\nhx : x \u2260 0\n\u22a2 {0}\u1d9c \u2208 \ud835\udcdd x",
+        "state_after": "no goals"
+      }
+    ],
+    "formal_statement": "lemma hasDerivAt_negMulLog {x : \u211d} (hx : x \u2260 0) : HasDerivAt negMulLog (- log x - 1) x := by\n",
+    "is_tactic_proof": true,
+    "entry_time": 2.772587040992221,
+    "entry_failed": false
+  },
+  "48": {
+    "url": "https://github.com/leanprover-community/mathlib4",
+    "commit": "29dcec074de168ac2bf835a77ef68bbe069194c5",
+    "file_path": "Mathlib/Analysis/SpecialFunctions/Complex/Circle.lean",
+    "full_name": "Real.Angle.expMapCircle_add",
+    "start": [
+      142,
+      1
+    ],
+    "end": [
+      146,
+      36
+    ],
+    "traced_tactics": [
+      {
+        "tactic": "induction \u03b8\u2081 using Real.Angle.induction_on",
+        "annotated_tactic": [
+          "induction \u03b8\u2081 using <a>Real.Angle.induction_on</a>",
+          [
+            {
+              "full_name": "Real.Angle.induction_on",
+              "def_path": "Mathlib/Analysis/SpecialFunctions/Trigonometric/Angle.lean",
+              "def_pos": [
+                74,
+                19
+              ],
+              "def_end_pos": [
+                74,
+                31
+              ]
+            }
+          ]
+        ],
+        "state_before": "\u03b8\u2081 \u03b8\u2082 : Angle\n\u22a2 (\u03b8\u2081 + \u03b8\u2082).expMapCircle = \u03b8\u2081.expMapCircle * \u03b8\u2082.expMapCircle",
+        "state_after": "case h\n\u03b8\u2082 : Angle\nx\u271d : \u211d\n\u22a2 (\u2191x\u271d + \u03b8\u2082).expMapCircle = (\u2191x\u271d).expMapCircle * \u03b8\u2082.expMapCircle"
+      },
+      {
+        "tactic": "induction \u03b8\u2082 using Real.Angle.induction_on",
+        "annotated_tactic": [
+          "induction \u03b8\u2082 using <a>Real.Angle.induction_on</a>",
+          [
+            {
+              "full_name": "Real.Angle.induction_on",
+              "def_path": "Mathlib/Analysis/SpecialFunctions/Trigonometric/Angle.lean",
+              "def_pos": [
+                74,
+                19
+              ],
+              "def_end_pos": [
+                74,
+                31
+              ]
+            }
+          ]
+        ],
+        "state_before": "case h\n\u03b8\u2082 : Angle\nx\u271d : \u211d\n\u22a2 (\u2191x\u271d + \u03b8\u2082).expMapCircle = (\u2191x\u271d).expMapCircle * \u03b8\u2082.expMapCircle",
+        "state_after": "case h.h\nx\u271d\u00b9 x\u271d : \u211d\n\u22a2 (\u2191x\u271d\u00b9 + \u2191x\u271d).expMapCircle = (\u2191x\u271d\u00b9).expMapCircle * (\u2191x\u271d).expMapCircle"
+      },
+      {
+        "tactic": "exact _root_.expMapCircle_add _ _",
+        "annotated_tactic": [
+          "exact <a>_root_.expMapCircle_add</a> _ _",
+          [
+            {
+              "full_name": "expMapCircle_add",
+              "def_path": "Mathlib/Analysis/Complex/Circle.lean",
+              "def_pos": [
+                136,
+                9
+              ],
+              "def_end_pos": [
+                136,
+                25
+              ]
+            }
+          ]
+        ],
+        "state_before": "case h.h\nx\u271d\u00b9 x\u271d : \u211d\n\u22a2 (\u2191x\u271d\u00b9 + \u2191x\u271d).expMapCircle = (\u2191x\u271d\u00b9).expMapCircle * (\u2191x\u271d).expMapCircle",
+        "state_after": "no goals"
+      }
+    ],
+    "formal_statement": "theorem Real.Angle.expMapCircle_add (\u03b8\u2081 \u03b8\u2082 : Real.Angle) : Real.Angle.expMapCircle (\u03b8\u2081 + \u03b8\u2082) =\n    Real.Angle.expMapCircle \u03b8\u2081 * Real.Angle.expMapCircle \u03b8\u2082 := by\n",
+    "is_tactic_proof": true,
+    "entry_time": 1.7819208330038236,
+    "entry_failed": false
+  },
+  "111": {
+    "url": "https://github.com/leanprover-community/mathlib4",
+    "commit": "29dcec074de168ac2bf835a77ef68bbe069194c5",
+    "file_path": "Mathlib/Algebra/Ring/Int.lean",
+    "full_name": "Int.ediv_two_mul_two_add_one_of_odd",
+    "start": [
+      245,
+      1
+    ],
+    "end": [
+      248,
+      22
+    ],
+    "traced_tactics": [
+      {
+        "tactic": "rintro \u27e8c, rfl\u27e9",
+        "annotated_tactic": [
+          "rintro \u27e8c, rfl\u27e9",
+          []
+        ],
+        "state_before": "m n : \u2124\n\u22a2 Odd n \u2192 n / 2 * 2 + 1 = n",
+        "state_after": "case intro\nm c : \u2124\n\u22a2 (2 * c + 1) / 2 * 2 + 1 = 2 * c + 1"
+      },
+      {
+        "tactic": "convert Int.ediv_add_emod' (2 * c + 1) 2",
+        "annotated_tactic": [
+          "convert <a>Int.ediv_add_emod'</a> (2 * c + 1) 2",
+          [
+            {
+              "full_name": "Int.ediv_add_emod'",
+              "def_path": ".lake/packages/lean4/src/lean/Init/Data/Int/DivModLemmas.lean",
+              "def_pos": [
+                221,
+                9
+              ],
+              "def_end_pos": [
+                221,
+                23
+              ]
+            }
+          ]
+        ],
+        "state_before": "case intro\nm c : \u2124\n\u22a2 (2 * c + 1) / 2 * 2 + 1 = 2 * c + 1",
+        "state_after": "case h.e'_2.h.e'_6\nm c : \u2124\n\u22a2 1 = (2 * c + 1) % 2"
+      },
+      {
+        "tactic": "simp [Int.add_emod]",
+        "annotated_tactic": [
+          "simp [<a>Int.add_emod</a>]",
+          [
+            {
+              "full_name": "Int.add_emod",
+              "def_path": ".lake/packages/lean4/src/lean/Init/Data/Int/DivModLemmas.lean",
+              "def_pos": [
+                476,
+                9
+              ],
+              "def_end_pos": [
+                476,
+                17
+              ]
+            }
+          ]
+        ],
+        "state_before": "case h.e'_2.h.e'_6\nm c : \u2124\n\u22a2 1 = (2 * c + 1) % 2",
+        "state_after": "no goals"
+      }
+    ],
+    "formal_statement": "lemma ediv_two_mul_two_add_one_of_odd : Odd n \u2192 n / 2 * 2 + 1 = n := by\n",
+    "is_tactic_proof": true,
+    "entry_time": 1.5693677079980262,
+    "entry_failed": false
+  },
+  "418": {
+    "url": "https://github.com/leanprover-community/mathlib4",
+    "commit": "29dcec074de168ac2bf835a77ef68bbe069194c5",
+    "file_path": "Mathlib/Analysis/SpecialFunctions/Log/Basic.lean",
+    "full_name": "Real.log_of_pos",
+    "start": [
+      49,
+      1
+    ],
+    "end": [
+      52,
+      22
+    ],
+    "traced_tactics": [
+      {
+        "tactic": "rw [log_of_ne_zero hx.ne']",
+        "annotated_tactic": [
+          "rw [<a>log_of_ne_zero</a> hx.ne']",
+          [
+            {
+              "full_name": "Real.log_of_ne_zero",
+              "def_path": "Mathlib/Analysis/SpecialFunctions/Log/Basic.lean",
+              "def_pos": [
+                45,
+                9
+              ],
+              "def_end_pos": [
+                45,
+                23
+              ]
+            }
+          ]
+        ],
+        "state_before": "x y : \u211d\nhx : 0 < x\n\u22a2 log x = expOrderIso.symm \u27e8x, hx\u27e9",
+        "state_after": "x y : \u211d\nhx : 0 < x\n\u22a2 expOrderIso.symm \u27e8|x|, \u22ef\u27e9 = expOrderIso.symm \u27e8x, hx\u27e9"
+      },
+      {
+        "tactic": "congr",
+        "annotated_tactic": [
+          "congr",
+          []
+        ],
+        "state_before": "x y : \u211d\nhx : 0 < x\n\u22a2 expOrderIso.symm \u27e8|x|, \u22ef\u27e9 = expOrderIso.symm \u27e8x, hx\u27e9",
+        "state_after": "case h.e_6.h.e_val\nx y : \u211d\nhx : 0 < x\n\u22a2 |x| = x"
+      },
+      {
+        "tactic": "exact abs_of_pos hx",
+        "annotated_tactic": [
+          "exact <a>abs_of_pos</a> hx",
+          [
+            {
+              "full_name": "abs_of_pos",
+              "def_path": "Mathlib/Algebra/Order/Group/Abs.lean",
+              "def_pos": [
+                101,
+                3
+              ],
+              "def_end_pos": [
+                101,
+                14
+              ]
+            }
+          ]
+        ],
+        "state_before": "case h.e_6.h.e_val\nx y : \u211d\nhx : 0 < x\n\u22a2 |x| = x",
+        "state_after": "no goals"
+      }
+    ],
+    "formal_statement": "theorem log_of_pos (hx : 0 < x) : log x = expOrderIso.symm \u27e8x, hx\u27e9 := by\n",
+    "is_tactic_proof": true,
+    "entry_time": 1.6420208750059828,
+    "entry_failed": false
+  },
+  "445": {
+    "url": "https://github.com/leanprover-community/mathlib4",
+    "commit": "29dcec074de168ac2bf835a77ef68bbe069194c5",
+    "file_path": "Mathlib/Order/BooleanGenerators.lean",
+    "full_name": "IsCompactlyGenerated.BooleanGenerators.complementedLattice_of_sSup_eq_top",
+    "start": [
+      148,
+      1
+    ],
+    "end": [
+      151,
+      43
+    ],
+    "traced_tactics": [
+      {
+        "tactic": "let _i := hS.distribLattice_of_sSup_eq_top h",
+        "annotated_tactic": [
+          "let _i := hS.distribLattice_of_sSup_eq_top h",
+          []
+        ],
+        "state_before": "\u03b1 : Type u_1\ninst\u271d\u00b9 : CompleteLattice \u03b1\ninst\u271d : IsCompactlyGenerated \u03b1\nS : Set \u03b1\nhS : BooleanGenerators S\nh : sSup S = \u22a4\n\u22a2 ComplementedLattice \u03b1",
+        "state_after": "\u03b1 : Type u_1\ninst\u271d\u00b9 : CompleteLattice \u03b1\ninst\u271d : IsCompactlyGenerated \u03b1\nS : Set \u03b1\nhS : BooleanGenerators S\nh : sSup S = \u22a4\n_i : DistribLattice \u03b1 := hS.distribLattice_of_sSup_eq_top h\n\u22a2 ComplementedLattice \u03b1"
+      },
+      {
+        "tactic": "have _i\u2081 := isAtomistic_of_sSup_eq_top hS h",
+        "annotated_tactic": [
+          "have _i\u2081 := <a>isAtomistic_of_sSup_eq_top</a> hS h",
+          [
+            {
+              "full_name": "IsCompactlyGenerated.BooleanGenerators.isAtomistic_of_sSup_eq_top",
+              "def_path": "Mathlib/Order/BooleanGenerators.lean",
+              "def_pos": [
+                100,
+                7
+              ],
+              "def_end_pos": [
+                100,
+                33
+              ]
+            }
+          ]
+        ],
+        "state_before": "\u03b1 : Type u_1\ninst\u271d\u00b9 : CompleteLattice \u03b1\ninst\u271d : IsCompactlyGenerated \u03b1\nS : Set \u03b1\nhS : BooleanGenerators S\nh : sSup S = \u22a4\n_i : DistribLattice \u03b1 := hS.distribLattice_of_sSup_eq_top h\n\u22a2 ComplementedLattice \u03b1",
+        "state_after": "\u03b1 : Type u_1\ninst\u271d\u00b9 : CompleteLattice \u03b1\ninst\u271d : IsCompactlyGenerated \u03b1\nS : Set \u03b1\nhS : BooleanGenerators S\nh : sSup S = \u22a4\n_i : DistribLattice \u03b1 := hS.distribLattice_of_sSup_eq_top h\n_i\u2081 : IsAtomistic \u03b1\n\u22a2 ComplementedLattice \u03b1"
+      },
+      {
+        "tactic": "apply complementedLattice_of_isAtomistic",
+        "annotated_tactic": [
+          "apply <a>complementedLattice_of_isAtomistic</a>",
+          [
+            {
+              "full_name": "complementedLattice_of_isAtomistic",
+              "def_path": "Mathlib/Order/CompactlyGenerated/Basic.lean",
+              "def_pos": [
+                654,
+                9
+              ],
+              "def_end_pos": [
+                654,
+                43
+              ]
+            }
+          ]
+        ],
+        "state_before": "\u03b1 : Type u_1\ninst\u271d\u00b9 : CompleteLattice \u03b1\ninst\u271d : IsCompactlyGenerated \u03b1\nS : Set \u03b1\nhS : BooleanGenerators S\nh : sSup S = \u22a4\n_i : DistribLattice \u03b1 := hS.distribLattice_of_sSup_eq_top h\n_i\u2081 : IsAtomistic \u03b1\n\u22a2 ComplementedLattice \u03b1",
+        "state_after": "no goals"
+      }
+    ],
+    "formal_statement": "lemma complementedLattice_of_sSup_eq_top (h : sSup S = \u22a4) : ComplementedLattice \u03b1 := by\n",
+    "is_tactic_proof": true,
+    "entry_time": 1.2309533749939874,
+    "entry_failed": false
+  },
+  "182": {
+    "url": "https://github.com/leanprover-community/mathlib4",
+    "commit": "29dcec074de168ac2bf835a77ef68bbe069194c5",
+    "file_path": "Mathlib/Analysis/SpecialFunctions/Pow/Complex.lean",
+    "full_name": "Complex.natCast_cpow_natCast_mul",
+    "start": [
+      230,
+      1
+    ],
+    "end": [
+      233,
+      49
+    ],
+    "traced_tactics": [
+      {
+        "tactic": "refine cpow_nat_mul' (x := n) (n := m) ?_ ?_ z",
+        "annotated_tactic": [
+          "refine <a>cpow_nat_mul'</a> (x := n) (n := m) ?_ ?_ z",
+          [
+            {
+              "full_name": "Complex.cpow_nat_mul'",
+              "def_path": "Mathlib/Analysis/SpecialFunctions/Pow/Complex.lean",
+              "def_pos": [
+                188,
+                7
+              ],
+              "def_end_pos": [
+                188,
+                20
+              ]
+            }
+          ]
+        ],
+        "state_before": "n m : \u2115\nz : \u2102\n\u22a2 \u2191n ^ (\u2191m * z) = (\u2191n ^ m) ^ z",
+        "state_after": "case refine_1\nn m : \u2115\nz : \u2102\n\u22a2 -\u03c0 < \u2191m * (\u2191n).arg\n\ncase refine_2\nn m : \u2115\nz : \u2102\n\u22a2 \u2191m * (\u2191n).arg \u2264 \u03c0"
+      },
+      {
+        "tactic": "simp only [natCast_arg, mul_zero, Left.neg_neg_iff, pi_pos]",
+        "annotated_tactic": [
+          "simp only [<a>natCast_arg</a>, <a>mul_zero</a>, <a>Left.neg_neg_iff</a>, <a>pi_pos</a>]",
+          [
+            {
+              "full_name": "Complex.natCast_arg",
+              "def_path": "Mathlib/Analysis/SpecialFunctions/Complex/Arg.lean",
+              "def_pos": [
+                237,
+                7
+              ],
+              "def_end_pos": [
+                237,
+                18
+              ]
+            },
+            {
+              "full_name": "MulZeroClass.mul_zero",
+              "def_path": "Mathlib/Algebra/GroupWithZero/Defs.lean",
+              "def_pos": [
+                39,
+                3
+              ],
+              "def_end_pos": [
+                39,
+                11
+              ]
+            },
+            {
+              "full_name": "Left.neg_neg_iff",
+              "def_path": "Mathlib/Algebra/Order/Group/Defs.lean",
+              "def_pos": [
+                164,
+                3
+              ],
+              "def_end_pos": [
+                164,
+                14
+              ]
+            },
+            {
+              "full_name": "Real.pi_pos",
+              "def_path": "Mathlib/Analysis/SpecialFunctions/Trigonometric/Basic.lean",
+              "def_pos": [
+                169,
+                9
+              ],
+              "def_end_pos": [
+                169,
+                15
+              ]
+            }
+          ]
+        ],
+        "state_before": "case refine_1\nn m : \u2115\nz : \u2102\n\u22a2 -\u03c0 < \u2191m * (\u2191n).arg",
+        "state_after": "no goals"
+      },
+      {
+        "tactic": "simp only [natCast_arg, mul_zero, pi_pos.le]",
+        "annotated_tactic": [
+          "simp only [<a>natCast_arg</a>, <a>mul_zero</a>, pi_pos.le]",
+          [
+            {
+              "full_name": "Complex.natCast_arg",
+              "def_path": "Mathlib/Analysis/SpecialFunctions/Complex/Arg.lean",
+              "def_pos": [
+                237,
+                7
+              ],
+              "def_end_pos": [
+                237,
+                18
+              ]
+            },
+            {
+              "full_name": "MulZeroClass.mul_zero",
+              "def_path": "Mathlib/Algebra/GroupWithZero/Defs.lean",
+              "def_pos": [
+                39,
+                3
+              ],
+              "def_end_pos": [
+                39,
+                11
+              ]
+            }
+          ]
+        ],
+        "state_before": "case refine_2\nn m : \u2115\nz : \u2102\n\u22a2 \u2191m * (\u2191n).arg \u2264 \u03c0",
+        "state_after": "no goals"
+      }
+    ],
+    "formal_statement": "lemma natCast_cpow_natCast_mul (n m : \u2115) (z : \u2102) : (n : \u2102) ^ (m * z) = ((n : \u2102) ^ m) ^ z := by\n",
+    "is_tactic_proof": true,
+    "entry_time": 3.2893373330007307,
+    "entry_failed": false
+  }
+}

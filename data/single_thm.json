@@ -1,0 +1,124 @@
+{
+  "32": {
+    "url": "https://github.com/leanprover-community/mathlib4",
+    "commit": "29dcec074de168ac2bf835a77ef68bbe069194c5",
+    "file_path": "Mathlib/Data/List/Sigma.lean",
+    "full_name": "List.lookupAll_length_le_one",
+    "start": [
+      311,
+      1
+    ],
+    "end": [
+      315,
+      39
+    ],
+    "traced_tactics": [
+      {
+        "tactic": "have := Nodup.sublist ((lookupAll_sublist a l).map _) h",
+        "annotated_tactic": [
+          "have := <a>Nodup.sublist</a> ((<a>lookupAll_sublist</a> a l).<a>map</a> _) h",
+          [
+            {
+              "full_name": "List.Nodup.sublist",
+              "def_path": "Mathlib/Data/List/Nodup.lean",
+              "def_pos": [
+                75,
+                19
+              ],
+              "def_end_pos": [
+                75,
+                32
+              ]
+            },
+            {
+              "full_name": "List.lookupAll_sublist",
+              "def_path": "Mathlib/Data/List/Sigma.lean",
+              "def_pos": [
+                300,
+                9
+              ],
+              "def_end_pos": [
+                300,
+                26
+              ]
+            },
+            {
+              "full_name": "List.Sublist.map",
+              "def_path": "Mathlib/Data/List/Basic.lean",
+              "def_pos": [
+                2824,
+                9
+              ],
+              "def_end_pos": [
+                2824,
+                20
+              ]
+            }
+          ]
+        ],
+        "state_before": "\u03b1 : Type u\n\u03b2 : \u03b1 \u2192 Type v\nl\u271d l\u2081 l\u2082 : List (Sigma \u03b2)\ninst\u271d : DecidableEq \u03b1\na : \u03b1\nl : List (Sigma \u03b2)\nh : l.NodupKeys\n\u22a2 (lookupAll a l).length \u2264 1",
+        "state_after": "\u03b1 : Type u\n\u03b2 : \u03b1 \u2192 Type v\nl\u271d l\u2081 l\u2082 : List (Sigma \u03b2)\ninst\u271d : DecidableEq \u03b1\na : \u03b1\nl : List (Sigma \u03b2)\nh : l.NodupKeys\nthis : (map Sigma.fst (map (Sigma.mk a) (lookupAll a l))).Nodup\n\u22a2 (lookupAll a l).length \u2264 1"
+      },
+      {
+        "tactic": "rw [map_map] at this",
+        "annotated_tactic": [
+          "rw [<a>map_map</a>] at this",
+          [
+            {
+              "full_name": "List.map_map",
+              "def_path": ".lake/packages/lean4/src/lean/Init/Data/List/Lemmas.lean",
+              "def_pos": [
+                842,
+                17
+              ],
+              "def_end_pos": [
+                842,
+                24
+              ]
+            }
+          ]
+        ],
+        "state_before": "\u03b1 : Type u\n\u03b2 : \u03b1 \u2192 Type v\nl\u271d l\u2081 l\u2082 : List (Sigma \u03b2)\ninst\u271d : DecidableEq \u03b1\na : \u03b1\nl : List (Sigma \u03b2)\nh : l.NodupKeys\nthis : (map Sigma.fst (map (Sigma.mk a) (lookupAll a l))).Nodup\n\u22a2 (lookupAll a l).length \u2264 1",
+        "state_after": "\u03b1 : Type u\n\u03b2 : \u03b1 \u2192 Type v\nl\u271d l\u2081 l\u2082 : List (Sigma \u03b2)\ninst\u271d : DecidableEq \u03b1\na : \u03b1\nl : List (Sigma \u03b2)\nh : l.NodupKeys\nthis : (map (Sigma.fst \u2218 Sigma.mk a) (lookupAll a l)).Nodup\n\u22a2 (lookupAll a l).length \u2264 1"
+      },
+      {
+        "tactic": "rwa [\u2190 nodup_replicate, \u2190 map_const]",
+        "annotated_tactic": [
+          "rwa [\u2190 <a>nodup_replicate</a>, \u2190 <a>map_const</a>]",
+          [
+            {
+              "full_name": "List.nodup_replicate",
+              "def_path": "Mathlib/Data/List/Nodup.lean",
+              "def_pos": [
+                197,
+                9
+              ],
+              "def_end_pos": [
+                197,
+                24
+              ]
+            },
+            {
+              "full_name": "List.map_const",
+              "def_path": ".lake/packages/lean4/src/lean/Init/Data/List/Lemmas.lean",
+              "def_pos": [
+                1356,
+                17
+              ],
+              "def_end_pos": [
+                1356,
+                26
+              ]
+            }
+          ]
+        ],
+        "state_before": "\u03b1 : Type u\n\u03b2 : \u03b1 \u2192 Type v\nl\u271d l\u2081 l\u2082 : List (Sigma \u03b2)\ninst\u271d : DecidableEq \u03b1\na : \u03b1\nl : List (Sigma \u03b2)\nh : l.NodupKeys\nthis : (map (Sigma.fst \u2218 Sigma.mk a) (lookupAll a l)).Nodup\n\u22a2 (lookupAll a l).length \u2264 1",
+        "state_after": "no goals"
+      }
+    ],
+    "formal_statement": "theorem lookupAll_length_le_one (a : \u03b1) {l : List (Sigma \u03b2)} (h : l.NodupKeys) :\n    length (lookupAll a l) \u2264 1 := by\n",
+    "is_tactic_proof": true,
+    "entry_time": 2.2216870419943007,
+    "entry_failed": false
+  }
+}

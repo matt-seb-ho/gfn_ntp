@@ -1,0 +1,14 @@
+{
+  "https___github.com_leanprover-community_mathlib4@29dcec074de168ac2bf835a77ef68bbe069194c5:Mathlib_Data_List_Sigma.lean:List.lookupAll_length_le_one": [
+    [
+      0,
+      "have := Nodup.sublist ((lookupAll_sublist a l).map _) h\n<tactic_delimiter>\nrw [map_map] at this\n<tactic_delimiter>\nrwa [\u2190 nodup_replicate, \u2190 map_const]",
+      [
+        "\u03b1 : Type u\n\u03b2 : \u03b1 \u2192 Type v\nl\u271d l\u2081 l\u2082 : List (Sigma \u03b2)\ninst\u271d : DecidableEq \u03b1\na : \u03b1\nl : List (Sigma \u03b2)\nh : l.NodupKeys\n\u22a2 (lookupAll a l).length \u2264 1",
+        "\u03b1 : Type u\n\u03b2 : \u03b1 \u2192 Type v\nl\u271d l\u2081 l\u2082 : List (Sigma \u03b2)\ninst\u271d : DecidableEq \u03b1\na : \u03b1\nl : List (Sigma \u03b2)\nh : l.NodupKeys\nthis : (map Sigma.fst (map (Sigma.mk a) (lookupAll a l))).Nodup\n\u22a2 (lookupAll a l).length \u2264 1",
+        "\u03b1 : Type u\n\u03b2 : \u03b1 \u2192 Type v\nl\u271d l\u2081 l\u2082 : List (Sigma \u03b2)\ninst\u271d : DecidableEq \u03b1\na : \u03b1\nl : List (Sigma \u03b2)\nh : l.NodupKeys\nthis : (map (Sigma.fst \u2218 Sigma.mk a) (lookupAll a l)).Nodup\n\u22a2 (lookupAll a l).length \u2264 1",
+        "no goals"
+      ]
+    ]
+  ]
+}
