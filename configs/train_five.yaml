@@ -13,4 +13,4 @@ logger:
   name: ${now:%Y-%m-%d}_${now:%H-%M-%S}
   project: "gfn4ntp"
   save_dir: ${save_dir}
-  offline: False
+  offline: false

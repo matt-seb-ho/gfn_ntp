@@ -1,10 +1,11 @@
 from collections import defaultdict
 from typing import Optional
 from contextlib import contextmanager, nullcontext
-
+import json
 import torch
 from peft import PeftModel
 from transformers import AutoTokenizer
+from loguru import logger
 
 from proof_flow.src.constants import (
     DEFAULT_VERIFIER_BATCH_SIZE,
@@ -51,12 +52,17 @@ class NTPReward:
         batch_size: Optional[int] = None,
         adapter_name: Optional[str] = None,
         seq2seq: bool = False,
+        prompts_for_model: Optional[str] = "reprover",
+        use_sts_format: bool = False,
     ):
         self.model = model 
         self.tokenizer = tokenizer
         self.temperature = temperature
         self.batch_size = batch_size or DEFAULT_VERIFIER_BATCH_SIZE
         self.adapter_name = adapter_name
+
+        st_or_sts = "sts" if use_sts_format else "st"
+        self.prompt_templates = RM_TEMPLATES[prompts_for_model][st_or_sts]
         
         # select reward computation context and method
         if setup is None:
@@ -69,7 +75,7 @@ class NTPReward:
             if setup == "adapter":
                 self.compute_reward_ctx = self.adapter_ctx
                 assert adapter_name is not None
-            elif setup == "base_model":
+            elif setup == "base":
                 self.compute_reward_ctx = self.base_model_ctx
             elif setup == "independent":
                 self.compute_reward_ctx = nullcontext
@@ -91,7 +97,7 @@ class NTPReward:
         device: Optional[str | torch.device] = None,
     ) -> torch.Tensor:
         with torch.no_grad():
-            with self._compute_reward_ctx():
+            with self.compute_reward_ctx():
                 log_reward = self.compute_log_r(
                     states, 
                     tactics, 
@@ -110,8 +116,6 @@ class NTPReward:
         model: PeftModel,
         tokenizer: AutoTokenizer,
         batch_size: int = 8,
-        use_sts_format: bool = False,
-        prompts_for_model: Optional[str] = "llemma",
         device: Optional[str | torch.device] = None,
         normalize_tactic_length: bool = True,
         normalize_trajectory_length: bool = True,
@@ -141,7 +145,12 @@ class NTPReward:
         trajectory_groups = []
         prompts = []
         completions = []
-        partial_trajectory_idxs = set()
+        is_partial = torch.zeros(len(states), dtype=torch.bool, device=device)
+        lengths = torch.tensor(
+            [len(t) for t in tactics], 
+            device=device, 
+            dtype=torch.float32
+        )
         for i, (_states, _tactics) in enumerate(zip(states, tactics)):
             # _states: list[str]: represents states for this trajectory
             # _tactics: list[str]: represents tactics for this trajectory
@@ -152,14 +161,12 @@ class NTPReward:
                 log_r[i] = MIN_REWARD
             else:
                 # queue prompt-completion logp jobs
-                partial_trajectory_idxs.add(i)
+                is_partial[i] = True
                 for step_idx in range(len(_tactics)):
-                    prompt, completion = build_reward_inputs(
+                    prompt, completion = self._build_reward_inputs(
                         _states[step_idx], 
                         _tactics[step_idx], 
                         _states[step_idx + 1],
-                        use_sts_format=use_sts_format,
-                        prompts_for_model=prompts_for_model,
                     )
                     trajectory_groups.append(i)
                     prompts.append(prompt)
@@ -193,15 +200,22 @@ class NTPReward:
 
         # normalize partial trajectory scores by trajectory length
         if normalize_trajectory_length:
-            lengths = torch.tensor(
-                [
-                    len(t) if i in partial_trajectory_idxs else 1
-                    for i, t in enumerate(tactics)
-                ], 
-                device=device, 
-                dtype=torch.float32
+            scale_factor = torch.where(
+                is_partial,
+                lengths,
+                1.0
             )
-            log_r = log_r / lengths
+            log_r /= scale_factor
+        
+        # logging
+        for i, _tactics in enumerate(tactics):
+            if not is_partial[i]:
+                continue
+            t_r = json.dumps({
+                "tactics": _tactics,
+                "reward": log_r[i].item(),
+            })
+            logger.info(f"partial reward: {t_r}")
 
         # clip reward
         log_r = torch.clamp(log_r, min=MIN_REWARD)
@@ -215,8 +229,6 @@ class NTPReward:
         model: PeftModel,
         tokenizer: AutoTokenizer,
         batch_size: int = 8,
-        use_sts_format: bool = False,
-        prompts_for_model: Optional[str] = "llemma",
         device: Optional[str | torch.device] = None,
         normalize_tactic_length: bool = True,
         normalize_trajectory_length: bool = True,
@@ -287,3 +299,19 @@ class NTPReward:
             if error_string in tactic_result:
                 return True
         return False
+
+
+    def _build_reward_inputs(
+        self,
+        state: str,
+        tactic: str,
+        next_state: Optional[str] = None,
+    ) -> tuple[str, str]:
+        return (
+            self.prompt_templates["prompt"].format(
+                state=state, tactic=tactic, next_state=next_state
+            ),
+            self.prompt_templates["completion"].format(
+                state=state, tactic=tactic, next_state=next_state
+            ),
+        )

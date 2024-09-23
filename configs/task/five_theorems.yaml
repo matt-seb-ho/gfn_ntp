@@ -14,7 +14,7 @@ model:
   hf_id: "kaiyuy/leandojo-lean4-tacgen-byt5-small"
   # seq2seq: false
   seq2seq: true 
-  use_lora: false
+  use_lora: true
 
   # specify a huggingface model id to initialize the policy adapter from
   # initial_policy_adapter: "msho/dspv1_policy_sft"
@@ -101,6 +101,7 @@ reward:
   # buffer_seed_trajectory_file: "data/t0_seed_gtt_only.json"
   buffer_seed_trajectory_file: data/t0_seed_t_updated_fmt.json
   verifier_batch_size: 16 # TODO: figure out if we can go higher
+  use_sts_format: false
   
   # reward model settings
   model:
@@ -184,6 +185,7 @@ search_eval:
 prompts:
   # tac_gen: "ds_rm_st_v2"
   tac_gen: "rp_tacgen" # reprover template ("{state}")
+  reward: "reprover"
 
 # ground truth trajectories
 gtt:

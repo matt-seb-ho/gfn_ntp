@@ -1,3 +1,4 @@
+import json
 import random
 from collections import namedtuple
 from typing import Optional
@@ -212,6 +213,15 @@ class NeuralTheoremProvingTask(LightningModule):
             )
             if r is None:
                 break
+                
+            # log generated tactics
+            tac_info = json.dumps({
+                "thm": theorem.full_name,
+                "epoch": self.current_epoch,
+                "step": self.global_step,
+                "tactics": r.tactics
+            })
+            logger.info(f"train_fwd_gen_tacs: {tac_info}")
 
             # update states and tactics
             for i, next_state in enumerate(r.next_states):
