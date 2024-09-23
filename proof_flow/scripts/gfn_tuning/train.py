@@ -129,6 +129,7 @@ def train_setup(
         accumulate_grad_batches=config.task.training.accumulate_grad_batches,
         use_log_z_cache=config.task.training.use_log_z_cache,
         seq2seq=config.task.model.seq2seq,
+        truncate_state=config.task.training.truncate_state,
     )
 
     # set up trainer
@@ -287,6 +288,7 @@ def get_reward(
         seq2seq=reward_uses_seq2seq,
         prompts_for_model=config.task.prompts.reward,
         use_sts_format=config.task.reward.use_sts_format,
+        max_input_length=config.task.constraints.max_input_length,
     )
     return reward
 

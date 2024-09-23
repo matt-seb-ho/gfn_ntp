@@ -210,6 +210,7 @@ def causal_conditional_log_prob(
     tokenizer: AutoTokenizer,
     prompts: list[str],
     completions: list[str],
+    max_input_length: int,
     sep: str = "",
     device: Optional[str | torch.device] = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -274,6 +275,8 @@ def seq2seq_conditional_log_prob(
     tokenizer: AutoTokenizer,
     prompts: list[str],
     completions: list[str],
+    max_input_length: int,
+    sep: str = "", # only for compatibility with causal models
     device: Optional[str | torch.device] = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     # tokenize the prompts and completions
@@ -281,6 +284,7 @@ def seq2seq_conditional_log_prob(
         prompts,
         padding=True,
         truncation=True,
+        max_length=max_input_length,
         return_tensors='pt',
     )
     # with tokenizer.as_target_tokenizer():

@@ -102,6 +102,7 @@ class NeuralTheoremProvingTask(LightningModule):
         accumulate_grad_batches: int = 1,
         use_log_z_cache: bool = True,
         seq2seq: bool = False,
+        truncate_state: bool = False,
         conditional_log_z: bool = True,
         device: Optional[str | torch.device] = None,
     ):
@@ -170,6 +171,17 @@ class NeuralTheoremProvingTask(LightningModule):
         else:
             self.generate_step = generate_step
             self.conditional_log_p = causal_conditional_log_prob
+        
+        # tracking state length exceeding max_input_length
+        self.max_input_length_exceeded = 0
+        self.states_tokenized = 0
+
+        # controlling tokenization in parallel forward
+        self.tokenize_max_length = (
+            self.hparams.max_input_length
+            if self.hparams.truncate_state
+            else None
+        )
 
     
     def parallel_forward(
@@ -288,9 +300,11 @@ class NeuralTheoremProvingTask(LightningModule):
             state = tactic_states[i][-1]
             input_text = self.format_prompt(state.pp)
             token_length = len(self.tokenizer.encode(input_text))
+            self.states_tokenized += 1
             if token_length > self.hparams.max_input_length:
-                self._debug_log(f"input state too long: {input_text}. Stopping trajectory.")
-                continue
+                self.max_input_length_exceeded += 1
+                if not self.hparams.truncate_state:
+                    continue
             input_texts.append(input_text)
             i2t_idx_map.append(i)
         
@@ -302,6 +316,8 @@ class NeuralTheoremProvingTask(LightningModule):
         batch_enc = self.tokenizer(
             input_texts, 
             return_tensors="pt", 
+            truncation=self.hparams.truncate_state,
+            max_length=self.tokenize_max_length,
             padding=True,
         )
         if self.model_device:
@@ -740,6 +756,16 @@ class NeuralTheoremProvingTask(LightningModule):
         self.model.train()
     
 
+    def on_train_end(self):
+        msg = (
+            "report on how many times the max_input_length was exceeded:\n"
+            f"max_input_length_exceeded: {self.max_input_length_exceeded}\n"
+            f"states tokenized: {self.states_tokenized}\n"
+            f"proportion: {self.max_input_length_exceeded / self.states_tokenized + 1}"
+        )
+        logger.info(msg)
+    
+
     def on_validation_epoch_start(self):
         self.model.eval()
         if self.hparams.search_eval_probes:
@@ -899,6 +925,7 @@ class NeuralTheoremProvingTask(LightningModule):
                 self.tokenizer,
                 _prompts,
                 _completions,
+                max_input_length=self.hparams.max_input_length,
                 device=self.model_device,
             )
             step_logpfs[b_idxs, s_idxs] = log_pfs
@@ -998,6 +1025,10 @@ class NeuralTheoremProvingTask(LightningModule):
         self, 
         theorem_id: str
     ) -> Optional[list[dict]]:
+        # mbt = getattr(self, "max_batch_testing", None)
+        # if mbt is not None:
+        #     res = self.reward_buffer.sample(theorem_id, self.hparams.n_samples)
+        #     return [res[0]] * mbt
         if random.random() < self.hparams.use_buffer_prob:
             return self.reward_buffer.sample(theorem_id, self.hparams.n_samples)
         return None

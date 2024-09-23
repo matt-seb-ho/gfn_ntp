@@ -36,7 +36,10 @@ model:
     lora_alpha: 32
     lora_dropout: 0.05
     bias: "none"
-    task_type: "CAUSAL_LM"
+    # task_type
+    # - SEQ_2_SEQ_LM: Sequence-to-sequence language modeling.
+    # - CAUSAL_LM: Causal language modeling.
+    task_type: "SEQ_2_SEQ_LM"
     use_rslora: true
 
     # settings from SFT RM config
@@ -78,6 +81,7 @@ training:
   gradient_clip_val: 0.5 # default is 0 (no clipping)
   num_sanity_val_steps: 0
   replay_batch_size: 8
+  truncate_state: true
   
   # validation loop frequency control
   # val_check_interval: float in [0, 1]: frequency per train epoch
@@ -153,8 +157,8 @@ constraints:
   # min_tactic_tokens: 1
   min_tactic_tokens: 3
   # max_tactic_tokens: 30
-  max_tactic_tokens: 90
-  max_input_length: 640
+  max_tactic_tokens: 70
+  max_input_length: 400
 
 debug_logger:
   include_lean_dojo_debug: true
@@ -176,10 +180,10 @@ search_eval:
     num_workers: 1
     num_gpus: 1
     # max_input_seq_len: 230 # 200 (state) + 30 (prompt)
-    max_input_seq_len: 640 # reprover
-    max_output_seq_len: 730
+    max_input_seq_len: 400 # reprover (max state is 265)
+    max_output_seq_len: 470
     # max_new_tokens: 30
-    max_new_tokens: 90 # reprover
+    max_new_tokens: 70 # reprover
     length_penalty: 0.0
 
 prompts:

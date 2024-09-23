@@ -54,12 +54,14 @@ class NTPReward:
         seq2seq: bool = False,
         prompts_for_model: Optional[str] = "reprover",
         use_sts_format: bool = False,
+        max_input_length: int = 400,
     ):
         self.model = model 
         self.tokenizer = tokenizer
         self.temperature = temperature
         self.batch_size = batch_size or DEFAULT_VERIFIER_BATCH_SIZE
         self.adapter_name = adapter_name
+        self.max_input_length = max_input_length
 
         st_or_sts = "sts" if use_sts_format else "st"
         self.prompt_templates = RM_TEMPLATES[prompts_for_model][st_or_sts]
@@ -184,6 +186,7 @@ class NTPReward:
                     tokenizer, 
                     _prompts,
                     _completions,
+                    max_input_length=self.max_input_length,
                     device=device,
                 )
                 if normalize_tactic_length:
