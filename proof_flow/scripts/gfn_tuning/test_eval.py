@@ -44,5 +44,5 @@ def main(config: DictConfig):
         
 
 if __name__ == "__main__":
-    cfg = get_config()
+    cfg = get_config(config_name="train_five")
     main(cfg)
