@@ -29,6 +29,7 @@ from proof_flow.src.gfn_tuning.replay_buffer import (
 )
 from proof_flow.src.gfn_tuning.lean_data_module import NTPDataModule
 from proof_flow.src.gfn_tuning.ntp import NeuralTheoremProvingTask
+from proof_flow.src.search.common import _HuggingFaceLM
 from proof_flow.src.utils import (
     disable_tokenizer_parallelism,
     repo_root,
@@ -41,137 +42,10 @@ from proof_flow.src.utils import (
 CONFIG_DIR = "../../../configs/"
 
 
-def get_model(config: DictConfig):
-    """
-    loads the model and tokenizer and do some setup work
-    - initialize bnb config
-    - set up padding (add pad token, set side)
-    - prepare for k-bit training
-    - add policy adapters
-    - load (but not set as active) reward adapter
-    - remove dropout (from original code, not sure if needed)
-    """
-    
-    # Use 4-bit quantization for lower memory use
-    if config.task.training.use_4bit:
-        # bnb_config = BitsAndBytesConfig(
-        #     load_in_4bit=True,
-        #     bnb_4bit_quant_type="nf4",
-        #     bnb_4bit_compute_dtype="float16",
-        #     bnb_4bit_use_double_quant=True,
-        # )
-        # config has all the same options as above
-        # EXCEPT bnb_4bit_compute_dtype is "bfloat16" instead of "float16"
-        bnb_config = hydra.utils.instantiate(config.task.model.bnb)
-    else:
-        bnb_config = None
-
-    # Get the model
-    tokenizer = AutoTokenizer.from_pretrained(
-        config.task.model.name, 
-        # from original code, not sure if needed
-        # add_bos_token=False,
-    )
-    
-    if config.task.model.seq2seq:
-        auto_model_cls = AutoModelForSeq2SeqLM
-        peft_model_cls = PeftModelForSeq2SeqLM
-    else:
-        auto_model_cls = AutoModelForCausalLM
-        peft_model_cls = PeftModelForCausalLM
-        
-    model = auto_model_cls.from_pretrained(
-        config.task.model.name, 
-        torch_dtype="auto", # defer to torch_dtype from model config.json
-        device_map="auto", 
-        quantization_config=bnb_config,
-    )
-
-    # padding is needed for batch processing (e.g. reward computation)
-    # llemma and deepseek models don't have padding tokens by default
-    pad_side = "right" if config.task.model.seq2seq else "left"
-    set_up_padding(model, tokenizer, padding_side=pad_side)
-
-    # Prepare model for k-bit training
-    if config.task.training.use_4bit:
-        model = prepare_model_for_kbit_training(
-            model,
-            use_gradient_checkpointing=False,  # Doesn't save memory when generating autoregressively compared to caching
-        )
-
-    # Wrap using Lora
-    if config.task.model.initialize_policy_adapter_from_pretrained is None:
-        # if no initialization is specified, create a new adapter from config
-        model = get_peft_model(
-            model, 
-            hydra.utils.instantiate(config.task.model.lora_config),
-            adapter_name=GFN_POLICY_ADAPTER_NAME,
-        )
-    else:
-        # otherwise, load the specified adapter
-        model = peft_model_cls.from_pretrained(
-            model=model,
-            model_id=config.task.model.initialize_policy_adapter_from_pretrained,
-            adapter_name=GFN_POLICY_ADAPTER_NAME,
-        )
-    
-    # Load in reward adapter
-    if config.task.reward.reward_model_hf_id is not None:
-        model.load_adapter(
-            config.task.reward.reward_model_hf_id,
-            adapter_name=config.task.reward.reward_model_adapter_name,
-        )
-
-    # Remove dropout
-    for mod in model.modules():
-        if isinstance(mod, torch.nn.Dropout):
-            mod.p = 0.0
-
-    return model, tokenizer
-
-
-def get_reward(config: DictConfig, model: AutoModelForCausalLM, tokenizer: AutoTokenizer):
-    reward = NTPReward(
-        model,
-        tokenizer,
-        # temperature is set dynamically
-        # temperature=config.task.reward.temperature, 
-        verifier_batch_size=config.task.reward.verifier_batch_size,
-        verifier_adapter_name=config.task.reward.reward_model_adapter_name,
-        seq2seq=config.task.model.seq2seq,
-    )
-    return reward
-
-
-def get_val_probes(cfg: DictConfig):
-    with open(repo_root() / cfg.task.search_eval.probe_file) as f:
-        probes = json.load(f)
-    # convert to list from {idx: thm} dict
-    probes = list(probes.values())
-    # limit number of probes
-    if cfg.task.search_eval.probe_count is not None:
-        probes = probes[:cfg.task.search_eval.probe_count]
-    return probes
-
-
-def get_ground_truth_trajectories(cfg: DictConfig) -> Optional[dict]:
-    if cfg.task.gtt.file_path is None:
-        return None
-    
-    gtt_file_path = repo_root() / cfg.task.gtt.file_path
-    if cfg.task.gtt.write_to_file:
-        with open(cfg.task.data.path or cfg.task.data.train_data_path) as f:
-            thm_dicts = json.load(f)
-        trajectories = {}
-        for thm_dict in thm_dicts.values():
-            tuid, gtt = extract_ground_truth_trajectory(thm_dict)
-            trajectories[tuid] = gtt
-        with open(gtt_file_path, "w") as f:
-            json.dump(trajectories, f, indent=2)
-    else:
-        with open(gtt_file_path) as f:
-            trajectories = json.load(f)
-    return trajectories
+@hydra.main(version_base=None, config_path=CONFIG_DIR, config_name="train")
+def train(config: DictConfig):
+    task, data, trainer = train_setup(config)
+    trainer.fit(model=task, datamodule=data)
 
 
 def train_setup(
@@ -198,17 +72,13 @@ def train_setup(
     reward = get_reward(config, model, tokenizer)
     reward_buffer = ReplayBuffer(
         buffer_size=config.task.reward.buffer_size,
-        termination_token_id=tokenizer.eos_token_id,
-        pad_token_id=tokenizer.pad_token_id,
         sim_tolerance=config.task.reward.buffer_sim_tolerance,
         tokenizer=tokenizer,
     )
-    tac_gen_prompt_template = PROMPT_DICT[config.task.prompts.tac_gen]
-    # - optionally load ground truth trajectories
-    ground_truth_trajectories = get_ground_truth_trajectories(config)
-    # - optionally load seed trajectories
+    # optionally add seed trajectories to replay buffer
     if config.task.reward.buffer_seed_trajectory_file is not None:
-        with open(repo_root() / config.task.reward.buffer_seed_trajectory_file) as f:
+        seed_file = repo_root() / config.task.reward.buffer_seed_trajectory_file
+        with open(seed_file) as f:
             seed_trajectories = json.load(f)
         # expect seed_trajectories to be dict[str, list[list]]
         # where the innermost list is really a BufferEntry tuple
@@ -219,8 +89,13 @@ def train_setup(
             ]
             reward_buffer.add_batch(thm_uid, trajectory_batch)
 
-    # set up task
-    search_params = hydra.utils.instantiate(config.task.search_eval.search_params)
+    # set up task (LightningModule)
+    tac_gen_prompt_template = PROMPT_DICT[config.task.prompts.tac_gen]
+    search_params = hydra.utils.instantiate(
+        config.task.search_eval.search_params
+    )
+    # - optionally load gold trajectories (inserted into batch forward)
+    ground_truth_trajectories = get_ground_truth_trajectories(config)
     task = NeuralTheoremProvingTask(
         model=model,
         tokenizer=tokenizer,
@@ -239,7 +114,7 @@ def train_setup(
         max_tactics=config.task.constraints.max_tactics,
         min_tactic_tokens=config.task.constraints.min_tactic_tokens,
         max_tactic_tokens=config.task.constraints.max_tactic_tokens,
-        model_inference_batch_size=config.task.model.inf_batch_size,
+        replay_batch_size=config.task.training.replay_batch_size,
         dojo_timeout=config.task.training.dojo_timeout,
         max_input_length=config.task.constraints.max_input_length,
         branch_only_at_root=config.task.training.branch_only_at_root,
@@ -285,13 +160,171 @@ def train_setup(
         task.cuda = MethodType(lambda s: s, task)
 
     return task, data, trainer
-    
-    
 
-@hydra.main(version_base=None, config_path=CONFIG_DIR, config_name="train")
-def train(config: DictConfig):
-    task, data, trainer = train_setup(config)
-    trainer.fit(model=task, datamodule=data)
+
+def get_model(config: DictConfig) -> tuple[_HuggingFaceLM, AutoTokenizer]:
+    """
+    loads the model and tokenizer and do some setup work
+    - initialize bnb config
+    - set up padding (add pad token, set side)
+    - prepare for k-bit training
+    - add policy adapters (if necessary)
+    - remove dropout (from original code, not sure if needed)
+    returns (model, tokenizer, reward_model, reward_tokenizer)
+    """
+    # use 4-bit quantization for lower memory use
+    if config.task.training.use_4bit:
+        # amortized paper uses bnb_4bit_compute_dtype="float16", not "bfloat16"
+        bnb_config = hydra.utils.instantiate(config.task.model.bnb)
+    else:
+        bnb_config = None
+
+    # get model and tokenizer
+    tokenizer = AutoTokenizer.from_pretrained(
+        config.task.model.hf_id, 
+        # from amortized paper code, not sure if needed
+        # add_bos_token=False,
+    )
+    if config.task.model.seq2seq:
+        auto_model_cls = AutoModelForSeq2SeqLM
+        peft_model_cls = PeftModelForSeq2SeqLM
+    else:
+        auto_model_cls = AutoModelForCausalLM
+        peft_model_cls = PeftModelForCausalLM
+    model = auto_model_cls.from_pretrained(
+        config.task.model.hf_id, 
+        torch_dtype="auto", # defer to torch_dtype from model config.json
+        device_map="auto", 
+        quantization_config=bnb_config,
+    )
+    # padding is needed for batch processing (e.g. reward computation)
+    # llemma and deepseek models don't have padding tokens by default
+    pad_side = "right" if config.task.model.seq2seq else "left"
+    set_up_padding(model, tokenizer, padding_side=pad_side)
+
+    # prepare model for k-bit training
+    if config.task.training.use_4bit:
+        model = prepare_model_for_kbit_training(
+            model,
+            use_gradient_checkpointing=False,  # Doesn't save memory when generating autoregressively compared to caching
+        )
+
+    # wrap with lora
+    if config.task.model.use_lora:
+        if config.task.model.initial_policy_adapter is None:
+            # initialize a new adapter
+            model = get_peft_model(
+                model, 
+                hydra.utils.instantiate(config.task.model.lora_config),
+                adapter_name=GFN_POLICY_ADAPTER_NAME,
+            )
+        else:
+            # load the specified adapter
+            model = peft_model_cls.from_pretrained(
+                model=model,
+                model_id=config.task.model.initial_policy_adapter,
+                adapter_name=GFN_POLICY_ADAPTER_NAME,
+            )
+
+    # Remove dropout
+    for mod in model.modules():
+        if isinstance(mod, torch.nn.Dropout):
+            mod.p = 0.0
+
+    return model, tokenizer
+
+
+def get_reward(
+    config: DictConfig,
+    model: _HuggingFaceLM,
+    tokenizer: AutoTokenizer
+) -> NTPReward:
+    rm_cfg = config.task.reward.model
+    rm_setup_options = {None, "base", "adapter", "independent"}
+    assert rm_cfg.setup in rm_setup_options, (
+        f"cfg.task.reward.model.setup must be one of {rm_setup_options}"
+    )
+    reward_model = None
+    reward_tokenizer = None
+    adapter_name = None
+    reward_uses_seq2seq = config.task.model.seq2seq
+    if rm_cfg.setup == "base":
+        reward_model = model
+        reward_tokenizer = tokenizer
+    elif rm_cfg.setup == "adapter":
+        # load in reward adapter
+        adapter_name = rm_cfg.adapter.name
+        model.load_adapter(
+            rm_cfg.adapter.hf_id,
+            adapter_name=adapter_name,
+        )
+        reward_model = model
+        reward_tokenizer = tokenizer
+    elif rm_cfg.setup == "independent":
+        auto_cls = _get_auto_cls(rm_cfg.seq2seq, rm_cfg.peft)
+        reward_model = auto_cls.from_pretrained(
+            rm_cfg.hf_id,
+            device_map="auto",
+            torch_dtype="auto",
+        )
+        reward_tokenizer = AutoTokenizer.from_pretrained(rm_cfg.hf_id)
+        reward_uses_seq2seq = rm_cfg.seq2seq
+    
+    # if we are fully fine-tuning the policy, 
+    # there must be an independent reward model
+    if (
+        not config.task.model.use_lora 
+        and rm_cfg.setup is not None
+    ):
+        assert rm_cfg.hf_id is not None
+        
+    reward = NTPReward(
+        setup=rm_cfg.setup,
+        model=reward_model,
+        tokenizer=reward_tokenizer,
+        batch_size=config.task.reward.verifier_batch_size,
+        adapter_name=config.task.reward.adapter_name,
+        seq2seq=reward_uses_seq2seq,
+    )
+    return reward
+
+
+def get_val_probes(cfg: DictConfig):
+    with open(repo_root() / cfg.task.search_eval.probe_file) as f:
+        probes = json.load(f)
+    # convert to list from {idx: thm} dict
+    probes = list(probes.values())
+    # limit number of probes
+    if cfg.task.search_eval.probe_count is not None:
+        probes = probes[:cfg.task.search_eval.probe_count]
+    return probes
+
+
+def get_ground_truth_trajectories(cfg: DictConfig) -> Optional[dict]:
+    if cfg.task.gtt.file_path is None:
+        return None
+    
+    gtt_file_path = repo_root() / cfg.task.gtt.file_path
+    if cfg.task.gtt.write_to_file:
+        with open(cfg.task.data.path or cfg.task.data.train_data_path) as f:
+            thm_dicts = json.load(f)
+        trajectories = {}
+        for thm_dict in thm_dicts.values():
+            tuid, gtt = extract_ground_truth_trajectory(thm_dict)
+            trajectories[tuid] = gtt
+        with open(gtt_file_path, "w") as f:
+            json.dump(trajectories, f, indent=2)
+    else:
+        with open(gtt_file_path) as f:
+            trajectories = json.load(f)
+    return trajectories
+
+
+def _get_auto_cls(seq2seq: bool, peft: bool):
+    if seq2seq:
+        return PeftModelForSeq2SeqLM if peft else AutoModelForSeq2SeqLM
+    else:
+        return PeftModelForCausalLM if peft else AutoModelForCausalLM
 
 
 if __name__ == "__main__":

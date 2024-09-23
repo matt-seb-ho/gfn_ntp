@@ -64,7 +64,7 @@ def main(config: DictConfig):
         min_tactic_tokens=config.task.constraints.min_tactic_tokens,
         max_tactic_tokens=config.task.constraints.max_tactic_tokens,
         use_replay_tree=config.task.training.use_replay_tree,
-        model_inference_batch_size=config.task.model.inf_batch_size,
+        replay_batch_size=config.task.training.replay_batch_size,
     )
 
     # Fix a bug that arises when using 4-bit quantized models.
@@ -83,7 +83,7 @@ def main(config: DictConfig):
         
         replay_tlogpf, replay_log_r = task.replay_trajectories(
             extracted_ts,
-            model_inf_batch_size=config.task.model.inf_batch_size,
+            batch_size=config.task.model.inf_batch_size,
         )
 
     # we expect the t_logpfs to be the same, and the log_r to be the same

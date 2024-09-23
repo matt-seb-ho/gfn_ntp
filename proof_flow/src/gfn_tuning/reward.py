@@ -1,6 +1,6 @@
 from collections import defaultdict
 from typing import Optional
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 
 import torch
 from peft import PeftModel
@@ -44,18 +44,39 @@ def build_reward_inputs(
 class NTPReward:
     def __init__(
         self, 
-        model: PeftModel,
-        tokenizer: AutoTokenizer,
+        setup: Optional[str] = None,
+        model: Optional[PeftModel] = None,
+        tokenizer: Optional[AutoTokenizer] = None,
         temperature: float = 1.0, 
-        verifier_batch_size: Optional[int] = None,
-        verifier_adapter_name: Optional[str] = None,
+        batch_size: Optional[int] = None,
+        adapter_name: Optional[str] = None,
         seq2seq: bool = False,
     ):
-        self.model = model
+        self.model = model 
         self.tokenizer = tokenizer
         self.temperature = temperature
-        self.verifier_batch_size = verifier_batch_size
-        self.verifier_adapter_name = verifier_adapter_name
+        self.batch_size = batch_size or DEFAULT_VERIFIER_BATCH_SIZE
+        self.adapter_name = adapter_name
+        
+        # select reward computation context and method
+        if setup is None:
+            self.compute_reward_ctx = nullcontext
+            self.compute_log_r = self.compute_binary_log_reward
+        else:
+            assert model is not None
+            assert tokenizer is not None
+            self.compute_log_r = self.compute_log_reward
+            if setup == "adapter":
+                self.compute_reward_ctx = self.adapter_ctx
+                assert adapter_name is not None
+            elif setup == "base_model":
+                self.compute_reward_ctx = self.base_model_ctx
+            elif setup == "independent":
+                self.compute_reward_ctx = nullcontext
+            else:
+                raise ValueError(f"Invalid setup: {setup}")
+            
+        # select conditional log probability by model architecture
         if seq2seq:
             self.conditional_log_p = seq2seq_conditional_log_prob
         else:
@@ -69,22 +90,16 @@ class NTPReward:
         batch_size: Optional[int] = None,
         device: Optional[str | torch.device] = None,
     ) -> torch.Tensor:
-        # prep batch_size
-        batch_size = (
-            batch_size 
-            or self.verifier_batch_size 
-            or DEFAULT_VERIFIER_BATCH_SIZE
-        )
-        with self._compute_reward_ctx():
-            log_reward = self.compute_log_reward(
-            # log_reward = self.compute_binary_log_reward(
-                states, 
-                tactics, 
-                self.model, 
-                self.tokenizer, 
-                batch_size=batch_size,
-                device=device,
-            )
+        with torch.no_grad():
+            with self._compute_reward_ctx():
+                log_reward = self.compute_log_r(
+                    states, 
+                    tactics, 
+                    self.model, 
+                    self.tokenizer, 
+                    batch_size=(batch_size or self.batch_size),
+                    device=device,
+                )
         return log_reward
     
     
@@ -203,7 +218,8 @@ class NTPReward:
         use_sts_format: bool = False,
         prompts_for_model: Optional[str] = "llemma",
         device: Optional[str | torch.device] = None,
-        length_penalty: bool = True,
+        normalize_tactic_length: bool = True,
+        normalize_trajectory_length: bool = True,
     ) -> torch.Tensor:
         """
         Computes reward for a batch of trajectores (states, tactics) using heuristics and model.
@@ -237,42 +253,37 @@ class NTPReward:
         return log_r
 
 
+    @contextmanager
+    def adapter_ctx(self):
+        # policy and reward are adapters over the same model
+        was_training = self.model.training
+        previously_active_adapter = self.model.active_adapters[0]
+        # before: set eval mode, swap to verifier adapter
+        self.model.set_adapter(self.adapter_name)
+        self.model.eval()
+        yield
+        # after: swap back to previous adapter, restore training mode
+        self.model.set_adapter(previously_active_adapter)
+        if was_training:
+            self.model.train()
+    
+
+    @contextmanager
+    def base_model_ctx(self):
+        # policy is an adapter over the base model
+        # reward is the base model
+        was_training = self.model.training
+        # before: set eval mode, disable adapters
+        self.model.eval()
+        with self.model.disable_adapter():
+            yield
+        # after: restore training mode
+        if was_training:
+            self.model.train()
+
+
     def _is_tactic_result_an_error(self, tactic_result: str) -> bool:
         for error_string in TACTIC_ERROR_STRINGS:
             if error_string in tactic_result:
                 return True
         return False
-
-
-    @contextmanager
-    def _compute_reward_ctx(self):
-        """
-        context manager for reward computation
-
-        responsible for ensuring that during reward computation:
-        - verifier adapter is active (or no adapter is active)
-        - model is in eval mode
-        - gradients are not computed
-        and of course, restoring the model to its previous state afterwards
-        """
-        was_training: bool = self.model.training
-        previously_active_adapter: str = self.model.active_adapters[0]
-
-        if self.verifier_adapter_name is None:
-            # verifier/RM does *not* have an adapter
-            # - disable current [policy] adapter
-            self.model.eval()
-            with self.model.disable_adapter(), torch.no_grad():
-                yield
-        else:
-            # verifier/RM has an adapter
-            # - swap to verifier adapter and swap back after
-            self.model.set_adapter(self.verifier_adapter_name)
-            self.model.eval()
-            with torch.no_grad():
-                yield
-            self.model.set_adapter(previously_active_adapter)
-        
-        # restore training mode if necessary
-        if was_training:
-            self.model.train()

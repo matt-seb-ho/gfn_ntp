@@ -9,11 +9,16 @@ data:
 
 model:
   # test with llemma, run later with dsp
-  # name: "EleutherAI/llemma_7b"
-  # name: "deepseek-ai/DeepSeek-Prover-V1"
-  name: "kaiyuy/leandojo-lean4-tacgen-byt5-small"
-  seq2seq: true 
+  # hf_id: "EleutherAI/llemma_7b"
+  # hf_id: "deepseek-ai/DeepSeek-Prover-V1"
+  hf_id: "kaiyuy/leandojo-lean4-tacgen-byt5-small"
   # seq2seq: false
+  seq2seq: true 
+  use_lora: false
+
+  # specify a huggingface model id to initialize the policy adapter from
+  # initial_policy_adapter: "msho/dspv1_policy_sft"
+  initial_policy_adapter: null
 
   bnb:
     _target_: transformers.BitsAndBytesConfig
@@ -27,11 +32,6 @@ model:
 
     # adjusted settings for OOM issues
     target_modules: "all-linear"
-    # target_modules:
-    #   - q
-    #   - k
-    #   - v
-    #   - o
     r: 32
     lora_alpha: 32
     lora_dropout: 0.05
@@ -56,14 +56,6 @@ model:
     # bias: "none"
     # fan_in_fan_out: true
   
-  # specify a huggingface model id to initialize the policy adapter from
-  # e.g. "msho/llemma_sft"
-  # initialize_policy_adapter_from_pretrained: "msho/dspv1_policy_sft"
-  initialize_policy_adapter_from_pretrained: null
-
-  # currently just used for replay
-  inf_batch_size: 8
-
 training:
   # subtb_lambda: 1.0
   # from gfn+llm paper:
@@ -85,6 +77,7 @@ training:
   save_ckpt_on_val: true
   gradient_clip_val: 0.5 # default is 0 (no clipping)
   num_sanity_val_steps: 0
+  replay_batch_size: 8
   
   # validation loop frequency control
   # val_check_interval: float in [0, 1]: frequency per train epoch
@@ -108,13 +101,24 @@ reward:
   # buffer_seed_trajectory_file: "data/t0_seed_gtt_only.json"
   buffer_seed_trajectory_file: data/t0_seed_t_updated_fmt.json
   verifier_batch_size: 16 # TODO: figure out if we can go higher
-  # TODO: get dsp adapters
-  # reward_model_hf_id: "msho/llemma_sft"
-  # reward_model_adapter_name: "reward"
-  # reward_model_hf_id: "msho/dspv1_sft"
-  # reward_model_adapter_name: "reward"
-  reward_model_hf_id: null
-  reward_model_adapter_name: null
+  
+  # reward model settings
+  model:
+    # setup options: null, base, adapter, independent
+    setup: base
+    # setup: adapter # previous setup for dspv1
+    adapter:
+      # hf_id: "msho/llemma_sft"
+      # hf_id: "msho/dspv1_sft"
+      # name: "reward"
+      hf_id: null
+      name: null
+    # following settings are for setup="independent", 
+    # where RM does not share weights with the policy
+    hf_id: null
+    peft: false
+    seq2seq: true
+    share_tokenizer: true
 
 callbacks:
   - _target_: pytorch_lightning.callbacks.ModelCheckpoint

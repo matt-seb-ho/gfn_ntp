@@ -31,14 +31,10 @@ class ReplayBuffer:
     def __init__(
         self, 
         buffer_size: int, 
-        termination_token_id: int, 
-        pad_token_id: int,
         tokenizer: AutoTokenizer,
         sim_tolerance: float = 0.1,
     ):
         self.buffer_size = buffer_size
-        self.termination_token_id = termination_token_id
-        self.pad_token_id = pad_token_id
         self.tokenizer = tokenizer
         self.sim_tolerance = sim_tolerance
         self.reset()

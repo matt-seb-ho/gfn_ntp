@@ -86,7 +86,7 @@ class NeuralTheoremProvingTask(LightningModule):
         max_tactics: int = 3,
         min_tactic_tokens: int = 2,
         max_tactic_tokens: int = 30,
-        model_inference_batch_size: int = 4,
+        replay_batch_size: int = 4,
         dojo_timeout: int = 600, # default comes from LeanDojo
         max_input_length: int = 640,
         branch_only_at_root: bool = True,
@@ -516,10 +516,9 @@ class NeuralTheoremProvingTask(LightningModule):
             # self._debug_log(f"replaying trajectories for {theorem.full_name}")
             t_logpf, log_r, = self.replay_trajectories(
                 replay_ts,
-                model_inf_batch_size=self.hparams.model_inference_batch_size,
+                batch_size=self.hparams.replay_batch_size,
             )
             initial_tac_state = replay_ts[0].states[0]
-            log_r *= 1 / self.reward.temperature  # redo the effect of reward tempering
         else:
             # using the forward policy
             if random.random() < self.hparams.pf_temp_prob:  
@@ -588,7 +587,7 @@ class NeuralTheoremProvingTask(LightningModule):
             if self.ground_truth_trajectories:
                 gt_tlpf, gt_lr = self.replay_trajectories(
                     [self.ground_truth_trajectories[theorem_id]],
-                    model_inf_batch_size=1,
+                    batch_size=1,
                 )
                 t_logpf = self._append_tensor_and_pad(t_logpf, gt_tlpf)
                 log_r = torch.cat([log_r, gt_lr])
@@ -598,10 +597,17 @@ class NeuralTheoremProvingTask(LightningModule):
 
             self._debug_log(f"tlogpf before loss: {t_logpf}")
 
+        # apply reward temperature
+        log_r = log_r / self.reward.temperature
+
         # get gfn loss
         # - sub tb requires estimating flow (possible impl: scalar head over RM)
         # - for the proof of concept, we'll just use vanilla TB
-        loss = self.tb_loss(log_pf=t_logpf, log_r=log_r, log_z=log_z)
+        loss = self.tb_loss(
+            log_pf=t_logpf, 
+            log_r=log_r, 
+            log_z=log_z
+        )
         # loss = self.log_z_variance_loss(t_logpf, log_r)
         self.log(
             "train/loss",
@@ -836,7 +842,7 @@ class NeuralTheoremProvingTask(LightningModule):
     def replay_trajectories(
         self,
         trajectories: list[BufferEntry],
-        model_inf_batch_size: int,
+        batch_size: int,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Replay a batch of trajectories, computing new log_pf for tactics.
@@ -876,7 +882,7 @@ class NeuralTheoremProvingTask(LightningModule):
         # compute tactic log_pfs in batches
         for _prompts, _completions, b_idxs, s_idxs in batch_iterator_zip(
             (prompts, completions, batch_idxs, step_idxs), 
-            batch_size=model_inf_batch_size
+            batch_size=batch_size
         ):
             log_pfs, _ = self.conditional_log_p(
                 self.model,
