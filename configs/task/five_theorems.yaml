@@ -5,7 +5,7 @@ data:
   train_size: 5
   train_data_path: "data/five_theorem.json"
   val_data_path: "data/five_theorem.json"
-  repeat_train_theorems: 2
+  repeat_train_theorems: 1
 
 model:
   # test with llemma, run later with dsp
@@ -69,10 +69,10 @@ training:
   pf_temp_prob: 0.666
   # use_buffer_prob: 1 # guarantees buffer usage (offline training)
   use_buffer_prob: 0 # guarantees online training
-  n_samples: 2 # next_sentence task had 20
+  n_samples: 16 # next_sentence task had 20
   branch_only_at_root: true
   lr: 0.0001
-  accumulate_grad_batches: 10 # TESTING!
+  accumulate_grad_batches: 16 # TESTING!
   epochs: 200 # next_sentence task had 300
   use_4bit: true 
   dojo_timeout: 60 # in seconds (LeanDojo's default is 600)
@@ -80,14 +80,14 @@ training:
   save_ckpt_on_val: true
   gradient_clip_val: 0.5 # default is 0 (no clipping)
   num_sanity_val_steps: 0
-  replay_batch_size: 8
+  replay_batch_size: 16
   truncate_state: true
   
   # validation loop frequency control
   # val_check_interval: float in [0, 1]: frequency per train epoch
   val_check_interval: null
   # check_val_every_n_epoch: int (default=1)
-  check_val_every_n_epoch: 10
+  check_val_every_n_epoch: 20
 
   # whether to learn the log_z prediction head or unconditional parameter
   conditional_log_z: true
