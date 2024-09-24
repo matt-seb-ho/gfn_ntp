@@ -5,7 +5,7 @@ data:
   train_size: 5
   train_data_path: "data/five_theorem.json"
   val_data_path: "data/five_theorem.json"
-  repeat_train_theorems: 1
+  repeat_train_theorems: 3
 
 model:
   # test with llemma, run later with dsp
@@ -69,18 +69,18 @@ training:
   pf_temp_prob: 0.666
   # use_buffer_prob: 1 # guarantees buffer usage (offline training)
   use_buffer_prob: 0 # guarantees online training
-  n_samples: 8 # next_sentence task had 20
+  n_samples: 6 # next_sentence task had 20
   branch_only_at_root: true
   lr: 0.0001
-  accumulate_grad_batches: 5 # TESTING!
-  epochs: 300 # next_sentence task had 300
+  accumulate_grad_batches: 15 # TESTING!
+  epochs: 200 # next_sentence task had 300
   use_4bit: false
   dojo_timeout: 60 # in seconds (LeanDojo's default is 600)
   ckpt_dest: "checkpoints"
   save_ckpt_on_val: true
   gradient_clip_val: 0.5 # default is 0 (no clipping)
   num_sanity_val_steps: 0
-  replay_batch_size: 8
+  replay_batch_size: 6
   truncate_state: true
   
   # validation loop frequency control
@@ -103,7 +103,7 @@ reward:
   # buffer_seed_trajectory_file: "data/single_theorem_seed_trajectories.json"
   # buffer_seed_trajectory_file: "data/t0_seed_gtt_only.json"
   buffer_seed_trajectory_file: data/t0_seed_t_updated_fmt.json
-  verifier_batch_size: 8 # TODO: figure out if we can go higher
+  verifier_batch_size: 6 # TODO: figure out if we can go higher
   use_sts_format: false
   error_length_penalty_a: 8.0
   
