@@ -208,12 +208,14 @@ class NeuralTheoremProvingTask(LightningModule):
         trajectory_logpf = []
         tactic_states = [[initial_state] for _ in range(n_samples)]
         
-        for _ in range(max_depth):
+        for step_idx in range(max_depth):
             # generate tactics for active sequences
             r = self.parallel_forward_step(
+                step_idx,
                 n_samples,
                 active_trajectories,
                 tactic_states,
+                tactics,
                 pf_temperature,
                 dojo,
             )
@@ -293,7 +295,7 @@ class NeuralTheoremProvingTask(LightningModule):
         for i in range(n_samples):
             if not active_trajectories[i]:
                 continue
-            input_text = self.format_prompt(tactic_states, tactics, i)
+            input_text = self.format_prompt(tactic_states, tactics, idx)
             token_length = len(self.tokenizer.encode(input_text))
             self.states_tokenized += 1
             if token_length > self.hparams.max_input_length:
