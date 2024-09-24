@@ -279,9 +279,11 @@ class NeuralTheoremProvingTask(LightningModule):
         
     def parallel_forward_step(
         self,
+        idx: int,
         n_samples: int,
         active_trajectories: list[bool],
         tactic_states: list[list[TacticResult]],
+        tactics: list[list[str]],
         pf_temperature: float,
         lean_env: Dojo,
     ) -> Optional[ParallelForwardStepResult]:
@@ -291,8 +293,7 @@ class NeuralTheoremProvingTask(LightningModule):
         for i in range(n_samples):
             if not active_trajectories[i]:
                 continue
-            state = tactic_states[i][-1]
-            input_text = self.format_prompt(state.pp)
+            input_text = self.format_prompt(tactic_states, tactics, i)
             token_length = len(self.tokenizer.encode(input_text))
             self.states_tokenized += 1
             if token_length > self.hparams.max_input_length:
@@ -899,11 +900,14 @@ class NeuralTheoremProvingTask(LightningModule):
         batch_idxs = []
         step_idxs = []
         for b_idx, trajectory in enumerate(trajectories):
-            for s_idx, (state, tactic) in enumerate(
-                zip(trajectory.states, tactics[b_idx])
-            ):
-                prompts.append(self.format_prompt(state))
-                completions.append(tactic)
+            for s_idx, _tactics in enumerate(tactics):
+                prompt = self.format_prompt(
+                    trajectory.states,
+                    _tactics,
+                    s_idx,
+                )
+                prompts.append(prompt)
+                completions.append(_tactics[s_idx])
                 batch_idxs.append(b_idx)
                 step_idxs.append(s_idx)
         
@@ -1026,7 +1030,12 @@ class NeuralTheoremProvingTask(LightningModule):
         return None
 
 
-    def format_prompt(self, state: str):
+    def format_prompt(
+        self,
+        tactic_states: list[TacticState], 
+        tactics: list[str],
+        idx: int,
+    ) -> str:
         # TODO: verify Dojo's pp output is the "goals:..."
         # prepending "-- " to every line to match the evaluation setup in Llemma-7B paper
         # - see figure 4
@@ -1038,7 +1047,16 @@ class NeuralTheoremProvingTask(LightningModule):
         # return "\n".join(commented_lines)
         # return INSTRUCTION_PROMPT_TEMPLATE.format(state=state)
         # return DEEPSEEK_RM_ST_PROMPT_TEMPLATE_V2.format(state=state)
-        return self.hparams.tac_gen_prompt_template.format(state=state)
+        # return self.hparams.tac_gen_prompt_template.format(state=state)
+        prompt_components = [
+            "initial state:",
+            tactic_states[0].pp,
+            "tactics:",
+            "\n".join(tactics[:idx]),
+            "current state:",
+            tactic_states[idx].pp,
+        ]
+        return "\n".join(prompt_components)
     
 
     def transfer_batch_to_device(self, batch, device, dataloader_idx):
