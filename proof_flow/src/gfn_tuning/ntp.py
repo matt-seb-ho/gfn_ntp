@@ -626,8 +626,6 @@ class NeuralTheoremProvingTask(LightningModule):
                 t_logpf = self._append_tensor_and_pad(t_logpf, gt_tlpf)
                 log_r = torch.cat([log_r, gt_lr])
 
-            self._debug_log(f"tlogpf before loss: {t_logpf}")
-
         # apply reward temperature
         log_r = log_r / self.reward.temperature
 
@@ -898,7 +896,6 @@ class NeuralTheoremProvingTask(LightningModule):
         # preemptively summing the tactic log_pfs to get the trajectory's log_pf
         # but for now, we'll keep the trajectory log_pf separate
         max_depth = max(len(t.states) for t in trajectories) - 1
-        tactics = [t.proof.split(TACTIC_DELIMITER) for t in trajectories]
         step_logpfs = torch.zeros(
             # (len(trajectories), self.hparams.max_tactics), 
             (len(trajectories), max_depth),
@@ -913,15 +910,16 @@ class NeuralTheoremProvingTask(LightningModule):
         batch_idxs = []
         step_idxs = []
         for b_idx, trajectory in enumerate(trajectories):
-            for s_idx, _tactics in enumerate(tactics):
+            tactics = trajectory.proof.split(TACTIC_DELIMITER)
+            for s_idx in range(len(tactics)):
                 prompt = self.format_prompt(
                     trajectory.states,
-                    _tactics,
+                    tactics,
                     s_idx,
                     str_tactic_states=True,
                 )
                 prompts.append(prompt)
-                completions.append(_tactics[s_idx])
+                completions.append(tactics[s_idx])
                 batch_idxs.append(b_idx)
                 step_idxs.append(s_idx)
         

@@ -13,8 +13,8 @@ from proof_flow.scripts.gfn_tuning.train import train_setup
 
 # relative to this file (proof_flow/scripts/gfn_tuning/train.py)
 CONFIG_DIR = "../../../configs/"
-N_SAMPLES_OVERRIDE = 13
-INF_BATCH_SIZE_OVERRIDE = 13
+N_SAMPLES_OVERRIDE = 6
+INF_BATCH_SIZE_OVERRIDE = 6
 
 
 def multiply_state(state, n):
@@ -34,36 +34,29 @@ def main(config: DictConfig, n_samples_override, inf_batch_size_override):
 
     # first construct the longest possible trajectory
     # with open(repo_root() / "data/longest_input_data.json") as f:
-    with open(repo_root() / "data/max_batch_reprover.json") as f:
+    with open(repo_root() / "data/max_batch_reprover_history.json") as f:
         input_data = json.load(f)
     # text = input_data["ll_prompt"] + input_data["tactic"]
 
-    max_state = input_data["state"]
+    max_state = input_data["state_extended"]
     max_tactic = input_data["tactic"]
-    state101 = input_data["101_tokens"]
     
-    
-    double_state = f"{max_state}{max_state}"
-    dummy_state = double_state
-    # dummy_state = multiply_state(state101, 4)
     proof = TACTIC_DELIMITER.join([max_tactic] * 3)
-
-    one_step_tok_length = len(tokenizer.encode(dummy_state + max_tactic))
-    print(f"one_step_tok_length: {one_step_tok_length}")
-
     trajectory = BufferEntry(
         log_r=0,
         proof=proof,
-        states=[dummy_state] * 4,
+        states=[max_state] * 4,
     )
     task.reward_buffer.add_batch("longest_input", [trajectory])
     task.hparams.use_buffer_prob = 1
     task.max_batch_testing = n_samples_override
     task.hparams.replay_batch_size = inf_batch_size_override
+    task.ground_truth_trajectories["longest_input"] = trajectory
     
     def thm0():
         pass
     thm0.uid = "longest_input"
+    print(len(task.reward_buffer._buffer[thm0.uid]))
 
     # run a training step with forced replay
     # - do a backward step with optimizers to ensure we don't oom there either
