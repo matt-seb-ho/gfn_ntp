@@ -7,6 +7,7 @@ import torch
 import asyncio
 import os
 import pickle
+import math
 from loguru import logger
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
@@ -42,6 +43,8 @@ from lean_dojo import ( # isort: skip
     DojoCrashError,
     DojoTacticTimeoutError,
 )
+
+
 
 
 @dataclass(frozen=True)
@@ -204,8 +207,19 @@ class BestFirstSearchProver:
         if isinstance(search_node.state, TacticState):
             ts = search_node.state.pp
         else:
+            print(
+                "non-TacticState node:", 
+                type(search_node.state), 
+                search_node.state
+            )
             ts = search_node.state.unsolved_tactic_state
-        suggestions = await self._generate_tactics(ts)
+        
+        # construct a new prompt from
+        # (1) initial state (2) all tactics applied so far (3) current state
+        # NOTE: this depends on the tacgen having prompt_template = "{state}"
+        prompt = _build_tac_gen_prompt(search_node)
+        
+        suggestions = await self._generate_tactics(prompt)
 
         # Try all tactics in order of descending logprob, and collect the results. Any
         # new nodes are added to `self.nodes`, and edges are added to the result node.
@@ -549,3 +563,36 @@ class DistributedProver:
             sys.exit(1)
 
         return results
+
+
+def _build_tac_gen_prompt(node: InternalNode) -> str:
+    # need to gather (1) root state (2) all tactics applied so far (3) current state
+    tactics_reversed = []
+    current_state = node.state.pp
+
+    # while not reached root
+    while node.depth != 0:
+        # get minimum depth parent
+        min_depth = math.inf
+        tactic = None
+        parent = None
+        for edge in node.in_edges:
+            if edge.src.depth < min_depth:
+                min_depth = edge.src.depth
+                parent = edge.src
+                tactic = edge.tactic
+        tactics_reversed.append(tactic)
+        node = parent
+    
+    # reverse the tactics
+    tactics = '\n'.join(tactics_reversed[::-1])
+    
+    # initial_state
+    initial_state = node.state.pp
+
+    prompt = (
+        f"initial state:\n{initial_state}\n"
+        f"tactics:\n{tactics}\n"
+        f"current state:\n{current_state}"
+    )
+    return prompt
