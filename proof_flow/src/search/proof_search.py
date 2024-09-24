@@ -26,6 +26,7 @@ from proof_flow.src.search.tactic_generator import (
     VllmGenerator,
 )
 from proof_flow.src.utils import prepare_environment_for_lean_dojo
+from proof_flow.src.prompts import REPROVER_TACGEN_WITH_HISTORY
 
 
 prepare_environment_for_lean_dojo()
@@ -590,9 +591,9 @@ def _build_tac_gen_prompt(node: InternalNode) -> str:
     # initial_state
     initial_state = node.state.pp
 
-    prompt = (
-        f"initial state:\n{initial_state}\n"
-        f"tactics:\n{tactics}\n"
-        f"current state:\n{current_state}"
+    prompt = REPROVER_TACGEN_WITH_HISTORY.format(
+        initial_state=initial_state,
+        tactics=tactics,
+        current_state=current_state,
     )
     return prompt

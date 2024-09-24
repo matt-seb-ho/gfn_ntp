@@ -87,7 +87,7 @@ training:
   # val_check_interval: float in [0, 1]: frequency per train epoch
   val_check_interval: null
   # check_val_every_n_epoch: int (default=1)
-  check_val_every_n_epoch: 20
+  check_val_every_n_epoch: 2
 
   # whether to learn the log_z prediction head or unconditional parameter
   conditional_log_z: true

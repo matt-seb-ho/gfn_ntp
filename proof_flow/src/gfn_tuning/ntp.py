@@ -30,6 +30,7 @@ from proof_flow.src.gfn_tuning.replay_buffer import ReplayBuffer, BufferEntry
 from proof_flow.src.gfn_tuning.reward import NTPReward
 from proof_flow.src.prompts import (
     DEEPSEEK_RM_ST_PROMPT_TEMPLATE_V2,
+    REPROVER_TACGEN_WITH_HISTORY,
 )
 from proof_flow.src.search.common import ProofSearchParams, _HuggingFaceLM
 from proof_flow.src.search.proof_search import Status, DistributedProver
@@ -295,7 +296,7 @@ class NeuralTheoremProvingTask(LightningModule):
         for i in range(n_samples):
             if not active_trajectories[i]:
                 continue
-            input_text = self.format_prompt(tactic_states, tactics, idx)
+            input_text = self.format_prompt(tactic_states[i], tactics[i], idx)
             token_length = len(self.tokenizer.encode(input_text))
             self.states_tokenized += 1
             if token_length > self.hparams.max_input_length:
@@ -907,6 +908,7 @@ class NeuralTheoremProvingTask(LightningModule):
                     trajectory.states,
                     _tactics,
                     s_idx,
+                    str_tactic_states=True,
                 )
                 prompts.append(prompt)
                 completions.append(_tactics[s_idx])
@@ -1034,31 +1036,24 @@ class NeuralTheoremProvingTask(LightningModule):
 
     def format_prompt(
         self,
-        tactic_states: list[TacticState], 
+        tactic_states: list[TacticState] | list[str], 
         tactics: list[str],
         idx: int,
+        str_tactic_states: bool = False,
     ) -> str:
-        # TODO: verify Dojo's pp output is the "goals:..."
-        # prepending "-- " to every line to match the evaluation setup in Llemma-7B paper
-        # - see figure 4
-        # appending a newline to the end of the prompt if it doesn't exist
-        # lines = state.split("\n")
-        # lines[-1] = lines[-1].rstrip() + "\n"
-        # # TODO: check if we want line.lstrip() 
-        # commented_lines = ["-- INPUT:"] + ["-- " + line for line in lines]
-        # return "\n".join(commented_lines)
-        # return INSTRUCTION_PROMPT_TEMPLATE.format(state=state)
-        # return DEEPSEEK_RM_ST_PROMPT_TEMPLATE_V2.format(state=state)
-        # return self.hparams.tac_gen_prompt_template.format(state=state)
-        prompt_components = [
-            "initial state:",
-            tactic_states[0].pp,
-            "tactics:",
-            "\n".join(tactics[:idx]),
-            "current state:",
-            tactic_states[idx].pp,
-        ]
-        return "\n".join(prompt_components)
+        tactics = "\n".join(tactics)
+        if str_tactic_states:
+            initial_state = tactic_states[0]
+            current_state = tactic_states[idx]
+        else:
+            initial_state = tactic_states[0].pp
+            current_state = tactic_states[idx].pp
+        prompt = REPROVER_TACGEN_WITH_HISTORY.format(
+            initial_state=initial_state,
+            tactics=tactics,
+            current_state=current_state,
+        )
+        return prompt
     
 
     def transfer_batch_to_device(self, batch, device, dataloader_idx):

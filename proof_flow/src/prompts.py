@@ -183,6 +183,13 @@ REPROVER_RM_STS_PROMPT_TEMPLATE = """-- state
 -- question
 Does the tactic make progress towards completing the proof (y/n)?"""
 
+REPROVER_TACGEN_WITH_HISTORY = """initial state:
+{initial_state}
+tactics:
+{tactics}
+current state:
+{current_state}"""
+
 RM_TEMPLATES = {
     "llemma": {
         "st": {
