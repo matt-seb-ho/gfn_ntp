@@ -73,12 +73,12 @@ class NTPReward:
         self.prompt_templates = RM_TEMPLATES[prompts_for_model][st_or_sts]
         
         # select reward computation context and method
+        assert tokenizer is not None
         if setup is None:
             self.compute_reward_ctx = nullcontext
             self.compute_log_r = self.compute_binary_log_reward
         else:
             assert model is not None
-            assert tokenizer is not None
             self.compute_log_r = self.compute_log_reward
             if setup == "adapter":
                 self.compute_reward_ctx = self.adapter_ctx

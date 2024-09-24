@@ -249,12 +249,11 @@ def get_reward(
         f"cfg.task.reward.model.setup must be one of {rm_setup_options}"
     )
     reward_model = None
-    reward_tokenizer = None
+    reward_tokenizer = tokenizer
     adapter_name = None
     reward_uses_seq2seq = config.task.model.seq2seq
     if rm_cfg.setup == "base":
         reward_model = model
-        reward_tokenizer = tokenizer
     elif rm_cfg.setup == "adapter":
         # load in reward adapter
         adapter_name = rm_cfg.adapter.name
@@ -263,7 +262,6 @@ def get_reward(
             adapter_name=adapter_name,
         )
         reward_model = model
-        reward_tokenizer = tokenizer
     elif rm_cfg.setup == "independent":
         auto_cls = _get_auto_cls(rm_cfg.seq2seq, rm_cfg.peft)
         reward_model = auto_cls.from_pretrained(
