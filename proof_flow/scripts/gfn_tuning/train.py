@@ -88,14 +88,18 @@ def train_setup(
                 BufferEntry(*t) for t in trajectories
             ]
             reward_buffer.add_batch(thm_uid, trajectory_batch)
+    # optionally load gold trajectories (inserted into batch forward)
+    ground_truth_trajectories = get_ground_truth_trajectories(config)
+    if config.task.gtt.seed_replay_buffer:
+        if ground_truth_trajectories is not None:
+            for tuid, gtt in ground_truth_trajectories.items():
+                reward_buffer.add_batch(tuid, [gtt])
 
     # set up task (LightningModule)
     tac_gen_prompt_template = PROMPT_DICT[config.task.prompts.tac_gen]
     search_params = hydra.utils.instantiate(
         config.task.search_eval.search_params
     )
-    # - optionally load gold trajectories (inserted into batch forward)
-    ground_truth_trajectories = get_ground_truth_trajectories(config)
     task = NeuralTheoremProvingTask(
         model=model,
         tokenizer=tokenizer,
