@@ -14,7 +14,7 @@ model:
   hf_id: "kaiyuy/leandojo-lean4-tacgen-byt5-small"
   # seq2seq: false
   seq2seq: true 
-  use_lora: true
+  use_lora: false
 
   # specify a huggingface model id to initialize the policy adapter from
   # initial_policy_adapter: "msho/dspv1_policy_sft"
@@ -73,8 +73,8 @@ training:
   branch_only_at_root: true
   lr: 0.0001
   accumulate_grad_batches: 5 # TESTING!
-  epochs: 1000 # next_sentence task had 300
-  use_4bit: true 
+  epochs: 300 # next_sentence task had 300
+  use_4bit: false
   dojo_timeout: 60 # in seconds (LeanDojo's default is 600)
   ckpt_dest: "checkpoints"
   save_ckpt_on_val: true

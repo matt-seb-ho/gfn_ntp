@@ -292,6 +292,8 @@ def get_reward(
         prompts_for_model=config.task.prompts.reward,
         use_sts_format=config.task.reward.use_sts_format,
         max_input_length=config.task.constraints.max_input_length,
+        max_tactic_length=config.task.constraints.max_tactic_tokens,
+        error_length_penalty_alpha=config.task.reward.error_length_penalty_a,
     )
     return reward
 

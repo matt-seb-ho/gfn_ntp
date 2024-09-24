@@ -2,6 +2,7 @@ from collections import defaultdict
 from typing import Optional
 from contextlib import contextmanager, nullcontext
 import json
+import math
 import torch
 from peft import PeftModel
 from transformers import AutoTokenizer
@@ -20,6 +21,7 @@ from proof_flow.src.utils import (
 from proof_flow.src.prompts import RM_TEMPLATES
 
 
+BASE_ERROR_REWARD = -15
 MIN_REWARD = -30
 
 
@@ -55,6 +57,8 @@ class NTPReward:
         prompts_for_model: Optional[str] = "reprover",
         use_sts_format: bool = False,
         max_input_length: int = 400,
+        max_tactic_length: int = 87,
+        error_length_penalty_alpha: float = 8,
     ):
         self.model = model 
         self.tokenizer = tokenizer
@@ -62,6 +66,8 @@ class NTPReward:
         self.batch_size = batch_size or DEFAULT_VERIFIER_BATCH_SIZE
         self.adapter_name = adapter_name
         self.max_input_length = max_input_length
+        self.max_tactic_length = max_tactic_length
+        self.error_length_penalty_alpha = error_length_penalty_alpha
 
         st_or_sts = "sts" if use_sts_format else "st"
         self.prompt_templates = RM_TEMPLATES[prompts_for_model][st_or_sts]
@@ -160,7 +166,10 @@ class NTPReward:
                 # log_r[i] = 0
                 continue
             elif self._is_tactic_result_an_error(_states[-1]):
-                log_r[i] = MIN_REWARD
+                log_r[i] = (
+                    BASE_ERROR_REWARD 
+                    + self._error_length_penalty(_tactics)
+                )
             else:
                 # queue prompt-completion logp jobs
                 is_partial[i] = True
@@ -262,7 +271,10 @@ class NTPReward:
                 # log_r[i] = 0
                 continue
             else:
-                log_r[i] = MIN_REWARD
+                log_r[i] = (
+                    BASE_ERROR_REWARD 
+                    + self._error_length_penalty(_tactics)
+                )
         # clip reward
         log_r = torch.clamp(log_r, min=MIN_REWARD)
         return log_r
@@ -317,4 +329,18 @@ class NTPReward:
             self.prompt_templates["completion"].format(
                 state=state, tactic=tactic, next_state=next_state
             ),
+        )
+    
+    def _error_length_penalty(self, trajectory_tactics):
+        total_length = 0
+        for tactic in trajectory_tactics:
+            total_length += len(self.tokenizer.encode(tactic))
+        avg_len = total_length / len(trajectory_tactics)
+
+        return (
+            self.error_length_penalty_alpha
+            * math.log(
+                (self.max_tactic_length - avg_len)
+                / self.max_tactic_length
+            )
         )
