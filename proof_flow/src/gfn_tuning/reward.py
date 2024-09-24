@@ -66,7 +66,8 @@ class NTPReward:
         self.batch_size = batch_size or DEFAULT_VERIFIER_BATCH_SIZE
         self.adapter_name = adapter_name
         self.max_input_length = max_input_length
-        self.max_tactic_length = max_tactic_length
+        # why add 4? being extra safe to avoid math.log(<=0)
+        self.error_length_penalty_c = max_tactic_length + 4
         self.error_length_penalty_alpha = error_length_penalty_alpha
 
         st_or_sts = "sts" if use_sts_format else "st"
@@ -340,7 +341,7 @@ class NTPReward:
         return (
             self.error_length_penalty_alpha
             * math.log(
-                (self.max_tactic_length - avg_len)
-                / self.max_tactic_length
+                (self.error_length_penalty_c - avg_len)
+                / self.error_length_penalty_c
             )
         )
