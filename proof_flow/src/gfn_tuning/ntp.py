@@ -159,7 +159,10 @@ class NeuralTheoremProvingTask(LightningModule):
 
         # for adding ground truth trajectories to online training
         self.ground_truth_trajectories = ground_truth_trajectories
-
+        self.gt_tacs = {
+            tuid: t.proof.split(TACTIC_DELIMITER)
+            for tuid, t in ground_truth_trajectories.items()
+        }
         if self.hparams.seq2seq:
             self.generate_step = generate_step_seq2seq
             self.conditional_log_p = seq2seq_conditional_log_prob
@@ -222,15 +225,6 @@ class NeuralTheoremProvingTask(LightningModule):
             )
             if r is None:
                 break
-                
-            # log generated tactics
-            tac_info = json.dumps({
-                "thm": theorem.full_name,
-                "epoch": self.current_epoch,
-                "step": self.global_step,
-                "tactics": r.tactics
-            })
-            logger.info(f"train_fwd_gen_tacs: {tac_info}")
 
             # update states and tactics
             for i, next_state in enumerate(r.next_states):
@@ -247,6 +241,16 @@ class NeuralTheoremProvingTask(LightningModule):
             # early exit if all trajectories are inactive
             if not any(active_trajectories):
                 break
+                
+        # log generated tactics
+        tac_info = json.dumps({
+            "thm": theorem.full_name,
+            "epoch": self.current_epoch,
+            "step": self.global_step,
+            "tactics": tactics,
+            "gold": self.gt_tacs[theorem.uid],
+        })
+        logger.info(f"train_fwd_gen_tacs: {tac_info}")
         
         # combine trajectory logpf tensors into a single tensor
         # currently have a list of tensors of shape (n_samples,)
@@ -347,14 +351,19 @@ class NeuralTheoremProvingTask(LightningModule):
             skip_special_tokens=True,
             clean_up_tokenization_spaces=True,
         )
-        self._debug_log(f"// forward gen tacs: {generated_tactics}")
         next_states = []
         for i, tactic in enumerate(generated_tactics):
             try:
                 prev_state = tactic_states[i2t_idx_map[i]][-1]
                 next_state = lean_env.run_tac(prev_state, tactic.rstrip())
             except (DojoTacticTimeoutError, DojoCrashError) as e:
-                self._debug_log(f"run_tac error ({e}) on tactic: {tactic}")
+                self._debug_log(
+                    f"run_tac error ({e}) on tactic: {tactic}, "
+                    f"restarting dojo for {lean_env.entry.full_name}"
+                )
+                _dojo = Dojo(lean_env.entry, timeout=self.hparams.dojo_timeout)
+                lean_env, initial_state = _dojo.__enter__()
+                self.dojo_cache[lean_env.entry.uid] = (lean_env, initial_state)
                 next_state = None # this gets converted to timeout
             next_states.append(next_state)
         
@@ -625,6 +634,7 @@ class NeuralTheoremProvingTask(LightningModule):
         # get gfn loss
         # - sub tb requires estimating flow (possible impl: scalar head over RM)
         # - for the proof of concept, we'll just use vanilla TB
+        logger.info(f"t_logpf: {t_logpf.sum(dim=-1)}, log_r: {log_r}, log_z: {log_z}")
         loss = self.tb_loss(
             log_pf=t_logpf, 
             log_r=log_r, 
