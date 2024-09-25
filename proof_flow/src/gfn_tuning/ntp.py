@@ -373,7 +373,7 @@ class NeuralTheoremProvingTask(LightningModule):
                 next_state = None # this gets converted to timeout
             next_states.append(next_state)
         
-        tactics = [t.strip() for t in generated_tactics]
+        # tactics = [t.strip() for t in generated_tactics]
         return ParallelForwardStepResult(
             next_states=next_states, 
             tactic_logpf=tactic_logpf, 
@@ -929,7 +929,10 @@ class NeuralTheoremProvingTask(LightningModule):
         batch_idxs = []
         step_idxs = []
         for b_idx, trajectory in enumerate(trajectories):
-            tactics = trajectory.proof.split(TACTIC_DELIMITER)
+            tactics = [
+                t.strip() + '\n' 
+                for t in trajectory.proof.split(TACTIC_DELIMITER)
+            ]
             for s_idx in range(len(tactics)):
                 prompt = self.format_prompt(
                     trajectory.states,
@@ -1401,14 +1404,8 @@ def generate_step_seq2seq(
             logits[:, vocab_naughty_mask] += vocab_alpha
         log_prob_distributions = logits.log_softmax(dim=-1)
         
-        # update active sequences
-        next_token_active = (
-            (next_tokens != termination_token_id).squeeze(-1)
-            & (next_tokens != eos_token_id).squeeze(-1)
-        )
-
-        # update log_pf
-        active_seqs = active_seqs * next_token_active
+        # update log_pf before active sequence 
+        # so to NOT exclude the termination token's log pf
         log_pf[:, i] = (
             torch.where(
                 active_seqs,
@@ -1416,6 +1413,12 @@ def generate_step_seq2seq(
                 0,
             )
         )
+        # update active sequences
+        next_token_active = (
+            (next_tokens != termination_token_id).squeeze(-1)
+            & (next_tokens != eos_token_id).squeeze(-1)
+        )
+        active_seqs = active_seqs * next_token_active
 
         # add sampled token to decoder input
         decoder_input_ids = torch.cat([decoder_input_ids, next_tokens], dim=-1)
