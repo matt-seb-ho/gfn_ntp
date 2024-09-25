@@ -138,7 +138,8 @@ class NeuralTheoremProvingTask(LightningModule):
             )
             self.log_z_head = None
 
-        self.get_lr_at_step = lambda step: min(step / 20 * lr, lr)
+        # self.get_lr_at_step = lambda step: min(step / 20 * lr, lr)
+        self.get_lr_at_step = lambda step: lr
         self.get_reward_temp_at_step = lambda step: reward_temp_start + (
             reward_temp_end - reward_temp_start
         ) * min(1, step / reward_temp_horizon)
@@ -181,6 +182,15 @@ class NeuralTheoremProvingTask(LightningModule):
             else None
         )
 
+    def get_dojo_cached(self, theorem: Theorem):
+        if theorem.uid in self.dojo_cache:
+            dojo, initial_state = self.dojo_cache[theorem.uid]
+        else:
+            self._debug_log(f"loading dojo for {theorem.full_name}")
+            dojo = Dojo(theorem, timeout=self.hparams.dojo_timeout)
+            dojo, initial_state = dojo.__enter__()
+            self.dojo_cache[theorem.uid] = (dojo, initial_state)
+        return dojo, initial_state
     
     def parallel_forward(
         self,
@@ -199,13 +209,7 @@ class NeuralTheoremProvingTask(LightningModule):
 
         # use cached dojo if available
         # TODO: add mechanism for clearing cache/releasing resources
-        if theorem.uid in self.dojo_cache:
-            dojo, initial_state = self.dojo_cache[theorem.uid]
-        else:
-            self._debug_log(f"loading dojo for {theorem.full_name}")
-            dojo = Dojo(theorem, timeout=self.hparams.dojo_timeout)
-            dojo, initial_state = dojo.__enter__()
-            self.dojo_cache[theorem.uid] = (dojo, initial_state)
+        dojo, initial_state = self.get_dojo_cached(theorem)
         
         active_trajectories = [True] * n_samples
         tactics = [[] for _ in range(n_samples)]
@@ -251,7 +255,21 @@ class NeuralTheoremProvingTask(LightningModule):
             "gold": self.gt_tacs[theorem.uid],
         })
         logger.info(f"train_fwd_gen_tacs: {tac_info}")
-        
+
+        try:
+            tactic_lens = [[len(i) for i in j] for j in tactics]
+            avg_tactic_lens = [sum(i) / len(i) for i in tactic_lens]
+            
+            self.log(
+                "train/tactic_avg_len",
+                sum(avg_tactic_lens) / len(avg_tactic_lens),
+                on_step=True,
+                on_epoch=False,
+                sync_dist=True,
+                batch_size=1,
+            )        
+        except: # in case we get divide by zero somehow
+            pass
         # combine trajectory logpf tensors into a single tensor
         # currently have a list of tensors of shape (n_samples,)
         # want to concatenate along dim=1 to get (n_samples, max_depth)
@@ -510,6 +528,22 @@ class NeuralTheoremProvingTask(LightningModule):
         batch_loss = loss.mean()
         return batch_loss
 
+
+    def sft_loss(
+        self,
+        log_pf: torch.Tensor,
+        log_r: torch.Tensor,
+        log_z: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Computes the batch loss using the Trajectory Balance objective
+        Args:
+            log_pf: log probabilities of each tactic/action. shape=(batch, max_depth)
+            log_r: log reward. shape=(batch_size,)
+        Returns:
+            batch_loss: scalar tensor
+        """
+        return -log_pf[-1].sum()   
     
     def log_z_variance_loss(
         self, 
@@ -538,6 +572,10 @@ class NeuralTheoremProvingTask(LightningModule):
         theorem = theorem[0]
         theorem_id = theorem.uid
 
+        SFT = False
+        SFT = True
+        using_gtt = False
+        
         # replay trajectories
         # _sample... helper function handles the logic of whether to use the buffer or not
         # uses buffer if:
@@ -567,10 +605,15 @@ class NeuralTheoremProvingTask(LightningModule):
                 pf_temp = 1.0
 
             try:
-                t_logpf, log_r, trajectories = self.parallel_forward(
-                    theorem, 
-                    pf_temperature=pf_temp
-                )
+                if self.hparams.n_samples > 0:
+                    t_logpf, log_r, trajectories = self.parallel_forward(
+                        theorem, 
+                        pf_temperature=pf_temp
+                    )
+                else:
+                # breakpoint()
+                    t_logpf = torch.zeros((1, 1)).to(self.model_device)
+                    log_r = torch.zeros((1,)).to(self.model_device)
             except (DojoInitError, DojoCrashError) as e:
                 self._debug_log(f"train step dojo error: {e}")
                 return None
@@ -579,8 +622,15 @@ class NeuralTheoremProvingTask(LightningModule):
                 # no trajectories were generated
                 self._debug_log("forward returned None (0 trajectories generated)")
                 return None
-            self.reward_buffer.add_batch(theorem_id, trajectories)
-            initial_tac_state = trajectories[0].states[0]
+
+            
+            if self.hparams.n_samples > 0:
+                self.reward_buffer.add_batch(theorem_id, trajectories)
+                initial_tac_state = trajectories[0].states[0] 
+            else:
+                dojo, initial_state = self.get_dojo_cached(theorem)
+                initial_tac_state = initial_state.pp
+            
 
         # for tb_loss: estimate log_z
         if self.hparams.conditional_log_z:
@@ -616,9 +666,11 @@ class NeuralTheoremProvingTask(LightningModule):
             log_z = self.log_z
 
         # once per accumulation batch
-        if (batch_idx + 1) % self.hparams.repeats_per_accumulated_batch == 0:
+        # if (batch_idx + 1) % self.hparams.repeats_per_accumulated_batch == 0:
+        if True:
             # add ground truth trajectory before computing loss
             if self.ground_truth_trajectories:
+                using_gtt = True
                 gt_tlpf, gt_lr = self.replay_trajectories(
                     [self.ground_truth_trajectories[theorem_id]],
                     batch_size=1,
@@ -633,11 +685,20 @@ class NeuralTheoremProvingTask(LightningModule):
         # - sub tb requires estimating flow (possible impl: scalar head over RM)
         # - for the proof of concept, we'll just use vanilla TB
         logger.info(f"t_logpf: {t_logpf.sum(dim=-1)}, log_r: {log_r}, log_z: {log_z}")
-        loss = self.tb_loss(
-            log_pf=t_logpf, 
-            log_r=log_r, 
-            log_z=log_z
-        )
+
+        if SFT:
+            assert using_gtt, 'need gtt for SFT'
+            loss = self.sft_loss(
+                log_pf=t_logpf, 
+                log_r=log_r, 
+                log_z=log_z
+            )    
+        else:
+            loss = self.tb_loss(
+                log_pf=t_logpf, 
+                log_r=log_r, 
+                log_z=log_z
+            )
         # loss = self.log_z_variance_loss(t_logpf, log_r)
         self.log(
             "train/loss",
@@ -670,7 +731,7 @@ class NeuralTheoremProvingTask(LightningModule):
                 f"{theorem.full_name}_{k}",
                 v,
                 on_step=True,
-                on_epoch=False
+                on_epoch=False,
                 sync_dist=1,
                 batch_size=1,
             )
@@ -685,7 +746,7 @@ class NeuralTheoremProvingTask(LightningModule):
         theorem = theorem[0]
         try:
             with torch.no_grad():
-                log_pf, log_r, _ = self.parallel_forward(theorem)
+                log_pf, log_r, _ = self.parallel_forward(theorem, n_samples=4)
         except (DojoInitError, DojoCrashError) as e:
             self._debug_log(f"val_step forward hit dojo error: {e}")
             return 
@@ -1067,7 +1128,7 @@ class NeuralTheoremProvingTask(LightningModule):
         idx: int,
         str_tactic_states: bool = False,
     ) -> str:
-        tactics = "\n".join(tactics)
+        tactics = "\n".join(tactics[:idx])
         if str_tactic_states:
             initial_state = tactic_states[0]
             current_state = tactic_states[idx]

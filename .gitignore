@@ -4,7 +4,8 @@ dspv1_dpo_*/
 __pycache__/
 *.py[cod]
 *$py.class
-
+checkpoints*
+runs
 # C extensions
 *.so
 

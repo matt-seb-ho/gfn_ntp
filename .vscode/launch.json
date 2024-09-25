@@ -1,0 +1,26 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python Debugger: Module",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "proof_flow.scripts.gfn_tuning.five_theorems",
+            "justMyCode": false,
+            "env": {"CUDA_VISIBLE_DEVICES": "0"}
+        },
+        {
+            "name": "Python Debugger: single",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "proof_flow.scripts.gfn_tuning.single_theorem",
+            "python": "/root/.pyenv/versions/3.11.8/bin/python",
+            "justMyCode": false,
+            "env": {"CUDA_VISIBLE_DEVICES": "7", "PYTHONPATH": "/root/gfn_ntp"},
+            //  "args": [ "|", "tee", "output.log" ]
+        }
+    ]
+}

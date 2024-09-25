@@ -9,12 +9,16 @@ data:
 
 model:
   # test with llemma, run later with dsp
-  # name: "EleutherAI/llemma_7b"
-  # name: "deepseek-ai/DeepSeek-Prover-V1"
+  # hf_id: "EleutherAI/llemma_7b"
+  # hf_id: "deepseek-ai/DeepSeek-Prover-V1"
   hf_id: "kaiyuy/leandojo-lean4-tacgen-byt5-small"
   seq2seq: true 
   use_lora: false
   # seq2seq: false
+
+  # specify a huggingface model id to initialize the policy adapter from
+  # initial_policy_adapter: "msho/dspv1_policy_sft"
+  initial_policy_adapter: null
 
   bnb:
     _target_: transformers.BitsAndBytesConfig
@@ -28,16 +32,14 @@ model:
 
     # adjusted settings for OOM issues
     target_modules: "all-linear"
-    # target_modules:
-    #   - q
-    #   - k
-    #   - v
-    #   - o
-    r: 16
+    r: 32
     lora_alpha: 32
     lora_dropout: 0.05
     bias: "none"
-    task_type: "CAUSAL_LM"
+    # task_type
+    # - SEQ_2_SEQ_LM: Sequence-to-sequence language modeling.
+    # - CAUSAL_LM: Causal language modeling.
+    task_type: "SEQ_2_SEQ_LM"
     use_rslora: true
 
     # settings from SFT RM config
@@ -57,15 +59,6 @@ model:
     # bias: "none"
     # fan_in_fan_out: true
   
-  # specify a huggingface model id to initialize the policy adapter from
-  # e.g. "msho/llemma_sft"
-  # initialize_policy_adapter_from_pretrained: "msho/dspv1_policy_sft"
-  initialize_policy_adapter_from_pretrained: null
-
-  # currently just used for replay
-  inf_batch_size: 8
-
-  
 training:
   # subtb_lambda: 1.0
   # from gfn+llm paper:
@@ -76,13 +69,12 @@ training:
   pf_temp_prob: 0.666
   # use_buffer_prob: 1 # guarantees buffer usage (offline training)
   use_buffer_prob: 0 # guarantees online training
-  # n_samples: 48 #! TESTING
-  n_samples: 1
+  n_samples: 4 # next_sentence task had 20
   branch_only_at_root: true
-  lr: 0.001
-  accumulate_grad_batches: 1 #! TESTING!
-  epochs: 2000 # next_sentence task had 300
-  use_4bit: false 
+  lr: 0.0001
+  accumulate_grad_batches: 1 # TESTING!
+  epochs: 200 # next_sentence task had 300
+  use_4bit: false
   dojo_timeout: 60 # in seconds (LeanDojo's default is 600)
   ckpt_dest: "checkpoints"
   save_ckpt_on_val: true
@@ -91,6 +83,7 @@ training:
   replay_batch_size: 4
   truncate_state: true
   
+  log_every_n_steps: 1
   # validation loop frequency control
   # val_check_interval: float in [0, 1]: frequency per train epoch
   val_check_interval: null
@@ -99,8 +92,6 @@ training:
 
   # whether to learn the log_z prediction head or unconditional parameter
   conditional_log_z: true
-
-  log_every_n_steps: 1
 
 reward:
   temp_start: 1.0
@@ -113,15 +104,11 @@ reward:
   # buffer_seed_trajectory_file: "data/single_theorem_seed_trajectories.json"
   # buffer_seed_trajectory_file: "data/t0_seed_gtt_only.json"
   buffer_seed_trajectory_file: data/t0_seed_t_updated_fmt.json
-  verifier_batch_size: 16 # TODO: figure out if we can go higher
-  # TODO: get dsp adapters
+  verifier_batch_size: 6 # TODO: figure out if we can go higher
   use_sts_format: false
   error_length_penalty_a: 8.0
-  # reward_model_hf_id: "msho/llemma_sft"
-  # reward_model_akdapter_name: "reward"
-  # reward_model_hf_id: "msho/dspv1_sft"
-  # reward_model_adapter_name: "reward"
-
+  
+  
   # reward model settings
   model:
     # setup options: null, base, adapter, independent
@@ -177,9 +164,9 @@ constraints:
 
 debug_logger:
   include_lean_dojo_debug: true
-  log_debug_to_stdout: true
+  log_debug_to_stdout: false
   write_to_file: true
-  debug_log_file: "logs/t5_runs.log"
+  debug_log_file: "logs/single_thm_sancheck.log"
   
 search_eval:
   probe_count: null # null for all
@@ -195,7 +182,7 @@ search_eval:
     num_workers: 1
     num_gpus: 1
     # max_input_seq_len: 230 # 200 (state) + 30 (prompt)
-    max_input_seq_len: 900 # reprover
+    max_input_seq_len: 900 # reprover (max state is 265)
     max_output_seq_len: 987
     # max_new_tokens: 30
     max_new_tokens: 87 # reprover
@@ -208,6 +195,7 @@ prompts:
 
 # ground truth trajectories
 gtt:
-  file_path: data/single_theorem_gtt.json
+  file_path: data/one_theorem_gtt.json
+  # file_path: null
   write_to_file: true
   seed_replay_buffer: false
