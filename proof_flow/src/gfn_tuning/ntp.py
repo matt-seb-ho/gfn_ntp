@@ -525,6 +525,7 @@ class NeuralTheoremProvingTask(LightningModule):
             batch_loss: scalar tensor
         """
         loss = (log_pf.sum(dim=-1) + log_z - log_r) ** 2
+        # loss = (log_pf.sum(dim=-1) + torch.zeros_like(log_z) - log_r) ** 2
         batch_loss = loss.mean()
         return batch_loss
 
@@ -616,6 +617,7 @@ class NeuralTheoremProvingTask(LightningModule):
                     log_r = torch.zeros((1,)).to(self.model_device)
             except (DojoInitError, DojoCrashError) as e:
                 self._debug_log(f"train step dojo error: {e}")
+                self.dojo_cache.pop(theorem_id, None)
                 return None
                 
             if t_logpf is None:
@@ -670,13 +672,13 @@ class NeuralTheoremProvingTask(LightningModule):
         if True:
             # add ground truth trajectory before computing loss
             if self.ground_truth_trajectories:
+                gt_ratio = 0.5
+                total_samples = int( self.hparams.n_samples / (1 - gt_ratio))
+                gt_samples = total_samples - self.hparams.n_samples
                 using_gtt = True
-                gt_tlpf, gt_lr = self.replay_trajectories(
-                    [self.ground_truth_trajectories[theorem_id]],
-                    batch_size=1,
-                )
-                t_logpf = self._append_tensor_and_pad(t_logpf, gt_tlpf)
-                log_r = torch.cat([log_r, gt_lr])
+                gt_tlpf, gt_lr = self.replay_trajectories([self.ground_truth_trajectories[theorem_id]],batch_size=1,)
+                t_logpf = self._append_tensor_and_pad(t_logpf, gt_tlpf.repeat(gt_samples, 1))
+                log_r = torch.cat([log_r, gt_lr.repeat(gt_samples)])
 
         # apply reward temperature
         log_r = log_r / self.reward.temperature

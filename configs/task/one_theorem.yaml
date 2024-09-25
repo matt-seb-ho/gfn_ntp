@@ -2,9 +2,12 @@ name: "ntp"
 
 data:
   path: null
-  train_size: 1
-  train_data_path: "data/single_thm.json"
-  val_data_path: "data/single_thm.json"
+  # train_size: 1
+  # train_data_path: "data/single_thm.json"
+  # val_data_path: "data/single_thm.json"
+  train_size: 5
+  train_data_path: "data/five_theorem.json"
+  val_data_path: "data/five_theorem.json"
   repeat_train_theorems: 1
 
 model:
@@ -33,11 +36,11 @@ model:
     #   - k
     #   - v
     #   - o
-    r: 16
+    r: 32
     lora_alpha: 32
     lora_dropout: 0.05
     bias: "none"
-    task_type: "CAUSAL_LM"
+    task_type: "SEQ_2_SEQ_LM"
     use_rslora: true
 
     # settings from SFT RM config
@@ -80,7 +83,7 @@ training:
   n_samples: 1
   branch_only_at_root: true
   lr: 0.001
-  accumulate_grad_batches: 1 #! TESTING!
+  accumulate_grad_batches: 5 #! TESTING!
   epochs: 2000 # next_sentence task had 300
   use_4bit: false 
   dojo_timeout: 60 # in seconds (LeanDojo's default is 600)
@@ -125,7 +128,7 @@ reward:
   # reward model settings
   model:
     # setup options: null, base, adapter, independent
-    setup: null
+    setup: independent
     # setup: adapter # previous setup for dspv1
     adapter:
       # hf_id: "msho/llemma_sft"
@@ -135,7 +138,7 @@ reward:
       name: null
     # following settings are for setup="independent", 
     # where RM does not share weights with the policy
-    hf_id: null
+    hf_id: "kaiyuy/leandojo-lean4-tacgen-byt5-small"
     peft: false
     seq2seq: true
     share_tokenizer: true
@@ -184,7 +187,8 @@ debug_logger:
 search_eval:
   probe_count: null # null for all
   sanity_check_probe_count: 0
-  probe_file: data/single_thm.json
+  # probe_file: data/single_thm.json
+  probe_file: data/five_theorem.json
 
   search_params:
     _target_: proof_flow.src.search.common.ProofSearchParams
