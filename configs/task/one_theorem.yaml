@@ -71,7 +71,7 @@ training:
   use_buffer_prob: 0 # guarantees online training
   n_samples: 4 # next_sentence task had 20
   branch_only_at_root: true
-  lr: 0.0001
+  lr: 0.001
   accumulate_grad_batches: 1 # TESTING!
   epochs: 200 # next_sentence task had 300
   use_4bit: false

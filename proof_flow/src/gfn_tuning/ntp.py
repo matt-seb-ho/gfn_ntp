@@ -267,17 +267,17 @@ class NeuralTheoremProvingTask(LightningModule):
                 for s in tactic_states[i]
             ]
             state_strings.append(trajectory_states)
-        log_r = self.reward.silly_san_check(
-            tactics,
-            self.gt_tacs[theorem.uid],
-            device=self.model_device,
-        )
-        # log_r = self.reward.score(
-        #     state_strings,
+        # log_r = self.reward.silly_san_check(
         #     tactics,
-        #     batch_size=n_samples,
+        #     self.gt_tacs[theorem.uid],
         #     device=self.model_device,
         # )
+        log_r = self.reward.score(
+            state_strings,
+            tactics,
+            batch_size=n_samples,
+            device=self.model_device,
+        )
 
         # reformat for replay buffer storage
         trajectories = []
@@ -601,38 +601,38 @@ class NeuralTheoremProvingTask(LightningModule):
             initial_tac_state = trajectories[0].states[0]
 
         # for tb_loss: estimate log_z
-        log_z = torch.zeros(1, dtype=torch.float32, device=self.model_device)
-        # if self.hparams.conditional_log_z:
-        #     input_ids = self.tokenizer(
-        #         initial_tac_state, 
-        #         return_tensors="pt"
-        #     ).input_ids
-        #     if self.model_device:
-        #         input_ids = input_ids.to(self.model_device)
-        #     if self.hparams.seq2seq:
-        #         encoder = self.model.get_encoder()
-        #         enc_out = encoder(input_ids)
-        #         # get last hidden state (batch_size, seq_length, hidden_size)
-        #         hidden_states = enc_out.last_hidden_state
-        #         # aggregate hidden states (mean pooling)
-        #         # shape: (batch_size, hidden_size)
-        #         pooled_output = hidden_states.mean(dim=1)
-        #         # pass through the regression head to get scalar output
-        #         # shape: (batch_size, 1)
-        #         log_z = self.log_z_head(pooled_output)
-        #     else:
-        #         output = self.model(
-        #             input_ids, 
-        #             output_hidden_states=True,
-        #             return_dict=True,
-        #         )
-        #         # output.hidden_states is a tuple of tensors (embedding + each layer)
-        #         # each tensor has shape (batch_size, seq_len, hidden_size)
-        #         final_hidden_state = output.hidden_states[-1][:, -1, :]
-        #         log_z = self.log_z_head(final_hidden_state)
-        # else:
-        #     # unconditional log_z (single theorem)
-        #     log_z = self.log_z
+        # log_z = torch.zeros(1, dtype=torch.float32, device=self.model_device)
+        if self.hparams.conditional_log_z:
+            input_ids = self.tokenizer(
+                initial_tac_state, 
+                return_tensors="pt"
+            ).input_ids
+            if self.model_device:
+                input_ids = input_ids.to(self.model_device)
+            if self.hparams.seq2seq:
+                encoder = self.model.get_encoder()
+                enc_out = encoder(input_ids)
+                # get last hidden state (batch_size, seq_length, hidden_size)
+                hidden_states = enc_out.last_hidden_state
+                # aggregate hidden states (mean pooling)
+                # shape: (batch_size, hidden_size)
+                pooled_output = hidden_states.mean(dim=1)
+                # pass through the regression head to get scalar output
+                # shape: (batch_size, 1)
+                log_z = self.log_z_head(pooled_output)
+            else:
+                output = self.model(
+                    input_ids, 
+                    output_hidden_states=True,
+                    return_dict=True,
+                )
+                # output.hidden_states is a tuple of tensors (embedding + each layer)
+                # each tensor has shape (batch_size, seq_len, hidden_size)
+                final_hidden_state = output.hidden_states[-1][:, -1, :]
+                log_z = self.log_z_head(final_hidden_state)
+        else:
+            # unconditional log_z (single theorem)
+            log_z = self.log_z
 
         # once per accumulation batch
         if (batch_idx + 1) % self.hparams.repeats_per_accumulated_batch == 0:
@@ -652,8 +652,7 @@ class NeuralTheoremProvingTask(LightningModule):
         # - sub tb requires estimating flow (possible impl: scalar head over RM)
         # - for the proof of concept, we'll just use vanilla TB
         logger.info(f"t_logpf: {t_logpf.sum(dim=-1)}, log_r: {log_r}, log_z: {log_z}")
-        # loss = self.tb_loss(
-        loss = self.sft_loss(
+        loss = self.tb_loss(
             log_pf=t_logpf, 
             log_r=log_r, 
             log_z=log_z
@@ -716,7 +715,7 @@ class NeuralTheoremProvingTask(LightningModule):
         # get the GFN loss
         # loss = self.tb_loss(log_pf=log_pf, log_r=log_r)
         # loss = self.log_z_variance_loss(log_pf=log_pf, log_r=log_r)
-        loss = self.sft_loss(log_pf=log_pf, log_r=log_r, log_z=self.log_z)
+        loss = self.tb_loss(log_pf=log_pf, log_r=log_r, log_z=self.log_z)
 
         # Log metrics
         self.log(
