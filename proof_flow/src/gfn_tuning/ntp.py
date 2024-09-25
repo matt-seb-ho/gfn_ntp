@@ -266,12 +266,17 @@ class NeuralTheoremProvingTask(LightningModule):
                 for s in tactic_states[i]
             ]
             state_strings.append(trajectory_states)
-        log_r = self.reward.score(
-            state_strings,
+        log_r = self.reward.silly_san_check(
             tactics,
-            batch_size=n_samples,
+            self.gt_tacs[theorem.uid],
             device=self.model_device,
         )
+        # log_r = self.reward.score(
+        #     state_strings,
+        #     tactics,
+        #     batch_size=n_samples,
+        #     device=self.model_device,
+        # )
 
         # reformat for replay buffer storage
         trajectories = []
@@ -490,6 +495,15 @@ class NeuralTheoremProvingTask(LightningModule):
         return trajectories_logpf, log_reward, trajectories
 
 
+    def sft_loss(
+        self,
+        log_pf: torch.Tensor,
+        log_r: torch.Tensor,
+        log_z: torch.Tensor,
+    ) -> torch.Tensor:
+        return -log_pf[-1].sum()    
+
+
     def tb_loss(
         self,
         log_pf: torch.Tensor,
@@ -506,9 +520,11 @@ class NeuralTheoremProvingTask(LightningModule):
         Returns:
             batch_loss: scalar tensor
         """
-        loss = (log_pf.sum(dim=-1) + log_z - log_r) ** 2
-        batch_loss = loss.mean()
-        return batch_loss
+        # loss = (log_pf.sum(dim=-1) + log_z - log_r) ** 2
+        # batch_loss = loss.mean()
+        # return batch_loss
+        loss = (log_pf[-1].sum()) ** 2
+        return loss
 
     
     def log_z_variance_loss(
@@ -583,37 +599,38 @@ class NeuralTheoremProvingTask(LightningModule):
             initial_tac_state = trajectories[0].states[0]
 
         # for tb_loss: estimate log_z
-        if self.hparams.conditional_log_z:
-            input_ids = self.tokenizer(
-                initial_tac_state, 
-                return_tensors="pt"
-            ).input_ids
-            if self.model_device:
-                input_ids = input_ids.to(self.model_device)
-            if self.hparams.seq2seq:
-                encoder = self.model.get_encoder()
-                enc_out = encoder(input_ids)
-                # get last hidden state (batch_size, seq_length, hidden_size)
-                hidden_states = enc_out.last_hidden_state
-                # aggregate hidden states (mean pooling)
-                # shape: (batch_size, hidden_size)
-                pooled_output = hidden_states.mean(dim=1)
-                # pass through the regression head to get scalar output
-                # shape: (batch_size, 1)
-                log_z = self.log_z_head(pooled_output)
-            else:
-                output = self.model(
-                    input_ids, 
-                    output_hidden_states=True,
-                    return_dict=True,
-                )
-                # output.hidden_states is a tuple of tensors (embedding + each layer)
-                # each tensor has shape (batch_size, seq_len, hidden_size)
-                final_hidden_state = output.hidden_states[-1][:, -1, :]
-                log_z = self.log_z_head(final_hidden_state)
-        else:
-            # unconditional log_z (single theorem)
-            log_z = self.log_z
+        log_z = torch.zeros(1, dtype=torch.float32, device=self.model_device)
+        # if self.hparams.conditional_log_z:
+        #     input_ids = self.tokenizer(
+        #         initial_tac_state, 
+        #         return_tensors="pt"
+        #     ).input_ids
+        #     if self.model_device:
+        #         input_ids = input_ids.to(self.model_device)
+        #     if self.hparams.seq2seq:
+        #         encoder = self.model.get_encoder()
+        #         enc_out = encoder(input_ids)
+        #         # get last hidden state (batch_size, seq_length, hidden_size)
+        #         hidden_states = enc_out.last_hidden_state
+        #         # aggregate hidden states (mean pooling)
+        #         # shape: (batch_size, hidden_size)
+        #         pooled_output = hidden_states.mean(dim=1)
+        #         # pass through the regression head to get scalar output
+        #         # shape: (batch_size, 1)
+        #         log_z = self.log_z_head(pooled_output)
+        #     else:
+        #         output = self.model(
+        #             input_ids, 
+        #             output_hidden_states=True,
+        #             return_dict=True,
+        #         )
+        #         # output.hidden_states is a tuple of tensors (embedding + each layer)
+        #         # each tensor has shape (batch_size, seq_len, hidden_size)
+        #         final_hidden_state = output.hidden_states[-1][:, -1, :]
+        #         log_z = self.log_z_head(final_hidden_state)
+        # else:
+        #     # unconditional log_z (single theorem)
+        #     log_z = self.log_z
 
         # once per accumulation batch
         if (batch_idx + 1) % self.hparams.repeats_per_accumulated_batch == 0:
@@ -633,7 +650,8 @@ class NeuralTheoremProvingTask(LightningModule):
         # - sub tb requires estimating flow (possible impl: scalar head over RM)
         # - for the proof of concept, we'll just use vanilla TB
         logger.info(f"t_logpf: {t_logpf.sum(dim=-1)}, log_r: {log_r}, log_z: {log_z}")
-        loss = self.tb_loss(
+        # loss = self.tb_loss(
+        loss = self.sft_loss(
             log_pf=t_logpf, 
             log_r=log_r, 
             log_z=log_z
@@ -670,7 +688,7 @@ class NeuralTheoremProvingTask(LightningModule):
                 f"{theorem.full_name}_{k}",
                 v,
                 on_step=True,
-                on_epoch=False
+                on_epoch=False,
                 sync_dist=1,
                 batch_size=1,
             )
@@ -696,7 +714,8 @@ class NeuralTheoremProvingTask(LightningModule):
 
         # get the GFN loss
         # loss = self.tb_loss(log_pf=log_pf, log_r=log_r)
-        loss = self.log_z_variance_loss(log_pf=log_pf, log_r=log_r)
+        # loss = self.log_z_variance_loss(log_pf=log_pf, log_r=log_r)
+        loss = self.sft_loss(log_pf=log_pf, log_r=log_r, log_z=self.log_z)
 
         # Log metrics
         self.log(
@@ -764,7 +783,8 @@ class NeuralTheoremProvingTask(LightningModule):
     def on_train_batch_start(self, theorem, batch_idx):
         # Update scheduled quantities
         reward_temp = self.get_reward_temp_at_step(self.global_step)
-        lr = self.get_lr_at_step(self.global_step)
+        # lr = self.get_lr_at_step(self.global_step)
+        lr = self.hparams.lr
         self.reward.temperature = reward_temp
         for pg in self.optimizers().param_groups:
             pg["lr"] = lr
@@ -773,7 +793,7 @@ class NeuralTheoremProvingTask(LightningModule):
     def on_train_epoch_start(self):
         # Log scheduled quantities
         self.log("scheduled/R_temperature", self.reward.temperature, sync_dist=True)
-        self.log("scheduled/lr", self.get_lr_at_step(self.global_step), sync_dist=True)
+        # self.log("scheduled/lr", self.get_lr_at_step(self.global_step), sync_dist=True)
         # ensure training mode is on
         self.model.train()
     

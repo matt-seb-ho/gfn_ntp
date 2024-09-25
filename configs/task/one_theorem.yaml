@@ -5,15 +5,20 @@ data:
   train_size: 1
   train_data_path: "data/single_thm.json"
   val_data_path: "data/single_thm.json"
-  repeat_train_theorems: 2
+  repeat_train_theorems: 1
 
 model:
   # test with llemma, run later with dsp
-  # name: "EleutherAI/llemma_7b"
-  # name: "deepseek-ai/DeepSeek-Prover-V1"
-  name: "kaiyuy/leandojo-lean4-tacgen-byt5-small"
+  # hf_id: "EleutherAI/llemma_7b"
+  # hf_id: "deepseek-ai/DeepSeek-Prover-V1"
+  hf_id: "kaiyuy/leandojo-lean4-tacgen-byt5-small"
   seq2seq: true 
+  use_lora: false
   # seq2seq: false
+
+  # specify a huggingface model id to initialize the policy adapter from
+  # initial_policy_adapter: "msho/dspv1_policy_sft"
+  initial_policy_adapter: null
 
   bnb:
     _target_: transformers.BitsAndBytesConfig
@@ -27,16 +32,14 @@ model:
 
     # adjusted settings for OOM issues
     target_modules: "all-linear"
-    # target_modules:
-    #   - q
-    #   - k
-    #   - v
-    #   - o
-    r: 16
+    r: 32
     lora_alpha: 32
     lora_dropout: 0.05
     bias: "none"
-    task_type: "CAUSAL_LM"
+    # task_type
+    # - SEQ_2_SEQ_LM: Sequence-to-sequence language modeling.
+    # - CAUSAL_LM: Causal language modeling.
+    task_type: "SEQ_2_SEQ_LM"
     use_rslora: true
 
     # settings from SFT RM config
@@ -56,14 +59,6 @@ model:
     # bias: "none"
     # fan_in_fan_out: true
   
-  # specify a huggingface model id to initialize the policy adapter from
-  # e.g. "msho/llemma_sft"
-  # initialize_policy_adapter_from_pretrained: "msho/dspv1_policy_sft"
-  initialize_policy_adapter_from_pretrained: null
-
-  # currently just used for replay
-  inf_batch_size: 8
-
 training:
   # subtb_lambda: 1.0
   # from gfn+llm paper:
@@ -74,18 +69,21 @@ training:
   pf_temp_prob: 0.666
   # use_buffer_prob: 1 # guarantees buffer usage (offline training)
   use_buffer_prob: 0 # guarantees online training
-  n_samples: 2 # next_sentence task had 20
+  n_samples: 4 # next_sentence task had 20
   branch_only_at_root: true
   lr: 0.0001
-  accumulate_grad_batches: 2 # TESTING!
+  accumulate_grad_batches: 1 # TESTING!
   epochs: 200 # next_sentence task had 300
-  use_4bit: true 
+  use_4bit: false
   dojo_timeout: 60 # in seconds (LeanDojo's default is 600)
   ckpt_dest: "checkpoints"
   save_ckpt_on_val: true
   gradient_clip_val: 0.5 # default is 0 (no clipping)
   num_sanity_val_steps: 0
+  replay_batch_size: 4
+  truncate_state: true
   
+  log_every_n_steps: 1
   # validation loop frequency control
   # val_check_interval: float in [0, 1]: frequency per train epoch
   val_check_interval: null
@@ -94,11 +92,10 @@ training:
 
   # whether to learn the log_z prediction head or unconditional parameter
   conditional_log_z: true
-  use_log_z_cache: false
 
 reward:
   temp_start: 1.0
-  temp_end: 0.8
+  temp_end: 1.0
   temp_horizon: 750
   vocab_alpha: -50
   sentence_validator: null
@@ -107,14 +104,28 @@ reward:
   # buffer_seed_trajectory_file: "data/single_theorem_seed_trajectories.json"
   # buffer_seed_trajectory_file: "data/t0_seed_gtt_only.json"
   buffer_seed_trajectory_file: data/t0_seed_t_updated_fmt.json
-  verifier_batch_size: 16 # TODO: figure out if we can go higher
-  # TODO: get dsp adapters
-  # reward_model_hf_id: "msho/llemma_sft"
-  # reward_model_adapter_name: "reward"
-  # reward_model_hf_id: "msho/dspv1_sft"
-  # reward_model_adapter_name: "reward"
-  reward_model_hf_id: null
-  reward_model_adapter_name: null
+  verifier_batch_size: 6 # TODO: figure out if we can go higher
+  use_sts_format: false
+  error_length_penalty_a: 8.0
+  
+  
+  # reward model settings
+  model:
+    # setup options: null, base, adapter, independent
+    setup: null
+    # setup: adapter # previous setup for dspv1
+    adapter:
+      # hf_id: "msho/llemma_sft"
+      # hf_id: "msho/dspv1_sft"
+      # name: "reward"
+      hf_id: null
+      name: null
+    # following settings are for setup="independent", 
+    # where RM does not share weights with the policy
+    hf_id: null
+    peft: false
+    seq2seq: true
+    share_tokenizer: true
 
 callbacks:
   - _target_: pytorch_lightning.callbacks.ModelCheckpoint
@@ -148,14 +159,14 @@ constraints:
   # min_tactic_tokens: 1
   min_tactic_tokens: 3
   # max_tactic_tokens: 30
-  max_tactic_tokens: 90
-  max_input_length: 640
+  max_tactic_tokens: 87
+  max_input_length: 900
 
 debug_logger:
   include_lean_dojo_debug: true
   log_debug_to_stdout: false
   write_to_file: true
-  debug_log_file: "logs/t5_runs.log"
+  debug_log_file: "logs/single_thm_sancheck.log"
   
 search_eval:
   probe_count: null # null for all
@@ -171,17 +182,20 @@ search_eval:
     num_workers: 1
     num_gpus: 1
     # max_input_seq_len: 230 # 200 (state) + 30 (prompt)
-    max_input_seq_len: 640 # reprover
-    max_output_seq_len: 730
+    max_input_seq_len: 900 # reprover (max state is 265)
+    max_output_seq_len: 987
     # max_new_tokens: 30
-    max_new_tokens: 90 # reprover
+    max_new_tokens: 87 # reprover
     length_penalty: 0.0
 
 prompts:
   # tac_gen: "ds_rm_st_v2"
   tac_gen: "rp_tacgen" # reprover template ("{state}")
+  reward: "reprover"
 
 # ground truth trajectories
 gtt:
-  file_path: data/single_theorem_gtt.json
+  file_path: data/one_theorem_gtt.json
+  # file_path: null
   write_to_file: true
+  seed_replay_buffer: false
