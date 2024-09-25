@@ -84,16 +84,13 @@ def train_setup(
         # where the innermost list is really a BufferEntry tuple
         # (json serializes BufferEntry named tuple as a list)
         for thm_uid, trajectories in seed_trajectories.items():
-            trajectory_batch = [
-                BufferEntry(*t) for t in trajectories
-            ]
+            trajectory_batch = [BufferEntry(*t) for t in trajectories]
             reward_buffer.add_batch(thm_uid, trajectory_batch)
     # optionally load gold trajectories (inserted into batch forward)
-    ground_truth_trajectories = get_ground_truth_trajectories(config)
-    if config.task.gtt.seed_replay_buffer:
-        if ground_truth_trajectories is not None:
-            for tuid, gtt in ground_truth_trajectories.items():
-                reward_buffer.add_batch(tuid, [gtt])
+    gtt = get_ground_truth_trajectories(config)
+    if config.task.gtt.seed_replay_buffer and gtt is not None:
+        for tuid, gtt in gtt.items():
+            reward_buffer.add_batch(tuid, [gtt])
 
     # set up task (LightningModule)
     tac_gen_prompt_template = PROMPT_DICT[config.task.prompts.tac_gen]
@@ -129,7 +126,7 @@ def train_setup(
         sanity_check_probes=config.task.search_eval.sanity_check_probe_count,
         debug_log_level=debug_log_level,
         tac_gen_prompt_template=tac_gen_prompt_template,
-        ground_truth_trajectories=ground_truth_trajectories,
+        ground_truth_trajectories=gtt,
         repeats_per_accumulated_batch=config.task.data.repeat_train_theorems,
         seq2seq=config.task.model.seq2seq,
         truncate_state=config.task.training.truncate_state,
@@ -270,15 +267,15 @@ def get_reward(
             device_map="auto",
             torch_dtype="auto",
         )
-        reward_tokenizer = AutoTokenizer.from_pretrained(rm_cfg.hf_id)
+        reward_tokenizer = (
+            tokenizer if rm_cfg.share_tokenizer else
+            AutoTokenizer.from_pretrained(rm_cfg.hf_id)
+        )
         reward_uses_seq2seq = rm_cfg.seq2seq
     
-    # if we are fully fine-tuning the policy, 
-    # there must be an independent reward model
-    if (
-        not config.task.model.use_lora 
-        and rm_cfg.setup is not None
-    ):
+    # if we are fully fine-tuning the policy with partial reward (non-binary)
+    if (not config.task.model.use_lora) and rm_cfg.setup is not None:
+        # there must be an independent reward model
         assert rm_cfg.hf_id is not None
         
     reward = NTPReward(

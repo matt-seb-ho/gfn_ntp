@@ -657,6 +657,24 @@ class NeuralTheoremProvingTask(LightningModule):
             sync_dist=True,
             batch_size=1,
         )
+        # wandb log:
+        # - log_r, log_pf, log_z (per theorem)
+        
+        to_log = [
+            ("log_r", log_r.mean()),
+            ("log_pf", t_logpf.sum(dim=-1).mean()),
+            ("log_z", log_z),
+        ]
+        for k, v in to_log:
+            self.log(
+                f"{theorem.full_name}_{k}",
+                v,
+                on_step=True,
+                on_epoch=False
+                sync_dist=1,
+                batch_size=1,
+            )
+
         self._debug_log(f"train/loss: {loss.item()}")
         self._debug_log(f"train/logR: {log_r.mean().item()}")
         return loss
