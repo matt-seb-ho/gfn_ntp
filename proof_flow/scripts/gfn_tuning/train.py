@@ -153,6 +153,7 @@ def train_setup(
         gradient_clip_val=config.task.training.gradient_clip_val,
         # num_sanity_val_steps=san_steps,
         num_sanity_val_steps=0,
+        log_every_n_steps=config.task.training.log_every_n_steps,
     )
 
     # Fix a bug that arises when using 4-bit quantized models.

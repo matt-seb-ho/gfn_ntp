@@ -642,8 +642,8 @@ class NeuralTheoremProvingTask(LightningModule):
         self.log(
             "train/loss",
             loss,
-            on_step=False,
-            on_epoch=True,
+            on_step=True,
+            on_epoch=False,
             sync_dist=True,
             prog_bar=True,
             batch_size=1,
@@ -652,8 +652,8 @@ class NeuralTheoremProvingTask(LightningModule):
             "train/logR",
             # last_log_r.mean(),
             log_r.mean(),
-            on_step=False,
-            on_epoch=True,
+            on_step=True,
+            on_epoch=False,
             sync_dist=True,
             batch_size=1,
         )

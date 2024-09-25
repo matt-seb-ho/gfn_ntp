@@ -27,6 +27,7 @@ def main(config: DictConfig):
 
     # trainer.fit(model=task, datamodule=data)
     model.eval()
+    task.hparams.sanity_check_probes = len(val_probes)
     results = task.run_proof_search_eval()
     name_to_idx = {
         thm_dict["full_name"]: thm_idx

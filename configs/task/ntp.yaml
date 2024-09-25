@@ -69,18 +69,19 @@ training:
   pf_temp_prob: 0.666
   # use_buffer_prob: 1 # guarantees buffer usage (offline training)
   use_buffer_prob: 0 # guarantees online training
-  n_samples: 5 # next_sentence task had 20
+  # use_buffer_prob: 0.5
+  n_samples: 6 # next_sentence task had 20
   branch_only_at_root: true
   lr: 0.0001
-  accumulate_grad_batches: 16 # TESTING!
+  accumulate_grad_batches: 40 # TESTING!
   epochs: 32 # next_sentence task had 300
   use_4bit: false
   dojo_timeout: 60 # in seconds (LeanDojo's default is 600)
-  ckpt_dest: "checkpoints"
+  ckpt_dest: "checkpoints/train1k"
   save_ckpt_on_val: true
   gradient_clip_val: 0.5 # default is 0 (no clipping)
   num_sanity_val_steps: 0
-  replay_batch_size: 5
+  replay_batch_size: 6
   truncate_state: true
   
   # validation loop frequency control
@@ -103,7 +104,7 @@ reward:
   # buffer_seed_trajectory_file: "data/single_theorem_seed_trajectories.json"
   # buffer_seed_trajectory_file: "data/t0_seed_gtt_only.json"
   buffer_seed_trajectory_file: data/t0_seed_t_updated_fmt.json
-  verifier_batch_size: 5 # TODO: figure out if we can go higher
+  verifier_batch_size: 6 # TODO: figure out if we can go higher
   use_sts_format: false
   error_length_penalty_a: 8.0
   
@@ -165,7 +166,7 @@ debug_logger:
   include_lean_dojo_debug: true
   log_debug_to_stdout: false
   write_to_file: true
-  debug_log_file: "logs/first1k.log"
+  debug_log_file: "logs/train1k.log"
   
 search_eval:
   probe_count: null # null for all
