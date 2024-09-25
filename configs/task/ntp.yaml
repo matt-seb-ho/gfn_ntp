@@ -84,6 +84,7 @@ training:
   replay_batch_size: 6
   truncate_state: true
   
+  log_every_n_steps: 1
   # validation loop frequency control
   # val_check_interval: float in [0, 1]: frequency per train epoch
   val_check_interval: null
