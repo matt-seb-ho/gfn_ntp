@@ -283,7 +283,7 @@ def get_reward(
         model=reward_model,
         tokenizer=reward_tokenizer,
         batch_size=config.task.reward.verifier_batch_size,
-        adapter_name=config.task.reward.model.adapter.name,
+        adapter_name=rm_cfg.adapter.name,
         seq2seq=reward_uses_seq2seq,
         prompts_for_model=config.task.prompts.reward,
         use_sts_format=config.task.reward.use_sts_format,

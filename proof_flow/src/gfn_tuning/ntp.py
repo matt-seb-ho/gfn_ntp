@@ -138,7 +138,8 @@ class NeuralTheoremProvingTask(LightningModule):
             )
             self.log_z_head = None
 
-        self.get_lr_at_step = lambda step: min(step / 20 * lr, lr)
+        # self.get_lr_at_step = lambda step: min(step / 20 * lr, lr)
+        self.get_lr_at_step = lambda step: lr
         self.get_reward_temp_at_step = lambda step: reward_temp_start + (
             reward_temp_end - reward_temp_start
         ) * min(1, step / reward_temp_horizon)
@@ -589,6 +590,7 @@ class NeuralTheoremProvingTask(LightningModule):
                 )
             except (DojoInitError, DojoCrashError) as e:
                 self._debug_log(f"train step dojo error: {e}")
+                self.dojo_cache.pop(theorem_id, None)
                 return None
                 
             if t_logpf is None:
@@ -677,7 +679,6 @@ class NeuralTheoremProvingTask(LightningModule):
         )
         # wandb log:
         # - log_r, log_pf, log_z (per theorem)
-        
         to_log = [
             ("log_r", log_r.mean()),
             ("log_pf", t_logpf.sum(dim=-1).mean()),
@@ -1087,7 +1088,7 @@ class NeuralTheoremProvingTask(LightningModule):
         idx: int,
         str_tactic_states: bool = False,
     ) -> str:
-        tactics = "\n".join(tactics)
+        tactics = "\n".join(tactics[:idx])
         if str_tactic_states:
             initial_state = tactic_states[0]
             current_state = tactic_states[idx]
