@@ -521,11 +521,13 @@ class NeuralTheoremProvingTask(LightningModule):
         Returns:
             batch_loss: scalar tensor
         """
-        # loss = (log_pf.sum(dim=-1) + log_z - log_r) ** 2
-        # batch_loss = loss.mean()
-        # return batch_loss
-        loss = (log_pf[-1].sum()) ** 2
-        return loss
+        # pseudo sft
+        # loss = (log_pf[-1].sum()) ** 2
+        # return loss
+
+        loss = (log_pf.sum(dim=-1) + log_z - log_r) ** 2
+        batch_loss = loss.mean()
+        return batch_loss
 
     
     def log_z_variance_loss(
@@ -590,9 +592,11 @@ class NeuralTheoremProvingTask(LightningModule):
                 )
             except (DojoInitError, DojoCrashError) as e:
                 self._debug_log(f"train step dojo error: {e}")
-                self.dojo_cache.pop(theorem_id, None)
+                _dojo = Dojo(theorem, timeout=self.hparams.dojo_timeout)
+                dojo, initial_state = _dojo.__enter__()
+                self.dojo_cache[theorem_id] = dojo, initial_state
                 return None
-                
+
             if t_logpf is None:
                 # no trajectories were generated
                 self._debug_log("forward returned None (0 trajectories generated)")
@@ -601,38 +605,9 @@ class NeuralTheoremProvingTask(LightningModule):
             initial_tac_state = trajectories[0].states[0]
 
         # for tb_loss: estimate log_z
+        # - pseudo sft testing: log_z = 0
         # log_z = torch.zeros(1, dtype=torch.float32, device=self.model_device)
-        if self.hparams.conditional_log_z:
-            input_ids = self.tokenizer(
-                initial_tac_state, 
-                return_tensors="pt"
-            ).input_ids
-            if self.model_device:
-                input_ids = input_ids.to(self.model_device)
-            if self.hparams.seq2seq:
-                encoder = self.model.get_encoder()
-                enc_out = encoder(input_ids)
-                # get last hidden state (batch_size, seq_length, hidden_size)
-                hidden_states = enc_out.last_hidden_state
-                # aggregate hidden states (mean pooling)
-                # shape: (batch_size, hidden_size)
-                pooled_output = hidden_states.mean(dim=1)
-                # pass through the regression head to get scalar output
-                # shape: (batch_size, 1)
-                log_z = self.log_z_head(pooled_output)
-            else:
-                output = self.model(
-                    input_ids, 
-                    output_hidden_states=True,
-                    return_dict=True,
-                )
-                # output.hidden_states is a tuple of tensors (embedding + each layer)
-                # each tensor has shape (batch_size, seq_len, hidden_size)
-                final_hidden_state = output.hidden_states[-1][:, -1, :]
-                log_z = self.log_z_head(final_hidden_state)
-        else:
-            # unconditional log_z (single theorem)
-            log_z = self.log_z
+        log_z = self._compute_log_z(initial_tac_state)
 
         # once per accumulation batch
         if (batch_idx + 1) % self.hparams.repeats_per_accumulated_batch == 0:
@@ -704,6 +679,12 @@ class NeuralTheoremProvingTask(LightningModule):
         try:
             with torch.no_grad():
                 log_pf, log_r, _ = self.parallel_forward(theorem)
+                if theorem.uid not in self.dojo_cache:
+                    logger.info(f"val step: key error on {theorem.uid} in dojo_cache")
+                    return
+                _, initial_state = self.dojo_cache[theorem.uid]
+                initial_tac_state = initial_state.pp
+                log_z = self._compute_log_z(initial_tac_state)
         except (DojoInitError, DojoCrashError) as e:
             self._debug_log(f"val_step forward hit dojo error: {e}")
             return 
@@ -715,7 +696,7 @@ class NeuralTheoremProvingTask(LightningModule):
         # get the GFN loss
         # loss = self.tb_loss(log_pf=log_pf, log_r=log_r)
         # loss = self.log_z_variance_loss(log_pf=log_pf, log_r=log_r)
-        loss = self.tb_loss(log_pf=log_pf, log_r=log_r, log_z=self.log_z)
+        loss = self.tb_loss(log_pf=log_pf, log_r=log_r, log_z=log_z)
 
         # Log metrics
         self.log(
@@ -1136,6 +1117,41 @@ class NeuralTheoremProvingTask(LightningModule):
             t2 = torch.nn.functional.pad(t2, (0, n - m))
         # concatenate along the batch dimension (0-th dimension)
         return torch.cat([t1, t2], dim=0)
+    
+
+    def _compute_log_z(self, initial_tac_state: str) -> torch.Tensor:
+        if self.hparams.conditional_log_z:
+            input_ids = self.tokenizer(
+                initial_tac_state, 
+                return_tensors="pt"
+            ).input_ids
+            if self.model_device:
+                input_ids = input_ids.to(self.model_device)
+            if self.hparams.seq2seq:
+                encoder = self.model.get_encoder()
+                enc_out = encoder(input_ids)
+                # get last hidden state (batch_size, seq_length, hidden_size)
+                hidden_states = enc_out.last_hidden_state
+                # aggregate hidden states (mean pooling)
+                # shape: (batch_size, hidden_size)
+                pooled_output = hidden_states.mean(dim=1)
+                # pass through the regression head to get scalar output
+                # shape: (batch_size, 1)
+                log_z = self.log_z_head(pooled_output)
+            else:
+                output = self.model(
+                    input_ids, 
+                    output_hidden_states=True,
+                    return_dict=True,
+                )
+                # output.hidden_states is a tuple of tensors (embedding + each layer)
+                # each tensor has shape (batch_size, seq_len, hidden_size)
+                final_hidden_state = output.hidden_states[-1][:, -1, :]
+                log_z = self.log_z_head(final_hidden_state)
+        else:
+            # unconditional log_z (single theorem)
+            log_z = self.log_z
+        return log_z
 
 
 def generate_step(
