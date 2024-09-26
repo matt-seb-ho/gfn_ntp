@@ -182,6 +182,10 @@ class NeuralTheoremProvingTask(LightningModule):
             else None
         )
 
+        # metrics
+        self.log_on_step = True
+        self.log_on_epoch = False
+
    
     def parallel_forward(
         self,
@@ -641,8 +645,8 @@ class NeuralTheoremProvingTask(LightningModule):
         self.log(
             "train/loss",
             loss,
-            on_step=True,
-            on_epoch=False,
+            on_step=self.log_on_step,
+            on_epoch=self.log_on_epoch,
             sync_dist=True,
             prog_bar=True,
             batch_size=1,
@@ -651,8 +655,8 @@ class NeuralTheoremProvingTask(LightningModule):
             "train/logR",
             # last_log_r.mean(),
             log_r.mean(),
-            on_step=True,
-            on_epoch=False,
+            on_step=self.log_on_step,
+            on_epoch=self.log_on_epoch,
             sync_dist=True,
             batch_size=1,
         )
@@ -667,8 +671,8 @@ class NeuralTheoremProvingTask(LightningModule):
             self.log(
                 f"{theorem.full_name}_{k}",
                 v,
-                on_step=True,
-                on_epoch=False,
+                on_step=self.log_on_step,
+                on_epoch=self.log_on_epoch,
                 sync_dist=1,
                 batch_size=1,
             )

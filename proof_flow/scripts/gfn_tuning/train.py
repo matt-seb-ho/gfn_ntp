@@ -138,7 +138,7 @@ def train_setup(
         if isinstance(config.logger, bool) 
         else hydra.utils.instantiate(config.logger)
     )
-    # san_steps = config.task.training.num_sanity_val_steps or 2
+    san_steps = config.task.training.num_sanity_val_steps
     trainer = pl.Trainer(
         accelerator=config.device.accelerator,
         max_epochs=config.task.training.epochs,
@@ -148,8 +148,7 @@ def train_setup(
         val_check_interval=config.task.training.val_check_interval,
         check_val_every_n_epoch=config.task.training.check_val_every_n_epoch,
         gradient_clip_val=config.task.training.gradient_clip_val,
-        # num_sanity_val_steps=san_steps,
-        num_sanity_val_steps=0,
+        num_sanity_val_steps=san_steps,
         log_every_n_steps=config.task.training.log_every_n_steps,
     )
 
