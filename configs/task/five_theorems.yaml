@@ -91,6 +91,7 @@ training:
   val_check_interval: 20
   # check_val_every_n_epoch: int (default=1)
   # check_val_every_n_epoch: 10
+  check_val_every_n_epoch: 1
 
   # whether to learn the log_z prediction head or unconditional parameter
   conditional_log_z: true
@@ -172,8 +173,8 @@ debug_logger:
   
 search_eval:
   probe_count: null # null for all
-  sanity_check_probe_count: 5
-  probe_file: data/five_theorem.json
+  sanity_check_probe_count: 20
+  probe_file: data/val20.json
 
   search_params:
     _target_: proof_flow.src.search.common.ProofSearchParams

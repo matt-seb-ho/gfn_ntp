@@ -33,7 +33,11 @@ from proof_flow.src.prompts import (
     REPROVER_TACGEN_WITH_HISTORY,
 )
 from proof_flow.src.search.common import ProofSearchParams, _HuggingFaceLM
-from proof_flow.src.search.proof_search import Status, DistributedProver
+from proof_flow.src.search.proof_search import (
+    DistributedProver,
+    Status,
+    get_cached_dojo,
+)
 from proof_flow.src.utils import (
     CUSTOM_LOG_LEVEL,
     batch_iterator_zip,
@@ -186,6 +190,8 @@ class NeuralTheoremProvingTask(LightningModule):
         self.log_on_step = True
         self.log_on_epoch = False
 
+    
+
    
     def parallel_forward(
         self,
@@ -204,13 +210,11 @@ class NeuralTheoremProvingTask(LightningModule):
 
         # use cached dojo if available
         # TODO: add mechanism for clearing cache/releasing resources
-        if theorem.uid in self.dojo_cache:
-            dojo, initial_state = self.dojo_cache[theorem.uid]
-        else:
-            self._debug_log(f"loading dojo for {theorem.full_name}")
-            dojo = Dojo(theorem, timeout=self.hparams.dojo_timeout)
-            dojo, initial_state = dojo.__enter__()
-            self.dojo_cache[theorem.uid] = (dojo, initial_state)
+        dojo, initial_state = get_cached_dojo(
+            self.dojo_cache, 
+            theorem,
+            self.hparams.dojo_timeout,
+        )
         
         active_trajectories = [True] * n_samples
         tactics = [[] for _ in range(n_samples)]
@@ -371,9 +375,11 @@ class NeuralTheoremProvingTask(LightningModule):
                     f"run_tac error ({e}) on tactic: {tactic}, "
                     f"restarting dojo for {lean_env.entry.full_name}"
                 )
-                _dojo = Dojo(lean_env.entry, timeout=self.hparams.dojo_timeout)
-                lean_env, initial_state = _dojo.__enter__()
-                self.dojo_cache[lean_env.entry.uid] = (lean_env, initial_state)
+                lean_env, initial_state = get_cached_dojo(
+                    self.dojo_cache,
+                    lean_env.entry,
+                    self.hparams.dojo_timeout,
+                )
                 next_state = None # this gets converted to timeout
             next_states.append(next_state)
         
@@ -596,9 +602,11 @@ class NeuralTheoremProvingTask(LightningModule):
                 )
             except (DojoInitError, DojoCrashError) as e:
                 self._debug_log(f"train step dojo error: {e}")
-                _dojo = Dojo(theorem, timeout=self.hparams.dojo_timeout)
-                dojo, initial_state = _dojo.__enter__()
-                self.dojo_cache[theorem_id] = dojo, initial_state
+                dojo, initial_state = get_cached_dojo(
+                    self.dojo_cache,
+                    theorem,
+                    self.hparams.dojo_timeout,
+                )
                 return None
 
             if t_logpf is None:
@@ -759,6 +767,7 @@ class NeuralTheoremProvingTask(LightningModule):
             prompt_template=self.hparams.tac_gen_prompt_template,
             is_decoder_only=(not self.hparams.seq2seq),
             end_of_step_token_id=self.end_of_step_token_id,
+            dojo_cache=self.dojo_cache,
         )
         with torch.no_grad():
             results = prover.search_unordered(repo, thms, positions)
