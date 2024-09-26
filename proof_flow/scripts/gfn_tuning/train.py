@@ -322,7 +322,11 @@ def get_ground_truth_trajectories(cfg: DictConfig) -> Optional[dict]:
             json.dump(trajectories, f, indent=2)
     else:
         with open(gtt_file_path) as f:
-            trajectories = json.load(f)
+            json_trajectories = json.load(f)
+        # convert to BufferEntry
+        trajectories = {}
+        for thm_uid, gtt in json_trajectories.items():
+            trajectories[thm_uid] = BufferEntry(*gtt)
     return trajectories
 
 
