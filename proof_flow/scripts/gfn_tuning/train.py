@@ -86,7 +86,7 @@ def train_setup(
         for thm_uid, trajectories in seed_trajectories.items():
             trajectory_batch = [BufferEntry(*t) for t in trajectories]
             reward_buffer.add_batch(thm_uid, trajectory_batch)
-    # optionally load gold trajectories (inserted into batch forward)
+    # optionally load gold trajectories (inserted into batch )
     gtt = get_ground_truth_trajectories(config)
     if config.task.gtt.seed_replay_buffer and gtt is not None:
         for tuid, gtt in gtt.items():
@@ -310,18 +310,28 @@ def get_ground_truth_trajectories(cfg: DictConfig) -> Optional[dict]:
     
     gtt_file_path = repo_root() / cfg.task.gtt.file_path
     if cfg.task.gtt.write_to_file:
-        with open(cfg.task.data.path or cfg.task.data.train_data_path) as f:
-            thm_dicts = json.load(f)
         trajectories = {}
-        for thm_dict in thm_dicts.values():
-            tuid, gtt = extract_ground_truth_trajectory(thm_dict)
-            trajectories[tuid] = gtt
+        if cfg.task.data.path:
+            _add_gtt_from_file(cfg.task.data.path, trajectories)
+        else:
+            assert cfg.task.data.train_data_path is not None
+            assert cfg.task.data.val_data_path is not None
+            _add_gtt_from_file(cfg.task.data.train_data_path, trajectories)
+            _add_gtt_from_file(cfg.task.data.val_data_path, trajectories)
         with open(gtt_file_path, "w") as f:
             json.dump(trajectories, f, indent=2)
     else:
         with open(gtt_file_path) as f:
             trajectories = json.load(f)
     return trajectories
+
+
+def _add_gtt_from_file(file_path: str, trajectories: dict):
+    with open(file_path) as f:
+        thm_dicts = json.load(f)
+    for thm_dict in thm_dicts.values():
+        tuid, gtt = extract_ground_truth_trajectory(thm_dict)
+        trajectories[tuid] = gtt
 
 
 def _get_auto_cls(seq2seq: bool, peft: bool):

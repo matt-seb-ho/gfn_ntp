@@ -90,7 +90,7 @@ training:
   # - can be int (number of steps)
   val_check_interval: 20
   # check_val_every_n_epoch: int (default=1)
-  # check_val_every_n_epoch: 10
+  check_val_every_n_epoch: 1
 
   # whether to learn the log_z prediction head or unconditional parameter
   conditional_log_z: true
