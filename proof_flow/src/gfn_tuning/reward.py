@@ -96,8 +96,30 @@ class NTPReward:
             self.conditional_log_p = seq2seq_conditional_log_prob
         else:
             self.conditional_log_p = causal_conditional_log_prob
-            
 
+
+    def silly_san_check(
+        self,
+        tactics: list[list[str]],
+        ground_truth: list[str],
+        device: Optional[str | torch.device] = None,
+    ) -> torch.Tensor:
+        log_r = torch.zeros(
+            len(tactics), 
+            dtype=torch.float32,
+            device=device
+        )
+        for i, _tactics in enumerate(tactics):
+            good = True
+            for t, gt in zip(_tactics, ground_truth):
+                if t.strip != gt.strip():
+                    good = False
+                    break
+            if not good:
+                log_r[i] = MIN_REWARD
+        return log_r
+
+        
     def score(
         self,
         states: list[list[str]],

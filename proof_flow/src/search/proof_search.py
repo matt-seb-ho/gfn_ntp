@@ -76,6 +76,7 @@ class BestFirstSearchProver:
         num_sampled_tactics: int,
         debug: bool,
         save_search_tree: Optional[str] = None,
+        dojo_cache: Optional[dict] = None,
     ) -> None:
         self.tac_gen = tac_gen
         self.tac_gen.initialize()
@@ -85,6 +86,7 @@ class BestFirstSearchProver:
         self.num_sampled_tactics = num_sampled_tactics
         self.debug = debug
         self.save_search_tree = save_search_tree
+        self.dojo_cache = dojo_cache or {}
 
         self.num_expansions = 0
         self.actor_time = 0.0
@@ -109,23 +111,25 @@ class BestFirstSearchProver:
             imps = []
 
         try:
-            with Dojo(thm, self.timeout, additional_imports=imps) as (
-                dojo,
-                init_state,
-            ):
-                self.dojo = dojo
-                self.root = InternalNode(
-                    state=init_state,
-                    cumulative_logprob=0.0,
-                    depth=0,
-                )
-                self.nodes = {init_state: self.root}
+            dojo, init_state = get_cached_dojo(
+                self.dojo_cache, 
+                thm, 
+                self.timeout,
+                additional_imports=imps,
+            )
+            self.dojo = dojo
+            self.root = InternalNode(
+                state=init_state,
+                cumulative_logprob=0.0,
+                depth=0,
+            )
+            self.nodes = {init_state: self.root}
 
-                try:
-                    asyncio.run(self._best_first_search())
-                except DojoCrashError as ex:
-                    logger.warning(f"Dojo crashed with {ex} when proving {thm}")
-                    pass
+            try:
+                asyncio.run(self._best_first_search())
+            except DojoCrashError as ex:
+                logger.warning(f"Dojo crashed with {ex} when proving {thm}")
+                pass
 
             if self.root.status == Status.PROVED:
                 proof = [e.tactic for e in self.root.extract_proof()]
@@ -221,6 +225,8 @@ class BestFirstSearchProver:
         prompt = _build_tac_gen_prompt(search_node)
         
         suggestions = await self._generate_tactics(prompt)
+        # logger.info(f"prompt: {prompt}\ngenerated tactics: {suggestions}")
+        
 
         # Try all tactics in order of descending logprob, and collect the results. Any
         # new nodes are added to `self.nodes`, and edges are added to the result node.
@@ -447,6 +453,8 @@ class DistributedProver:
         tokenizer: Optional[AutoTokenizer] = None,
         prompt_template: Optional[str] = None,
         is_decoder_only: Optional[bool] = None,
+        end_of_step_token_id: Optional[int] = None,
+        dojo_cache: Optional[dict] = None,
     ) -> None:
         if gen_ckpt_path is None:
             assert tactic and not indexed_corpus_path
@@ -487,6 +495,7 @@ class DistributedProver:
                 tokenizer=tokenizer,
                 template=(prompt_template or "{state}"),
                 is_decoder_only=is_decoder_only,
+                end_of_step_token_id=end_of_step_token_id,
             )
 
         self.distributed = num_workers > 1
@@ -500,6 +509,7 @@ class DistributedProver:
                 num_sampled_tactics, 
                 debug,
                 save_search_tree=save_search_tree,
+                dojo_cache=dojo_cache,
             )
             return
 
@@ -597,3 +607,44 @@ def _build_tac_gen_prompt(node: InternalNode) -> str:
         current_state=current_state,
     )
     return prompt
+
+
+def get_cached_dojo(
+    dojo_cache: dict, 
+    theorem: Theorem, 
+    dojo_timeout: int,
+    additional_imports: Optional[list[str]] = None,
+) -> tuple[Dojo, TacticState]:
+    if theorem.uid in dojo_cache:
+        dojo, initial_state = dojo_cache[theorem.uid]
+    else:
+        additional_imports = additional_imports or []
+        try:
+            dojo = Dojo(
+                theorem,
+                timeout=dojo_timeout, 
+                additional_imports=additional_imports,
+            )
+            dojo, initial_state = dojo.__enter__()
+            dojo_cache[theorem.uid] = (dojo, initial_state)
+        except ValueError as e:
+            if "filedescriptor out of range" not in str(e):
+                raise e
+
+            logger.info("filedescriptor out of range, clearing cache")
+            # empty cache
+            keys = list(dojo_cache.keys())
+            for key in keys:
+                dojo_instance, _ = dojo_cache.pop(key)
+                dojo_instance.__exit__(None, None, None)
+                
+            # retry once
+            _dojo = Dojo(
+                theorem,
+                timeout=dojo_timeout,
+                additional_imports=additional_imports,
+            )
+            dojo, initial_state = _dojo.__enter__()
+            dojo_cache[theorem.uid] = (dojo, initial_state)
+            
+    return dojo, initial_state

@@ -2,12 +2,9 @@ name: "ntp"
 
 data:
   path: null
-  train_size: 1
-  train_data_path: "data/single_thm.json"
-  val_data_path: "data/single_thm.json"
-  # train_size: 5
-  # train_data_path: "data/five_theorem.json"
-  # val_data_path: "data/five_theorem.json"
+  train_size: 1000
+  train_data_path: "data/shuffled_balanced1k.json"
+  val_data_path: "data/val20.json"
   repeat_train_theorems: 1
 
 model:
@@ -15,9 +12,9 @@ model:
   # hf_id: "EleutherAI/llemma_7b"
   # hf_id: "deepseek-ai/DeepSeek-Prover-V1"
   hf_id: "kaiyuy/leandojo-lean4-tacgen-byt5-small"
+  # seq2seq: false
   seq2seq: true 
   use_lora: false
-  # seq2seq: false
 
   # specify a huggingface model id to initialize the policy adapter from
   # initial_policy_adapter: "msho/dspv1_policy_sft"
@@ -72,27 +69,28 @@ training:
   pf_temp_prob: 0.666
   # use_buffer_prob: 1 # guarantees buffer usage (offline training)
   use_buffer_prob: 0 # guarantees online training
-  # n_samples: 48 #! TESTING
-  n_samples: 1
+  n_samples: 5 # next_sentence task had 20
   branch_only_at_root: true
-  lr: 0.001
+  lr: 0.0001
   accumulate_grad_batches: 1 # TESTING!
-  epochs: 200 # next_sentence task had 300
-  use_4bit: false 
+  epochs: 2 # next_sentence task had 300
+  use_4bit: false
   dojo_timeout: 60 # in seconds (LeanDojo's default is 600)
-  ckpt_dest: "checkpoints"
+  ckpt_dest: "checkpoints/t1k_raw"
   save_ckpt_on_val: true
   gradient_clip_val: 0.5 # default is 0 (no clipping)
-  num_sanity_val_steps: 0
-  replay_batch_size: 4
+  num_sanity_val_steps: 1
+  replay_batch_size: 5
   truncate_state: true
   
   log_every_n_steps: 1
   # validation loop frequency control
-  # val_check_interval: float in [0, 1]: frequency per train epoch
-  val_check_interval: null
+  # val_check_interval: frequency per train epoch
+  # - can be float in [0, 1] (fraction of epoch)
+  # - can be int (number of steps)
+  val_check_interval: 20
   # check_val_every_n_epoch: int (default=1)
-  check_val_every_n_epoch: 10
+  check_val_every_n_epoch: 1
 
   # whether to learn the log_z prediction head or unconditional parameter
   conditional_log_z: true
@@ -163,20 +161,19 @@ constraints:
   # min_tactic_tokens: 1
   min_tactic_tokens: 3
   # max_tactic_tokens: 30
-  max_tactic_tokens: 87
+  max_tactic_tokens: 88
   max_input_length: 900
 
 debug_logger:
   include_lean_dojo_debug: true
-  log_debug_to_stdout: true
+  log_debug_to_stdout: false
   write_to_file: true
-  debug_log_file: "logs/single_thm_sancheck.log"
+  debug_log_file: "logs/t1k_raw.log"
   
 search_eval:
   probe_count: null # null for all
-  sanity_check_probe_count: 0
-  # probe_file: data/single_thm.json
-  probe_file: data/five_theorem.json
+  sanity_check_probe_count: 20
+  probe_file: data/val20.json
 
   search_params:
     _target_: proof_flow.src.search.common.ProofSearchParams
@@ -188,9 +185,9 @@ search_eval:
     num_gpus: 1
     # max_input_seq_len: 230 # 200 (state) + 30 (prompt)
     max_input_seq_len: 900 # reprover (max state is 265)
-    max_output_seq_len: 987
+    max_output_seq_len: 990
     # max_new_tokens: 30
-    max_new_tokens: 87 # reprover
+    max_new_tokens: 90 # reprover
     length_penalty: 0.0
 
 prompts:
@@ -200,7 +197,7 @@ prompts:
 
 # ground truth trajectories
 gtt:
-  file_path: data/one_theorem_gtt.json
+  file_path: data/t1k_gtt.json
   # file_path: null
   write_to_file: true
   seed_replay_buffer: false
