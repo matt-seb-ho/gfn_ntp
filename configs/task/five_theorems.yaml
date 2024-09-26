@@ -5,7 +5,7 @@ data:
   train_size: 5
   train_data_path: "data/five_theorem.json"
   val_data_path: "data/five_theorem.json"
-  repeat_train_theorems: 8
+  repeat_train_theorems: 1
 
 model:
   # test with llemma, run later with dsp
@@ -69,11 +69,11 @@ training:
   pf_temp_prob: 0.666
   # use_buffer_prob: 1 # guarantees buffer usage (offline training)
   use_buffer_prob: 0 # guarantees online training
-  n_samples: 6 # next_sentence task had 20
+  n_samples: 2 # next_sentence task had 20
   branch_only_at_root: true
   lr: 0.0001
-  accumulate_grad_batches: 40 # TESTING!
-  epochs: 200 # next_sentence task had 300
+  accumulate_grad_batches: 1 # TESTING!
+  epochs: 100 # next_sentence task had 300
   use_4bit: false
   dojo_timeout: 60 # in seconds (LeanDojo's default is 600)
   ckpt_dest: "checkpoints"
@@ -183,9 +183,9 @@ search_eval:
     num_gpus: 1
     # max_input_seq_len: 230 # 200 (state) + 30 (prompt)
     max_input_seq_len: 900 # reprover (max state is 265)
-    max_output_seq_len: 987
+    max_output_seq_len: 990
     # max_new_tokens: 30
-    max_new_tokens: 87 # reprover
+    max_new_tokens: 90 # reprover
     length_penalty: 0.0
 
 prompts:

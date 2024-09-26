@@ -221,6 +221,8 @@ class BestFirstSearchProver:
         prompt = _build_tac_gen_prompt(search_node)
         
         suggestions = await self._generate_tactics(prompt)
+        # logger.info(f"generated tactics: {suggestions}")
+        
 
         # Try all tactics in order of descending logprob, and collect the results. Any
         # new nodes are added to `self.nodes`, and edges are added to the result node.
@@ -447,6 +449,7 @@ class DistributedProver:
         tokenizer: Optional[AutoTokenizer] = None,
         prompt_template: Optional[str] = None,
         is_decoder_only: Optional[bool] = None,
+        end_of_step_token_id: Optional[int] = None,
     ) -> None:
         if gen_ckpt_path is None:
             assert tactic and not indexed_corpus_path
@@ -487,6 +490,7 @@ class DistributedProver:
                 tokenizer=tokenizer,
                 template=(prompt_template or "{state}"),
                 is_decoder_only=is_decoder_only,
+                end_of_step_token_id=end_of_step_token_id,
             )
 
         self.distributed = num_workers > 1

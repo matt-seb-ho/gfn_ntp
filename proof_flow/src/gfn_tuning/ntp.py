@@ -182,7 +182,7 @@ class NeuralTheoremProvingTask(LightningModule):
             else None
         )
 
-    
+   
     def parallel_forward(
         self,
         theorem: Theorem,
@@ -377,7 +377,7 @@ class NeuralTheoremProvingTask(LightningModule):
         return ParallelForwardStepResult(
             next_states=next_states, 
             tactic_logpf=tactic_logpf, 
-            tactics=tactics,
+            tactics=generated_tactics,
             idx_map=i2t_idx_map,
         )
                 
@@ -627,6 +627,11 @@ class NeuralTheoremProvingTask(LightningModule):
         # - sub tb requires estimating flow (possible impl: scalar head over RM)
         # - for the proof of concept, we'll just use vanilla TB
         logger.info(f"t_logpf: {t_logpf.sum(dim=-1)}, log_r: {log_r}, log_z: {log_z}")
+        # loss = self.sft_loss(
+        #     log_pf=t_logpf,
+        #     log_r=log_r,
+        #     log_z=log_z,
+        # )
         loss = self.tb_loss(
             log_pf=t_logpf, 
             log_r=log_r, 
@@ -749,6 +754,7 @@ class NeuralTheoremProvingTask(LightningModule):
             tokenizer=self.tokenizer,
             prompt_template=self.hparams.tac_gen_prompt_template,
             is_decoder_only=(not self.hparams.seq2seq),
+            end_of_step_token_id=self.end_of_step_token_id,
         )
         with torch.no_grad():
             results = prover.search_unordered(repo, thms, positions)

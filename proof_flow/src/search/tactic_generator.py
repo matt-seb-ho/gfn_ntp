@@ -202,6 +202,7 @@ class HuggingFaceGenerator(TacticGenerator):
         model: Optional[_HuggingFaceLM] = None,
         tokenizer: Optional[AutoTokenizer] = None,
         is_decoder_only: Optional[bool] = None,
+        end_of_step_token_id: Optional[int] = None,
     ):
         self.model_path = model_path
         self.device = device
@@ -216,6 +217,11 @@ class HuggingFaceGenerator(TacticGenerator):
         self.model = model
         self.tokenizer = tokenizer
         self.decoder_only = is_decoder_only
+        self.end_of_step_token_id = (
+            end_of_step_token_id
+            or tokenizer.eos_token_id
+        )
+
 
     def initialize(self) -> None:
         if self.model is not None and self.tokenizer is not None:
@@ -297,6 +303,7 @@ class HuggingFaceGenerator(TacticGenerator):
             max_new_tokens=self.max_new_tokens,
             num_beams=num_beams,
             length_penalty=self.length_penalty,
+            eos_token_id=self.end_of_step_token_id,
             do_sample=False,
             num_return_sequences=num_samples,
             early_stopping=False,
