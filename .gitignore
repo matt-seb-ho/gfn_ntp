@@ -169,5 +169,5 @@ data/
 misc/
 outputs/
 tmux_sessions/
-figures/
+# figures/
 local_data/

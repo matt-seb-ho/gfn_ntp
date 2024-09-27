@@ -69,7 +69,7 @@ training:
   pf_temp_prob: 0.666
   # use_buffer_prob: 1 # guarantees buffer usage (offline training)
   use_buffer_prob: 0 # guarantees online training
-  n_samples: 5 # next_sentence task had 20
+  n_samples: 0 # next_sentence task had 20
   branch_only_at_root: true
   lr: 0.0001
   accumulate_grad_batches: 1 # TESTING!
@@ -79,7 +79,7 @@ training:
   ckpt_dest: "checkpoints/t1k_raw"
   save_ckpt_on_val: true
   gradient_clip_val: 0.5 # default is 0 (no clipping)
-  num_sanity_val_steps: 1
+  num_sanity_val_steps: 0
   replay_batch_size: 5
   truncate_state: true
   

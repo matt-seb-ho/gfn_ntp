@@ -675,7 +675,7 @@ class NeuralTheoremProvingTask(LightningModule):
             if self.ground_truth_trajectories:
                 gt_ratio = 0.5
                 total_samples = int( self.hparams.n_samples / (1 - gt_ratio))
-                gt_samples = total_samples - self.hparams.n_samples
+                gt_samples = max(total_samples - self.hparams.n_samples, 1)
                 using_gtt = True
                 gt_tlpf, gt_lr = self.replay_trajectories([self.ground_truth_trajectories[theorem_id]],batch_size=1,)
                 t_logpf = self._append_tensor_and_pad(t_logpf, gt_tlpf.repeat(gt_samples, 1))
@@ -748,7 +748,7 @@ class NeuralTheoremProvingTask(LightningModule):
         theorem = theorem[0]
         try:
             with torch.no_grad():
-                log_pf, log_r, _ = self.parallel_forward(theorem)
+                log_pf, log_r, _ = self.parallel_forward(theorem, n_samples=4)
                 if theorem.uid not in self.dojo_cache:
                     logger.info(f"val step: key error on {theorem.uid} in dojo_cache")
                     return

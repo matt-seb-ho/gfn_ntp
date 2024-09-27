@@ -21,6 +21,19 @@
             "justMyCode": false,
             "env": {"CUDA_VISIBLE_DEVICES": "7", "PYTHONPATH": "/root/gfn_ntp"},
             //  "args": [ "|", "tee", "output.log" ]
+        },
+                {
+            "name": "Python Debugger: 1k sft",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "proof_flow.scripts.gfn_tuning.train",
+            "python": "/root/.pyenv/versions/3.11.8/bin/python",
+            "justMyCode": false,
+            "env": {"CUDA_VISIBLE_DEVICES": "7", "PYTHONPATH": "/root/gfn_ntp"},
+            "args": ["task=train1k_raw", "logger.name=sft"]
         }
+
     ]
 }
+
+
