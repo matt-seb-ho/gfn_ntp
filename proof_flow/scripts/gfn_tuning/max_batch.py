@@ -30,7 +30,6 @@ def main(config: DictConfig, n_samples_override, inf_batch_size_override):
     tokenizer = task.tokenizer
 
     model_mem = gb_allocated()
-    print(f"BREAKPOINT 1: model loaded: {model_mem:.3f} GB")
 
     # first construct the longest possible trajectory
     # with open(repo_root() / "data/longest_input_data.json") as f:
@@ -48,9 +47,9 @@ def main(config: DictConfig, n_samples_override, inf_batch_size_override):
         states=[max_state] * 4,
     )
     task.reward_buffer.add_batch("longest_input", [trajectory])
-    task.hparams.use_buffer_prob = 1
+    task.cfg.use_buffer_prob = 1
     task.max_batch_testing = n_samples_override
-    task.hparams.replay_batch_size = inf_batch_size_override
+    task.cfg.replay_batch_size = inf_batch_size_override
     task.ground_truth_trajectories["longest_input"] = trajectory
     
     def thm0():
@@ -60,7 +59,7 @@ def main(config: DictConfig, n_samples_override, inf_batch_size_override):
 
     # run a training step with forced replay
     # - do a backward step with optimizers to ensure we don't oom there either
-    opt = bnb.optim.PagedAdamW8bit(model.parameters(), lr=task.hparams.lr)
+    opt = bnb.optim.PagedAdamW8bit(model.parameters(), lr=task.cfg.lr)
     ic(opt)
     opt.zero_grad()
     loss = task.training_step([thm0], 0)
@@ -68,9 +67,6 @@ def main(config: DictConfig, n_samples_override, inf_batch_size_override):
     total_mem = gb_allocated()
     tensor_mem = total_mem - model_mem
     print(f"total memory: {total_mem:.3f} GB, tensor memory: {tensor_mem:.3f} GB")
-    
-    print("BREAKPOINT 2: forced replay done, loss in memory")
-
     
 
 if __name__ == "__main__":

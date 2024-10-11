@@ -15,7 +15,7 @@ CONFIG_DIR = "../../../configs/"
 def main(config: DictConfig):
     task, data, trainer = train_setup(config)
     model = task.model
-    val_probes = task.hparams.search_eval_probes
+    val_probes = task.search_eval_params.probes
 
     # Fix a bug that arises when using 4-bit quantized models.
     # It's caused by different operations being on different devices,
@@ -27,7 +27,7 @@ def main(config: DictConfig):
 
     # trainer.fit(model=task, datamodule=data)
     model.eval()
-    task.hparams.sanity_check_probes = len(val_probes)
+    task.search_eval_params.sanity_check_probes = len(val_probes)
     results = task.run_proof_search_eval()
     name_to_idx = {
         thm_dict["full_name"]: thm_idx

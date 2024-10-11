@@ -40,7 +40,7 @@ from proof_flow.src.utils import (
 CONFIG_DIR = "../../../configs/"
 
 
-@hydra.main(version_base=None, config_path=CONFIG_DIR, config_name="train")
+@hydra.main(version_base=None, config_path=CONFIG_DIR, config_name="config")
 def train(config: DictConfig):
     task, data, trainer = train_setup(config)
     trainer.fit(model=task, datamodule=data)

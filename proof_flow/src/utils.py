@@ -30,7 +30,7 @@ CUSTOM_DEBUG_LEVEL = "GFN_DEBUG"
 @cache
 def get_config(
     config_path: str = "../../configs", 
-    config_name: str = "train",
+    config_name: str = "config",
     overrides: Optional[str] = None,
 ) -> OmegaConf:
     if overrides:
