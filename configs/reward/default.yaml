@@ -25,4 +25,4 @@ model:
 # reward buffer
 buffer_size: 50
 buffer_sim_tolerance: 0.25
-buffer_seed_trajectory_file: data/t0_seed_t_updated_fmt.json
+buffer_seed_trajectory_file: null
