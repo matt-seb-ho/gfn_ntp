@@ -1,0 +1,7 @@
+name: train1k_val20
+_target_: proof_flow.src.gfn_tuning.lean_data_module.NTPDataModule
+data_path: null
+train_size: 1000
+train_data_path: data/shuffled_balanced1k.json
+val_data_path: data/val20.json
+repeat_theorem_n_times: ${shared_values.repeat_theorem_n_times}

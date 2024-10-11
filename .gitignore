@@ -163,10 +163,9 @@ cython_debug/
 
 
 ## msho additions:
-src/.env
-data/
-misc/
-outputs/
-tmux_sessions/
-figures/
-local_data/
+/data
+/misc
+/outputs
+/tmux_sessions
+/figures
+/local_data
