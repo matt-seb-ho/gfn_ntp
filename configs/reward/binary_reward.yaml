@@ -1,0 +1,4 @@
+# reward model
+model:
+  # setup options: null, base, adapter, independent
+  setup: null
