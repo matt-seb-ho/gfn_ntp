@@ -21,7 +21,7 @@ from peft import AutoPeftModelForSeq2SeqLM, AutoPeftModelForCausalLM
 from deepspeed.ops.adam import FusedAdam, DeepSpeedCPUAdam
 from typing import Optional, List, Dict, Any, Tuple, Generator, Union
 from pytorch_lightning.strategies.deepspeed import DeepSpeedStrategy
-from proof_flow.src.utils import prepare_environment_for_lean_dojo
+from proof_flow.src.utils import prepare_environment_for_lean_dojo, repo_root
 
 prepare_environment_for_lean_dojo()
 from lean_dojo import Pos # isort: skip
@@ -43,6 +43,13 @@ MARK_END_SYMBOL = "</a>"
 # class definitions
 @dataclass
 class ProofSearchParams:
+    # probes (theorems to run search on)
+    probe_file: str = "data/val20.json"
+    probe_count: int = 20
+    sanity_check_probes: int = 20
+    probes: Optional[list[dict]] = field(init=False, default=None)
+
+    # search parameters
     num_sampled_tactics: int = 8 # branching factor of search tree
     timeout: int = 30 # total search time in seconds
     max_expansions: Optional[int] = None
@@ -53,6 +60,15 @@ class ProofSearchParams:
     max_output_seq_len: int = 260
     max_new_tokens: int = 30
     length_penalty: float = 0.0
+    
+    def __post_init__(self):
+        with open(repo_root() / self.probe_file) as f:
+            probe_dict = json.load(f)
+        # convert from {idx: thm} dict to list[thm]
+        self.probes = list(probe_dict.values())
+        # limit number of probes
+        if self.probe_count is not None:
+            self.probes = self.probes[:self.probe_count]
 
 
 @dataclass(unsafe_hash=True)

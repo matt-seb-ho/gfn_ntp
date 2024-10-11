@@ -226,4 +226,5 @@ RM_TEMPLATES = {
 PROMPT_DICT = {
     "ds_rm_st_v2": DEEPSEEK_RM_ST_PROMPT_TEMPLATE_V2,
     "rp_tacgen": REPROVER_TACGEN_PROMPT_TEMPLATE,
+    "reprover_tacgen_with_history": REPROVER_TACGEN_WITH_HISTORY,
 }

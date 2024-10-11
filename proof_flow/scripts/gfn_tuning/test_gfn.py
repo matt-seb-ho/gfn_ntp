@@ -19,7 +19,7 @@ from proof_flow.src.gfn_tuning.replay_buffer import ReplayBuffer, BUFFER_ENTRY_K
 from proof_flow.src.gfn_tuning.lean_data_module import NTPDataModule
 from proof_flow.src.gfn_tuning.ntp import NeuralTheoremProvingTask
 from proof_flow.src.utils import set_up_padding, repo_root
-from proof_flow.scripts.gfn_tuning.train import get_model, get_reward
+from proof_flow.scripts.gfn_tuning.train import set_up_model_and_tokenizer, set_up_reward
 
 TEST_TRAINING_STEP = False
 TEST_REPLAY_STEP = True
@@ -31,8 +31,8 @@ CONFIG_DIR = "../../../configs/"
 def train(config: DictConfig):
     pl.seed_everything(config.seed, workers=True)
 
-    model, tokenizer = get_model(config)
-    reward = get_reward(config, model, tokenizer)
+    model, tokenizer = set_up_model_and_tokenizer(config)
+    reward = set_up_reward(config, model, tokenizer)
     reward_buffer = ReplayBuffer(
         buffer_size=config.task.reward.buffer_size,
         termination_token_id=tokenizer.eos_token_id,

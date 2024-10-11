@@ -4,8 +4,8 @@ import pytorch_lightning as pl
 import torch
 from omegaconf import DictConfig
 from proof_flow.scripts.gfn_tuning.train import (
-    get_model,
-    get_reward
+    set_up_model_and_tokenizer,
+    set_up_reward
 )
 from icecream import ic
 from proof_flow.src.gfn_tuning.reward import NTPReward
@@ -31,8 +31,8 @@ def compare_tensors(t1, t2):
 def main(config: DictConfig):
     pl.seed_everything(config.seed, workers=True)
 
-    model, tokenizer = get_model(config)
-    reward = get_reward(config, model, tokenizer)
+    model, tokenizer = set_up_model_and_tokenizer(config)
+    reward = set_up_reward(config, model, tokenizer)
     reward_buffer = ReplayBuffer(
         buffer_size=config.task.reward.buffer_size,
         termination_token_id=tokenizer.eos_token_id,

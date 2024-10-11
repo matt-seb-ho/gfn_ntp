@@ -1,0 +1,32 @@
+hf_id: kaiyuy/leandojo-lean4-tacgen-byt5-small
+architecture: ${shared_values.architecture}
+seq2seq: ${shared_values.seq2seq}
+use_lora: false
+use_4bit: ${shared_values.use_4bit}
+
+# specify a huggingface model id to initialize the policy adapter from
+initial_policy_adapter: null
+
+lora_config:
+  _target_: peft.LoraConfig
+
+  # adjusted settings for OOM issues
+  target_modules: all-linear
+  r: 32
+  lora_alpha: 32
+  lora_dropout: 0.05
+  bias: none
+  task_type: ${arch2task_type[${architecture}]}
+  use_rslora: true
+
+bnb:
+  _target_: transformers.BitsAndBytesConfig
+  load_in_4bit: true
+  bnb_4bit_use_double_quant: true
+  bnb_4bit_quant_type: nf4
+  bnb_4bit_compute_dtype: bfloat16
+
+# used for variable interpolation
+arch2task_type:
+  seq2seq: SEQ_2_SEQ_LM
+  causal: CAUSAL_LM

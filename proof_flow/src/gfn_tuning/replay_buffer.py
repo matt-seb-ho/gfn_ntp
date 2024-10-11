@@ -1,5 +1,6 @@
 import gzip
 import heapq
+import json
 import pickle
 from collections import deque, namedtuple
 from functools import cache
@@ -13,7 +14,7 @@ from transformers import AutoTokenizer
 
 from proof_flow.src.constants import TACTIC_DELIMITER
 from proof_flow.src.gfn_tuning.proof_tree import ProofTreeNode
-from proof_flow.src.utils import prepare_environment_for_lean_dojo
+from proof_flow.src.utils import prepare_environment_for_lean_dojo, repo_root
 
 prepare_environment_for_lean_dojo()
 from lean_dojo import LeanGitRepo, Theorem
@@ -33,12 +34,30 @@ class ReplayBuffer:
         buffer_size: int, 
         tokenizer: AutoTokenizer,
         sim_tolerance: float = 0.1,
+        seed_file: Optional[str] = None,
+        seed_trajectories: Optional[dict] = None,
     ):
         self.buffer_size = buffer_size
         self.tokenizer = tokenizer
         self.sim_tolerance = sim_tolerance
         self.reset()
 
+        # seed replay buffer
+        if seed_file is not None:
+            with open(repo_root() / seed_file) as f:
+                seed_trajectories = json.load(f)
+            # expect seed_trajectories to be dict[str, list[list]]
+            # where the innermost list is really a BufferEntry tuple
+            # (json serializes BufferEntry named tuple as a list)
+            for thm_uid, trajectories in seed_trajectories.items():
+                trajectory_batch = [BufferEntry(*t) for t in trajectories]
+                self.add_batch(thm_uid, trajectory_batch)
+        if seed_trajectories is not None:
+            for thm_uid, trajectory_batch in seed_trajectories.items():
+                if isinstance(trajectory_batch, BufferEntry):
+                    trajectory_batch = [trajectory_batch]
+                self.add_batch(thm_uid, trajectory_batch)
+            
 
     def reset(self) -> None:
         self._buffer = {}

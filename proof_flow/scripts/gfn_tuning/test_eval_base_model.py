@@ -8,8 +8,8 @@ from transformers import (
 )
 from types import MethodType
 from proof_flow.scripts.gfn_tuning.train import (
-    get_model, 
-    get_reward,
+    set_up_model_and_tokenizer, 
+    set_up_reward,
     get_val_probes,
 )
 from proof_flow.src.prompts import (
@@ -58,7 +58,7 @@ def main(config: DictConfig):
         quantization_config=bnb_config,
     )
     
-    reward = get_reward(config, model, tokenizer)
+    reward = set_up_reward(config, model, tokenizer)
     reward_buffer = ReplayBuffer(
         buffer_size=config.task.reward.buffer_size,
         termination_token_id=tokenizer.eos_token_id,

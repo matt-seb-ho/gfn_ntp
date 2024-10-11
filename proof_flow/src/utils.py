@@ -24,7 +24,7 @@ DEFAULT_PAD_TOKEN = "<pad>"
 # - llemma: <s>, </s>
 # - deepseek: <｜begin▁of▁sentence｜>, <｜end▁of▁sentence｜>
 # - internlm math: <s>, </s>
-CUSTOM_LOG_LEVEL = "GFN_DEBUG"
+CUSTOM_DEBUG_LEVEL = "GFN_DEBUG"
 
         
 @cache
@@ -386,17 +386,3 @@ def batch_iterator_zip(iterables, batch_size):
 
 def disable_tokenizer_parallelism():
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
-
-
-def set_up_debug_logging(cfg: OmegaConf):
-    if cfg.include_lean_dojo_debug:
-        level = "DEBUG"
-    else:
-        # between DEBUG (10) and INFO (20)
-        logger.level(CUSTOM_LOG_LEVEL, no=15)
-        level = CUSTOM_LOG_LEVEL
-    if cfg.log_debug_to_stdout:
-        logger.add(sys.stdout, level=level)
-    if cfg.write_to_file:
-        logger.add(repo_root() / cfg.debug_log_file, level=level)
-    return level

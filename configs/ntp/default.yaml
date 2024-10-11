@@ -1,0 +1,68 @@
+name: default
+  
+ntp_config:
+  _target_: proof_flow.src.gfn_tuning.ntp_config.NTPConfig
+
+  # main parameters
+  lr: 0.0001
+  n_samples: 5 # next_sentence task had 20
+  replay_batch_size: 5
+  use_4bit: ${shared_values.use_4bit}
+  use_buffer_prob: 0.5
+  tac_gen_prompt_template_key: reprover_tacgen_with_history
+  repeats_per_accumulated_batch: ${shared_values.repeat_theorem_n_times}
+  seq2seq: ${shared_values.seq2seq}
+  truncate_state: true
+  conditional_log_z: true
+  branch_only_at_root: true
+
+  # temperature schedule for policy and reward
+  pf_temp_high: 1.0
+  pf_temp_low: 0.25
+  pf_temp_prob: 0.666
+  reward_temp_start: 1.0
+  reward_temp_end: 1.0
+  reward_temp_horizon: 750
+
+  # constraints
+  max_tactics: 3
+  min_tactic_tokens: 3
+  max_tactic_tokens: 88
+  max_input_length: 900
+  dojo_timeout: 60 # in seconds (LeanDojo's default is 600)
+  
+  # checkpoints
+  ckpt_dest: checkpoints/t1k_gfn
+  save_ckpt_on_val: true
+
+  # debug logging
+  debug_log_level: DEBUG # {DEBUG, GFN_DEBUG} GFN_DEBUG excludes LeanDojo logs
+  log_debug_to_stdout: false
+  log_debug_to_file: true
+  debug_log_file: logs/debug.log # relative to repo root
+
+search_eval:
+  _target_: proof_flow.src.search.common.ProofSearchParams
+
+  # probes (theorems to run search on)
+  probe_file: data/val20.json
+  probe_count: null # null for all
+  sanity_check_probes: 20
+
+  # search parameters
+  num_sampled_tactics: 8
+  timeout: 30
+  max_expansions: null
+  max_depth: 6
+  num_workers: 1
+  num_gpus: 1
+  max_input_seq_len: 900 # reprover (max state is 265)
+  max_output_seq_len: 990
+  max_new_tokens: 90 # reprover
+  length_penalty: 0.0
+
+# ground truth trajectories
+gtt:
+  file_path: data/t1k_gtt.json
+  write_to_file: false
+  seed_replay_buffer: false

@@ -1,0 +1,28 @@
+# basic reward settings
+verifier_batch_size: 5 
+prompts_for_model: reprover
+use_sts_format: false
+error_length_penalty_a: 8.0
+
+# reward model
+model:
+  # setup options: null, base, adapter, independent
+  setup: independent
+  
+  adapter:
+    # hf_id: "msho/dspv1_sft"
+    # name: "reward"
+    hf_id: null
+    name: null
+
+  # following settings are for setup="independent", 
+  # where RM does not share weights with the policy
+  hf_id: "kaiyuy/leandojo-lean4-tacgen-byt5-small"
+  peft: false
+  seq2seq: true
+  share_tokenizer: true
+
+# reward buffer
+buffer_size: 50
+buffer_sim_tolerance: 0.25
+buffer_seed_trajectory_file: data/t0_seed_t_updated_fmt.json
