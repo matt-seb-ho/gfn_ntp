@@ -13,7 +13,6 @@ class NTPConfig:
     replay_batch_size: int = 4
     use_4bit: bool = False
     use_buffer_prob: float = 0.5
-    tac_gen_prompt_template_key: str = "reprover_tacgen_with_history"
     repeats_per_accumulated_batch: int = 1 # for gradient accumulation
     seq2seq: bool = True
     truncate_state: bool = True
@@ -21,19 +20,19 @@ class NTPConfig:
     branch_only_at_root: bool = True
     
     # temperature parameters
-    pf_temp_prob: float
-    pf_temp_high: float
-    pf_temp_low: float
-    reward_temp_start: float
-    reward_temp_end: float
-    reward_temp_horizon: int
+    pf_temp_prob: float = 0.666
+    pf_temp_high: float = 1.0
+    pf_temp_low: float = 0.25
+    reward_temp_start: float = 1.0
+    reward_temp_end: float = 1.0
+    reward_temp_horizon: int = 750
 
     # constraints
-    max_tactics: int = 3,
-    min_tactic_tokens: int = 2,
-    max_tactic_tokens: int = 30,
-    max_input_length: int = 640,
-    dojo_timeout: int = 600, # default comes from LeanDojo
+    max_tactics: int = 3
+    min_tactic_tokens: int = 2
+    max_tactic_tokens: int = 30
+    max_input_length: int = 640
+    dojo_timeout: int = 600 # default comes from LeanDojo
 
     # checkpoints
     ckpt_dest: str = "checkpoints"

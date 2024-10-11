@@ -71,7 +71,7 @@ def train_setup(
     )
 
     # set up task (LightningModule)
-    ntp_model_config = instantiate(config.ntp_model_config)
+    ntp_model_config = instantiate(config.ntp.ntp_config)
     search_params = instantiate(config.ntp.search_eval)
     task = NeuralTheoremProvingTask(
         model=model,
@@ -91,7 +91,7 @@ def train_setup(
     # It's caused by different operations being on different devices,
     # so we'll just deactivate lightning's automatic device placement
     # and let huggingface handle the dynamic device placement
-    if config.training.use_4bit:
+    if config.model.use_4bit:
         task.to = MethodType(lambda s, _: s, task)
         task.cuda = MethodType(lambda s: s, task)
 
@@ -142,7 +142,7 @@ def set_up_model_and_tokenizer(
     set_up_padding(model, tokenizer, padding_side=pad_side)
 
     # prepare model for k-bit training
-    if config.training.use_4bit:
+    if config.use_4bit:
         model = prepare_model_for_kbit_training(
             model,
             use_gradient_checkpointing=False,  
@@ -224,10 +224,10 @@ def set_up_reward(
         batch_size=config.reward.verifier_batch_size,
         adapter_name=rm_cfg.adapter.name,
         seq2seq=reward_uses_seq2seq,
-        prompts_for_model=config.reward.prompt_for_model,
+        prompts_for_model=config.reward.prompts_for_model,
         use_sts_format=config.reward.use_sts_format,
-        max_input_length=config.constraints.max_input_length,
-        max_tactic_length=config.constraints.max_tactic_tokens,
+        max_input_length=config.ntp.ntp_config.max_input_length,
+        max_tactic_length=config.ntp.ntp_config.max_tactic_tokens,
         error_length_penalty_alpha=config.reward.error_length_penalty_a,
     )
     return reward

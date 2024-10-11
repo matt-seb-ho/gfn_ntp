@@ -16,7 +16,7 @@ lora_config:
   lora_alpha: 32
   lora_dropout: 0.05
   bias: none
-  task_type: ${arch2task_type[${architecture}]}
+  task_type: ${arch2task_type[${.architecture}]}
   use_rslora: true
 
 bnb:

@@ -719,7 +719,7 @@ class NeuralTheoremProvingTask(LightningModule):
             for thm in probes
         ]
         positions = [None] * len(thms) # ignored by HF tac gen
-        prompt_template = PROMPT_DICT[self.cfg.tac_gen_prompt_template_key]
+        _template = PROMPT_DICT[self.search_eval_params.prompt_template_key]
         prover = DistributedProver(
             use_vllm=False, # use_vllm
             gen_ckpt_path="", # gen_ckpt_path (needs to be not None)
@@ -739,7 +739,7 @@ class NeuralTheoremProvingTask(LightningModule):
             max_new_tokens=self.search_eval_params.max_new_tokens,
             model=self.model,
             tokenizer=self.tokenizer,
-            prompt_template=prompt_template,
+            prompt_template=_template,
             is_decoder_only=(not self.cfg.seq2seq),
             end_of_step_token_id=self.end_of_step_token_id,
             dojo_cache=self.dojo_cache,

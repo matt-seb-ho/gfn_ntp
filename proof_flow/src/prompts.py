@@ -172,6 +172,7 @@ DEEPSEEK_RM_ST_PROMPT_TEMPLATE_V3 = """Given the following Lean 4 tactic state:
 Suggest a next tactic.
 ```lean4
 """
+PROOF_SEARCH_IDENTITY_TEMPLATE = "{state}"
 REPROVER_TACGEN_PROMPT_TEMPLATE = "{state}"
 REPROVER_TACGEN_COMPLETION_TEMPLATE = "{tactic}"
 REPROVER_RM_STS_PROMPT_TEMPLATE = """-- state
@@ -225,6 +226,6 @@ RM_TEMPLATES = {
 
 PROMPT_DICT = {
     "ds_rm_st_v2": DEEPSEEK_RM_ST_PROMPT_TEMPLATE_V2,
-    "rp_tacgen": REPROVER_TACGEN_PROMPT_TEMPLATE,
+    "identity": PROOF_SEARCH_IDENTITY_TEMPLATE,
     "reprover_tacgen_with_history": REPROVER_TACGEN_WITH_HISTORY,
 }

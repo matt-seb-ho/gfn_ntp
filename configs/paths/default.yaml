@@ -2,13 +2,13 @@
 home: /home/matthewho
 
 # repo
-repo: ${home}/gfn_ntp
+repo: ${.home}/gfn_ntp
 
 # path to .env file defining env variable: GITHUB_ACCESS_TOKEN 
-github_access_token: ${home}/.env
+github_access_token: ${.home}/.env
 
 # '' same but for HF_ACCESS_TOKEN
-hf_access_token: ${home}/.env
+hf_access_token: ${.home}/.env
 
 # directory to store lean dojo cache 
-lean_dojo_cache_path: ${home}/.cache/lean_dojo
+lean_dojo_cache_path: ${.home}/.cache/lean_dojo

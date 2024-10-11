@@ -1,0 +1,9 @@
+defaults:
+- default
+
+max_epochs: 10
+val_check_interval: null
+check_val_every_n_epoch: 1
+
+logger:
+  name: five_theorems

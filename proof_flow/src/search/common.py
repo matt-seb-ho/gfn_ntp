@@ -60,6 +60,7 @@ class ProofSearchParams:
     max_output_seq_len: int = 260
     max_new_tokens: int = 30
     length_penalty: float = 0.0
+    prompt_template_key: str = "identity" # indexes into PROMPT_DICT
     
     def __post_init__(self):
         with open(repo_root() / self.probe_file) as f:

@@ -1,0 +1,7 @@
+defaults:
+- train1k_val20
+
+train_size: 5
+train_data_path: data/five_theorem.json
+val_data_path: data/five_theorem.json
+repeat_theorem_n_times: 1

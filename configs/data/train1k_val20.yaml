@@ -1,4 +1,3 @@
-name: train1k_val20
 _target_: proof_flow.src.gfn_tuning.lean_data_module.NTPDataModule
 data_path: null
 train_size: 1000

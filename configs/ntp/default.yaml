@@ -9,7 +9,6 @@ ntp_config:
   replay_batch_size: 5
   use_4bit: ${shared_values.use_4bit}
   use_buffer_prob: 0.5
-  tac_gen_prompt_template_key: reprover_tacgen_with_history
   repeats_per_accumulated_batch: ${shared_values.repeat_theorem_n_times}
   seq2seq: ${shared_values.seq2seq}
   truncate_state: true
@@ -39,16 +38,16 @@ ntp_config:
   debug_log_level: DEBUG # {DEBUG, GFN_DEBUG} GFN_DEBUG excludes LeanDojo logs
   log_debug_to_stdout: false
   log_debug_to_file: true
-  debug_log_file: logs/debug.log # relative to repo root
+  debug_log_file: logs/${trainer.logger.name}.log # relative to repo root
 
 search_eval:
   _target_: proof_flow.src.search.common.ProofSearchParams
 
   # probes (theorems to run search on)
-  probe_file: data/val20.json
+  probe_file: ${data.val_data_path}
   probe_count: null # null for all
   sanity_check_probes: 20
-
+  
   # search parameters
   num_sampled_tactics: 8
   timeout: 30
@@ -60,9 +59,10 @@ search_eval:
   max_output_seq_len: 990
   max_new_tokens: 90 # reprover
   length_penalty: 0.0
+  prompt_template_key: identity
 
 # ground truth trajectories
 gtt:
   file_path: data/t1k_gtt.json
-  write_to_file: false
+  write_to_file: true
   seed_replay_buffer: false
