@@ -2,6 +2,7 @@ import json
 import random
 import sys
 from collections import namedtuple
+from dataclasses import dataclass, field
 from typing import Optional
 
 import torch
@@ -32,8 +33,8 @@ from proof_flow.src.search.common import ProofSearchParams, _HuggingFaceLM
 from proof_flow.src.search.proof_search import (
     DistributedProver,
     Status,
-    get_cached_dojo,
 )
+from proof_flow.src.lean_env_cache import LeanEnvCache
 from proof_flow.src.utils import (
     CUSTOM_DEBUG_LEVEL,
     batch_iterator_zip,
@@ -87,13 +88,38 @@ class NeuralTheoremProvingTask(LightningModule):
             "reward_buffer",
             "ground_truth_trajectories",
         ])
-
         self.model = model
         self.tokenizer = tokenizer
         self.reward = reward
         self.reward_buffer = reward_buffer
         self.cfg = config
         self.model_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        # slightly different inference based on model architecture
+        if self.cfg.seq2seq:
+            self.generate_step = generate_step_seq2seq
+            self.conditional_log_p = seq2seq_conditional_log_prob
+        else:
+            self.generate_step = generate_step
+            self.conditional_log_p = causal_conditional_log_prob
+
+        # end step generation at newline char
+        self.end_of_step_token_id = tokenizer.encode(
+            "assumption\n", add_special_tokens=False
+        )[-1]
+
+        # controlling tokenization in parallel forward
+        self.tokenize_max_length = (
+            self.cfg.max_input_length
+            if self.cfg.truncate_state
+            else None
+        )
+
+        # trade ram to remove dojo startup time
+        # - maps theorem.uid -> (dojo object, initial state)
+        self.dojo_cache = LeanEnvCache(timeout=self.cfg.dojo_timeout)
+
+        # configure log_z prediction
         if self.cfg.conditional_log_z:
             self.log_z = None
             log_z_head_input_size = (
@@ -111,6 +137,7 @@ class NeuralTheoremProvingTask(LightningModule):
             )
             self.log_z_head = None
 
+        # learning rate and reward temperature schedules
         # self.get_lr_at_step = lambda step: min(step / 20 * lr, lr)
         self.get_lr_at_step = lambda _: self.cfg.lr
         self.get_reward_temp_at_step = lambda step: (
@@ -118,22 +145,19 @@ class NeuralTheoremProvingTask(LightningModule):
                 config.reward_temp_end - config.reward_temp_start
             ) * min(1, step / config.reward_temp_horizon)
         )
-
-        # end step generation at newline char
-        self.end_of_step_token_id = tokenizer.encode(
-            "assumption\n", add_special_tokens=False
-        )[-1]
         
         # proof search evaluation configuration
         if search_eval_params is None:
-            self._debug_log("search_eval_params is None")
-            self.search_eval_params = ProofSearchParams()
-        else:
-            self.search_eval_params = search_eval_params
-        
-        # trade ram to remove dojo startup time
-        # - maps theorem.uid -> (dojo object, initial state)
-        self.dojo_cache = {}
+            self._debug_log("no search_eval_params provided, using default")
+            search_eval_params = ProofSearchParams()
+        self.search_eval = ProofSearchEvalModule(
+            params=search_eval_params,
+            model=model,
+            tokenizer=tokenizer,
+            decoder_only=(not self.cfg.seq2seq),
+            end_of_step_token_id=self.end_of_step_token_id,
+            dojo_cache=self.dojo_cache,
+        )
 
         # for adding ground truth trajectories to online training
         self.ground_truth_trajectories = ground_truth_trajectories
@@ -141,23 +165,6 @@ class NeuralTheoremProvingTask(LightningModule):
             tuid: t.proof.split(TACTIC_DELIMITER)
             for tuid, t in ground_truth_trajectories.items()
         }
-        if self.cfg.seq2seq:
-            self.generate_step = generate_step_seq2seq
-            self.conditional_log_p = seq2seq_conditional_log_prob
-        else:
-            self.generate_step = generate_step
-            self.conditional_log_p = causal_conditional_log_prob
-        
-        # tracking state length exceeding max_input_length
-        self.max_input_length_exceeded = 0
-        self.states_tokenized = 0
-
-        # controlling tokenization in parallel forward
-        self.tokenize_max_length = (
-            self.cfg.max_input_length
-            if self.cfg.truncate_state
-            else None
-        )
 
         # wandb metrics
         self.log_on_step = True
@@ -165,6 +172,10 @@ class NeuralTheoremProvingTask(LightningModule):
 
         # debug logging
         self._set_up_debug_logging()
+
+        # tracking state length exceeding max_input_length
+        self.max_input_length_exceeded = 0
+        self.states_tokenized = 0
         
    
     def parallel_forward(
@@ -184,11 +195,7 @@ class NeuralTheoremProvingTask(LightningModule):
 
         # use cached dojo if available
         # TODO: add mechanism for clearing cache/releasing resources
-        dojo, initial_state = get_cached_dojo(
-            self.dojo_cache, 
-            theorem,
-            self.cfg.dojo_timeout,
-        )
+        dojo, initial_state = self.dojo_cache.get(theorem)
         
         active_trajectories = [True] * n_samples
         tactics = [[] for _ in range(n_samples)]
@@ -349,11 +356,7 @@ class NeuralTheoremProvingTask(LightningModule):
                     f"run_tac error ({e}) on tactic: {tactic}, "
                     f"restarting dojo for {lean_env.entry.full_name}"
                 )
-                lean_env, initial_state = get_cached_dojo(
-                    self.dojo_cache,
-                    lean_env.entry,
-                    self.cfg.dojo_timeout,
-                )
+                lean_env, initial_state = self.dojo_cache.get(lean_env.entry)
                 next_state = None # this gets converted to timeout
             next_states.append(next_state)
         
@@ -576,11 +579,7 @@ class NeuralTheoremProvingTask(LightningModule):
                 )
             except (DojoInitError, DojoCrashError) as e:
                 self._debug_log(f"train step dojo error: {e}")
-                dojo, initial_state = get_cached_dojo(
-                    self.dojo_cache,
-                    theorem,
-                    self.cfg.dojo_timeout,
-                )
+                dojo, initial_state = self.dojo_cache.get(theorem)
                 return None
 
             if t_logpf is None:
@@ -706,46 +705,23 @@ class NeuralTheoremProvingTask(LightningModule):
     
 
     def run_proof_search_eval(self) -> list:
-        probes = self.search_eval_params.probes
         if self._is_sanity_checking():
             if self.cfg.sanity_check_probes == 0:
                 return
-            probes = probes[:self.search_eval_params.sanity_check_probes]
-        self._debug_log(f"starting search eval on step {self.global_step}")
-        # get repo and theorems
-        repo = LeanGitRepo(probes[0]["url"], probes[0]["commit"])
-        thms = [
-            Theorem(repo, thm["file_path"], thm["full_name"]) 
-            for thm in probes
-        ]
-        positions = [None] * len(thms) # ignored by HF tac gen
-        _template = PROMPT_DICT[self.search_eval_params.prompt_template_key]
-        prover = DistributedProver(
-            use_vllm=False, # use_vllm
-            gen_ckpt_path="", # gen_ckpt_path (needs to be not None)
-            ret_ckpt_path=None, # ret_ckpt_path
-            indexed_corpus_path=None, # indexed_corpus_path
-            max_inp_seq_len=self.search_eval_params.max_input_seq_len,
-            max_oup_seq_len=self.search_eval_params.max_output_seq_len,
-            length_penalty=self.search_eval_params.length_penalty,
-            tactic=None, # tactic
-            module=None, # module
-            num_workers=self.search_eval_params.num_workers,
-            num_gpus=self.search_eval_params.num_gpus,
-            timeout=self.search_eval_params.timeout,
-            max_expansions=self.search_eval_params.max_expansions,
-            max_depth=self.search_eval_params.max_depth,
-            num_sampled_tactics=self.search_eval_params.num_sampled_tactics,
-            max_new_tokens=self.search_eval_params.max_new_tokens,
-            model=self.model,
-            tokenizer=self.tokenizer,
-            prompt_template=_template,
-            is_decoder_only=(not self.cfg.seq2seq),
-            end_of_step_token_id=self.end_of_step_token_id,
-            dojo_cache=self.dojo_cache,
-        )
+            self._debug_log(f"starting sanity check proof search eval")
+            thms = self.search_eval.thms[:self.cfg.sanity_check_probes]
+            positions = [None] * self.cfg.sanity_check_probes
+        else:
+            self._debug_log(f"starting search eval on step {self.global_step}")
+            thms = self.search_eval.thms
+            positions = [None] * len(thms)
+
         with torch.no_grad():
-            results = prover.search_unordered(repo, thms, positions)
+            results = self.search_eval.prover.search_unordered(
+                repo=self.search_eval.repo,
+                theorems=thms,
+                positions=positions,
+            )
         num_proved = 0
         for r in results:
             if r is not None and r.status == Status.PROVED:
@@ -1169,6 +1145,53 @@ class NeuralTheoremProvingTask(LightningModule):
         # depth=1 to log the calling function instead of this function
         logger.log(self.cfg.debug_log_level, msg, depth=1)
     
+
+@dataclass
+class ProofSearchEvalModule:
+    params: ProofSearchParams
+    model: _HuggingFaceLM
+    tokenizer: AutoTokenizer
+    decoder_only: bool
+    end_of_step_token_id: int
+    dojo_cache: LeanEnvCache
+    repo: LeanGitRepo = field(init=False)
+    thms: list[Theorem] = field(init=False)
+    prover: DistributedProver = field(init=False)
+
+    def __post_init__(self):
+        # assert len(self.params.probes)
+        probes = self.params.probes
+        self.repo = LeanGitRepo(probes[0]["url"], probes[0]["commit"])
+        self.thms = [
+            Theorem(self.repo, thm["file_path"], thm["full_name"])
+            for thm in probes
+        ]
+        prompt_template = PROMPT_DICT[self.params.prompt_template_key]
+        self.prover = DistributedProver(
+            use_vllm=False,
+            gen_ckpt_path="",
+            ret_ckpt_path=None,
+            indexed_corpus_path=None,
+            max_inp_seq_len=self.params.max_input_seq_len,
+            max_oup_seq_len=self.params.max_output_seq_len,
+            length_penalty=self.params.length_penalty,
+            tactic=None,
+            module=None,
+            num_workers=self.params.num_workers,
+            num_gpus=self.params.num_gpus,
+            timeout=self.params.timeout,
+            max_expansions=self.params.max_expansions,
+            max_depth=self.params.max_depth,
+            num_sampled_tactics=self.params.num_sampled_tactics,
+            max_new_tokens=self.params.max_new_tokens,
+            model=self.model,
+            tokenizer=self.tokenizer,
+            prompt_template=prompt_template,
+            is_decoder_only=self.decoder_only,
+            end_of_step_token_id=self.end_of_step_token_id,
+            dojo_cache=self.dojo_cache,
+        )
+
 
 def generate_step(
     model: _HuggingFaceLM,

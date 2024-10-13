@@ -25,6 +25,7 @@ from proof_flow.src.search.tactic_generator import (
     FixedTacticGenerator,
     VllmGenerator,
 )
+from proof_flow.src.lean_env_cache import LeanEnvCache
 from proof_flow.src.utils import prepare_environment_for_lean_dojo
 from proof_flow.src.prompts import REPROVER_TACGEN_WITH_HISTORY
 
@@ -32,7 +33,6 @@ from proof_flow.src.prompts import REPROVER_TACGEN_WITH_HISTORY
 prepare_environment_for_lean_dojo()
 from lean_dojo import ( # isort: skip
     Pos,
-    Dojo,
     Theorem,
     LeanGitRepo,
     TacticState,
@@ -44,8 +44,6 @@ from lean_dojo import ( # isort: skip
     DojoCrashError,
     DojoTacticTimeoutError,
 )
-
-
 
 
 @dataclass(frozen=True)
@@ -76,7 +74,7 @@ class BestFirstSearchProver:
         num_sampled_tactics: int,
         debug: bool,
         save_search_tree: Optional[str] = None,
-        dojo_cache: Optional[dict] = None,
+        dojo_cache: Optional[LeanEnvCache] = None,
     ) -> None:
         self.tac_gen = tac_gen
         self.tac_gen.initialize()
@@ -86,7 +84,7 @@ class BestFirstSearchProver:
         self.num_sampled_tactics = num_sampled_tactics
         self.debug = debug
         self.save_search_tree = save_search_tree
-        self.dojo_cache = dojo_cache or {}
+        self.dojo_cache = dojo_cache or LeanEnvCache(timeout=timeout)
 
         self.num_expansions = 0
         self.actor_time = 0.0
@@ -105,17 +103,16 @@ class BestFirstSearchProver:
         self.environment_time = 0.0
         self.num_expansions = 0
 
-        if isinstance(self.tac_gen, FixedTacticGenerator):
-            imps = [self.tac_gen.module]
-        else:
-            imps = []
-
+        extra_imports = (
+            [self.tac_gen.module] 
+            if isinstance(self.tac_gen, FixedTacticGenerator) 
+            else None
+        )
         try:
-            dojo, init_state = get_cached_dojo(
-                self.dojo_cache, 
-                thm, 
-                self.timeout,
-                additional_imports=imps,
+            dojo, init_state = self.dojo_cache.get(
+                theorem=thm,
+                timeout=self.timeout,
+                additional_imports=extra_imports,
             )
             self.dojo = dojo
             self.root = InternalNode(
@@ -454,7 +451,7 @@ class DistributedProver:
         prompt_template: Optional[str] = None,
         is_decoder_only: Optional[bool] = None,
         end_of_step_token_id: Optional[int] = None,
-        dojo_cache: Optional[dict] = None,
+        dojo_cache: Optional[LeanEnvCache] = None,
     ) -> None:
         if gen_ckpt_path is None:
             assert tactic and not indexed_corpus_path
@@ -607,44 +604,3 @@ def _build_tac_gen_prompt(node: InternalNode) -> str:
         current_state=current_state,
     )
     return prompt
-
-
-def get_cached_dojo(
-    dojo_cache: dict, 
-    theorem: Theorem, 
-    dojo_timeout: int,
-    additional_imports: Optional[list[str]] = None,
-) -> tuple[Dojo, TacticState]:
-    if theorem.uid in dojo_cache:
-        dojo, initial_state = dojo_cache[theorem.uid]
-    else:
-        additional_imports = additional_imports or []
-        try:
-            dojo = Dojo(
-                theorem,
-                timeout=dojo_timeout, 
-                additional_imports=additional_imports,
-            )
-            dojo, initial_state = dojo.__enter__()
-            dojo_cache[theorem.uid] = (dojo, initial_state)
-        except ValueError as e:
-            if "filedescriptor out of range" not in str(e):
-                raise e
-
-            logger.info("filedescriptor out of range, clearing cache")
-            # empty cache
-            keys = list(dojo_cache.keys())
-            for key in keys:
-                dojo_instance, _ = dojo_cache.pop(key)
-                dojo_instance.__exit__(None, None, None)
-                
-            # retry once
-            _dojo = Dojo(
-                theorem,
-                timeout=dojo_timeout,
-                additional_imports=additional_imports,
-            )
-            dojo, initial_state = _dojo.__enter__()
-            dojo_cache[theorem.uid] = (dojo, initial_state)
-            
-    return dojo, initial_state
