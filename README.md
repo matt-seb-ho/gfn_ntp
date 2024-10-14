@@ -19,14 +19,8 @@ Minimal installation:
 
 6. start training with `python -m proof_flow.scripts.gfn_tuning.train`
 
-## Debgging
+## Debugging
 The codebase is under active development. If you encounter any issues, please open an issue or contact the authors.
 The workshop paper's experiments were conducted with commit `c3bc55c` (`c3bc55cc9159278024799f8a2ed7c522042377fb`), so we recommend checking against that specific version to solve any bugs introduced by newer changes.
 
 As of October 13 2024, the configuration files have been re-organized for modularity and proof search evaluation has been optimized to remove redundant computations, but the underlying logic remains the same.
-
----
-#### TODO: 
-- add OpenReview link (currently down)
-	- alternatively, upload arxiv version
-- add detailed instructions for filtering data
