@@ -14,6 +14,7 @@ ntp_config:
   truncate_state: true
   conditional_log_z: true
   branch_only_at_root: true
+  train_on_ground_truth: true
 
   # temperature schedule for policy and reward
   pf_temp_high: 1.0

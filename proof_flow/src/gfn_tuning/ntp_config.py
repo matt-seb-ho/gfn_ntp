@@ -18,6 +18,7 @@ class NTPConfig:
     truncate_state: bool = True
     conditional_log_z: bool = True
     branch_only_at_root: bool = True
+    train_on_ground_truth: bool = False
     
     # temperature parameters
     pf_temp_prob: float = 0.666

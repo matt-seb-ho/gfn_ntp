@@ -161,10 +161,13 @@ class NeuralTheoremProvingTask(LightningModule):
 
         # for adding ground truth trajectories to online training
         self.ground_truth_trajectories = ground_truth_trajectories
-        self.gt_tacs = {
-            tuid: t.proof.split(TACTIC_DELIMITER)
-            for tuid, t in ground_truth_trajectories.items()
-        }
+        if self.ground_truth_trajectories:
+            self.gt_tacs = {
+                tuid: t.proof.split(TACTIC_DELIMITER)
+                for tuid, t in ground_truth_trajectories.items()
+            }
+        else:
+            self.gt_tacs = {}
 
         # wandb metrics
         self.log_on_step = True
@@ -238,7 +241,7 @@ class NeuralTheoremProvingTask(LightningModule):
             "epoch": self.current_epoch,
             "step": self.global_step,
             "tactics": tactics,
-            "gold": self.gt_tacs[theorem.uid],
+            "gold": self.gt_tacs.get(theorem.uid, "N/A"),
         })
         logger.info(f"train_fwd_gen_tacs: {tac_info}")
         
@@ -594,8 +597,11 @@ class NeuralTheoremProvingTask(LightningModule):
         # log_z = torch.zeros(1, dtype=torch.float32, device=self.model_device)
         log_z = self._compute_log_z(initial_tac_state)
 
-        # once per accumulation batch
-        if (batch_idx + 1) % self.cfg.repeats_per_accumulated_batch == 0:
+        # (optionally) insert ground truth once per accumulated batch
+        if (
+            self.cfg.train_on_ground_truth
+            and (batch_idx + 1) % self.cfg.repeats_per_accumulated_batch == 0
+        ):
             # add ground truth trajectory before computing loss
             if self.ground_truth_trajectories:
                 gt_tlpf, gt_lr = self.replay_trajectories(
@@ -766,8 +772,7 @@ class NeuralTheoremProvingTask(LightningModule):
 
     def on_validation_epoch_start(self):
         self.model.eval()
-        if self.search_eval_params.probes:
-            self.run_proof_search_eval()
+        self.run_proof_search_eval()
 
 
     def on_validation_epoch_end(self):
@@ -1159,7 +1164,7 @@ class ProofSearchEvalModule:
     prover: DistributedProver = field(init=False)
 
     def __post_init__(self):
-        # assert len(self.params.probes)
+        assert len(self.params.probes)
         probes = self.params.probes
         self.repo = LeanGitRepo(probes[0]["url"], probes[0]["commit"])
         self.thms = [
