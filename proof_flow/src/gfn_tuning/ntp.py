@@ -675,10 +675,7 @@ class NeuralTheoremProvingTask(LightningModule):
         try:
             with torch.no_grad():
                 log_pf, log_r, _ = self.parallel_forward(theorem)
-                if theorem.uid not in self.dojo_cache:
-                    logger.info(f"val step: key error on {theorem.uid} in dojo_cache")
-                    return
-                _, initial_state = self.dojo_cache[theorem.uid]
+                _, initial_state = self.dojo_cache.get(theorem)
                 initial_tac_state = initial_state.pp
                 log_z = self._compute_log_z(initial_tac_state)
         except (DojoInitError, DojoCrashError) as e:
