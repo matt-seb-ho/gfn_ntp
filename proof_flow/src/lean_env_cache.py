@@ -58,7 +58,8 @@ class LeanEnvCache:
             return dojo, initial_state
     
     def clear(self) -> None:
-        for key in self.cache.keys():
+        keys = list(self.cache.keys())
+        for key in keys:
             dojo_instance, _ = self.cache.pop(key)
             dojo_instance.__exit__(None, None, None)
         logger.info("dojo cache cleared")
